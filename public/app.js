@@ -409,10 +409,15 @@ class LiveDubStudio {
   }
 
   updateMasterDubUI() {
-    let voiceName = 'Hoài My';
+    let voiceName = 'VieNeu Trúc Ly';
     if (this.voiceSelect && this.voiceSelect.selectedOptions && this.voiceSelect.selectedOptions[0]) {
       const fullText = this.voiceSelect.selectedOptions[0].text;
-      voiceName = fullText.split('(')[0].replace(/[^\w\sÀ-ỹ]/gi, '').trim() || 'Hoài My';
+      if (fullText.includes('VieNeu-TTS:')) {
+        const parts = fullText.split('VieNeu-TTS:')[1].split('(')[0].trim();
+        voiceName = 'VieNeu ' + parts;
+      } else {
+        voiceName = fullText.split('(')[0].replace(/[^\w\sÀ-ỹ]/gi, '').trim() || 'Trúc Ly';
+      }
     }
 
     const activeHtml = `<span class="toggle-indicator-dot"></span><span>🟢 ĐÃ BẬT LỒNG TIẾNG (${voiceName})</span>`;
@@ -432,6 +437,13 @@ class LiveDubStudio {
   async auditionSelectedVoice() {
     const voice = this.voiceSelect.value;
     const sampleTexts = {
+      'vieneu:Trúc Ly': 'Xin chào, tôi là Trúc Ly từ mô hình VieNeu-TTS, phong cách nói tự nhiên và truyền cảm.',
+      'vieneu:Thiện Minh': 'Chào bạn, tôi là Thiện Minh, giọng đọc kể chuyện truyền cảm của VieNeu-TTS.',
+      'vieneu:Thùy Dung': 'Kính chào quý vị, đây là giọng đọc Thùy Dung miền Nam từ VieNeu-TTS.',
+      'vieneu:Thái Sơn': 'Chào các bạn, đây là giọng đọc Thái Sơn miền Nam của VieNeu-TTS.',
+      'vieneu:Quang Sơn': 'Xin chào bà con, đây là giọng đọc Quang Sơn miền Trung của VieNeu-TTS.',
+      'vieneu:Mai Anh': 'Bản tin hôm nay được truyền tải qua giọng đọc Mai Anh của VieNeu-TTS.',
+      'vieneu:Adam bựa': 'Chào anh em nha, tôi là Adam, giọng đọc hài hước cực kỳ tự nhiên của VieNeu-TTS!',
       'google-vi': 'Xin chào bạn, đây là giọng đọc tiếng Việt siêu tốc của Google, phản hồi không phẩy một giây.',
       'vi-VN-HoaiMyNeural': 'Xin chào, tôi là Hoài My, giọng đọc nữ nhẹ nhàng và truyền cảm của Microsoft.',
       'vi-VN-NamMinhNeural': 'Xin chào quý vị và các bạn, tôi là Nam Minh, giọng đọc nam trầm ấm và truyền cảm.',
@@ -462,7 +474,7 @@ class LiveDubStudio {
   // Speaker & Audio Test
   async testSpeaker() {
     this.showToast('🔊 Đang kiểm tra âm thanh loa máy tính...');
-    const voice = this.voiceSelect ? this.voiceSelect.value : 'vi-VN-HoaiMyNeural';
+    const voice = this.voiceSelect ? this.voiceSelect.value : 'vieneu:Trúc Ly';
     try {
       const res = await fetch('/api/tts', {
         method: 'POST',
@@ -765,7 +777,7 @@ class LiveDubStudio {
     if (!seg || !seg.translated) return;
 
     try {
-      const voice = this.voiceSelect ? this.voiceSelect.value : 'vi-VN-HoaiMyNeural';
+      const voice = this.voiceSelect ? this.voiceSelect.value : 'vieneu:Trúc Ly';
       const res = await fetch('/api/dub-subtitle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -848,7 +860,7 @@ class LiveDubStudio {
 
       if (!this.audioPreCache.has(i) && !this.isFetchingPreCache.has(i)) {
         this.isFetchingPreCache.add(i);
-        const voice = this.voiceSelect ? this.voiceSelect.value : 'vi-VN-HoaiMyNeural';
+        const voice = this.voiceSelect ? this.voiceSelect.value : 'vieneu:Trúc Ly';
 
         fetch('/api/dub-subtitle', {
           method: 'POST',

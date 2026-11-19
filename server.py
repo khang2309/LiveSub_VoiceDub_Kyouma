@@ -95,6 +95,22 @@ def load_piper_voice():
 if os.path.exists(piper_model_path) and os.path.exists(piper_json_path):
     load_piper_voice()
 
+# 3. Load VieNeu-TTS v3 Turbo Engine (pnnbao97/VieNeu-TTS)
+_vieneu_engine = None
+
+def get_vieneu_engine():
+    global _vieneu_engine
+    if _vieneu_engine is None:
+        try:
+            from vieneu import Vieneu
+            print("🚀 Đang nạp mô hình VieNeu-TTS v3 Turbo (pnnbao97)...")
+            _vieneu_engine = Vieneu()
+            print("✅ VieNeu-TTS Engine (48kHz) đã sẵn sàng!")
+        except Exception as e:
+            print(f"⚠️ Lỗi khởi tạo VieNeu-TTS: {e}")
+            _vieneu_engine = False
+    return _vieneu_engine if _vieneu_engine is not False else None
+
 # In-memory translation & audio cache
 translation_cache = {}
 audio_cache = {}
@@ -233,7 +249,36 @@ def generate_piper_wav(text: str) -> bytes:
         print(f"Piper error: {e}")
         return b""
 
-async def generate_tts_bytes(text: str, voice: str = "google-vi") -> tuple[bytes, str]:
+# VieNeu-TTS v3 Turbo Audio Generator (pnnbao97/VieNeu-TTS)
+def generate_vieneu_wav(text: str, voice_name: str = "Trúc Ly") -> bytes:
+    engine = get_vieneu_engine()
+    if not engine:
+        return b""
+    try:
+        audio_arr = engine.infer(text, voice=voice_name)
+        if audio_arr is None or len(audio_arr) == 0:
+            return b""
+        import numpy as np
+        if isinstance(audio_arr, np.ndarray):
+            if audio_arr.dtype in [np.float32, np.float64]:
+                pcm = (np.clip(audio_arr, -1.0, 1.0) * 32767).astype(np.int16)
+            else:
+                pcm = audio_arr.astype(np.int16)
+        else:
+            pcm = np.array(audio_arr, dtype=np.int16)
+
+        buf = io.BytesIO()
+        with wave.open(buf, 'wb') as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(48000)
+            wav.writeframes(pcm.tobytes())
+        return buf.getvalue()
+    except Exception as e:
+        print(f"VieNeu-TTS ({voice_name}) error: {e}")
+        return b""
+
+async def generate_tts_bytes(text: str, voice: str = "vieneu:Trúc Ly") -> tuple[bytes, str]:
     cleaned = clean_speech_text(text)
     if not cleaned or not re.search(r'[a-zA-ZÀ-ỹ]', cleaned):
         return b"", "audio/mpeg"
@@ -245,8 +290,19 @@ async def generate_tts_bytes(text: str, voice: str = "google-vi") -> tuple[bytes
     audio_bytes = b""
     mime_type = "audio/mpeg"
 
+    # Voice Option 0: VieNeu-TTS (pnnbao97/VieNeu-TTS)
+    if voice.startswith("vieneu:") or voice == "vieneu":
+        voice_id = voice.split(":", 1)[1] if ":" in voice else "Trúc Ly"
+        audio_bytes = await asyncio.to_thread(generate_vieneu_wav, cleaned, voice_id)
+        if audio_bytes:
+            mime_type = "audio/wav"
+        else:
+            print(f"⚠️ VieNeu-TTS ({voice_id}) không phản hồi, tự động dùng Google Voice...")
+            audio_bytes = await asyncio.to_thread(synthesize_google_vi, cleaned)
+            mime_type = "audio/mpeg"
+
     # Voice Option 1: Microsoft Neural (Hoài My hoặc Nam Minh)
-    if voice in ["vi-VN-HoaiMyNeural", "vi-VN-NamMinhNeural"]:
+    elif voice in ["vi-VN-HoaiMyNeural", "vi-VN-NamMinhNeural"]:
         audio_bytes = await synthesize_edge_tts(cleaned, voice)
         if not audio_bytes:
             print(f"⚠️ {voice} tạm thời không phản hồi, tự động dùng Google Voice Tiếng Việt...")
