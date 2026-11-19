@@ -200,7 +200,7 @@ async def synthesize_edge_tts(text: str, voice: str) -> bytes:
             if chunk["type"] == "audio":
                 buf.write(chunk["data"])
         data = buf.getvalue()
-        if len(data) > 800:
+        if len(data) > 200:
             return data
     except Exception as e:
         print(f"Edge TTS ({voice}) error: {e}")
@@ -418,6 +418,110 @@ async def api_transcribe(
                 os.remove(tmp_path)
             except:
                 pass
+
+class YouTubeSubtitleRequest(BaseModel):
+    url: str
+    target_lang: Optional[str] = "vi"
+
+@app.post("/api/youtube-subtitles")
+async def api_youtube_subtitles(req: YouTubeSubtitleRequest):
+    import yt_dlp
+    url = req.url.strip()
+    if not url.startswith("http"):
+        url = f"https://www.youtube.com/watch?v={url}"
+
+    def extract_subs():
+        ydl_opts = {
+            'skip_download': True,
+            'quiet': True,
+            'no_warnings': True,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            subtitles = info.get('subtitles', {}) or {}
+            auto_caps = info.get('automatic_captions', {}) or {}
+
+            sub_track = None
+            is_already_vi = False
+
+            if 'vi' in subtitles:
+                sub_track = subtitles['vi']
+                is_already_vi = True
+            elif 'vi' in auto_caps:
+                sub_track = auto_caps['vi']
+                is_already_vi = True
+            elif 'en' in subtitles:
+                sub_track = subtitles['en']
+            elif 'en' in auto_caps:
+                sub_track = auto_caps['en']
+            else:
+                all_keys = list(subtitles.keys()) or list(auto_caps.keys())
+                if all_keys:
+                    sub_track = subtitles.get(all_keys[0]) or auto_caps.get(all_keys[0])
+
+            if not sub_track:
+                return {
+                    "success": False, 
+                    "error": "Video này không có phụ đề sẵn (CC). Bạn có thể bật nút 'Bắt Đầu Thu Âm Trực Tiếp' để AI Whisper GPU nhận diện âm thanh và lồng tiếng theo thời gian thực!"
+                }
+
+            json_url = None
+            for fmt in sub_track:
+                if fmt.get('ext') == 'json3':
+                    json_url = fmt.get('url')
+                    break
+            if not json_url and sub_track:
+                json_url = sub_track[0].get('url')
+
+            if not json_url:
+                return {"success": False, "error": "Không tìm thấy định dạng phụ đề tương thích."}
+
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            r_req = urllib.request.Request(json_url, headers=headers)
+            with urllib.request.urlopen(r_req, timeout=8) as resp:
+                raw_data = json.loads(resp.read().decode('utf-8'))
+
+            events = raw_data.get('events', [])
+            segments = []
+
+            for ev in events:
+                tStartMs = ev.get('tStartMs', 0)
+                dDurationMs = ev.get('dDurationMs', 2000)
+                segs = ev.get('segs', [])
+                text = "".join([s.get('utf8', '') for s in segs if 'utf8' in s])
+                cleaned = re.sub(r'[\u200b\u200e\u200f\ufeff]+', '', text)
+                cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+
+                if cleaned and not cleaned.startswith('\n') and len(cleaned) > 1:
+                    start_sec = round(tStartMs / 1000.0, 2)
+                    end_sec = round((tStartMs + dDurationMs) / 1000.0, 2)
+                    if segments and segments[-1]['original'] == cleaned:
+                        continue
+
+                    translated = cleaned if is_already_vi else fast_translate_to_vi(cleaned)
+                    if not translated:
+                        translated = cleaned
+
+                    segments.append({
+                        "start": start_sec,
+                        "end": end_sec,
+                        "original": cleaned,
+                        "translated": translated
+                    })
+
+            return {
+                "success": True,
+                "title": info.get('title', 'YouTube Video'),
+                "duration": info.get('duration', 0),
+                "segments": segments
+            }
+
+    try:
+        res = await asyncio.to_thread(extract_subs)
+        return res
+    except Exception as e:
+        print(f"Error extracting youtube subtitles: {e}")
+        return {"success": False, "error": str(e)}
 
 # Overlay route
 @app.get("/overlay")

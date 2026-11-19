@@ -4,10 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LiveSub & VoiceDub AI - Studio Thuyết Minh & Lồng Tiếng Đa Nguồn</title>
-  <link rel="stylesheet" href="style.css?v=20261119_11">
+  <link rel="stylesheet" href="style.css?v=20261119_13">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.gstatic.com">
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <script src="https://www.youtube.com/iframe_api"></script>
 </head>
 <body>
   <div class="app-container">
@@ -34,7 +35,10 @@
           <span class="status-dot"></span>
           <span id="statusText">Sẵn sàng</span>
         </div>
-        <a id="btnBookmarkletLink" href="javascript:(function(){if(window._lsActive){alert('LiveSub đang chạy trên trang này!');return;}window._lsActive=true;let lastT='',curA=null,origVol=null;function showSub(t){let c=document.getElementById('livesub-sub');if(!c){c=document.createElement('div');c.id='livesub-sub';c.style.cssText='position:absolute;bottom:65px;left:0;width:100%;text-align:center;z-index:99999999;pointer-events:none;';(document.querySelector('.html5-video-player')||document.body).appendChild(c);}c.innerHTML='<span style=\x22display:inline-block;background:rgba(0,0,0,0.5);color:#facc15;font-size:26px;font-weight:800;padding:4px 16px;border-radius:8px;-webkit-text-stroke:1.2px #000;text-shadow:0 2px 8px #000;max-width:85%;line-height:1.35;\x22>'+t+'</span>';}const obs=new MutationObserver(()=>{const el=document.querySelector('.ytp-caption-segment')||document.querySelector('.caption-window');if(el){const t=el.textContent.trim();if(t&&t!==lastT){lastT=t;fetch('http://localhost:3000/api/dub-subtitle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,voice:'google-vi'})}).then(r=>r.json()).then(d=>{if(d.translated)showSub(d.translated);if(d.audio_base64){const v=document.querySelector('video');if(v){if(origVol===null)origVol=v.volume;v.volume=Math.min(origVol,0.1);}if(curA)curA.pause();curA=new Audio('data:'+(d.audio_mime||'audio/mpeg')+';base64,'+d.audio_base64);curA.playbackRate=1.15;curA.onended=()=>{const vid=document.querySelector('video');if(vid&&origVol!==null)vid.volume=origVol;};curA.play();}}).catch(console.error);}}});const v=document.querySelector('video');if(v){v.addEventListener('pause',()=>{if(curA)curA.pause();});v.addEventListener('seeking',()=>{if(curA)curA.pause();const c=document.getElementById('livesub-sub');if(c)c.innerHTML='';});}obs.observe(document.querySelector('.ytp-caption-window-container')||document.body,{childList:true,subtree:true,characterData:true});alert('✅ Đã bật LiveSub trong video! Phụ đề hiển thị 100% trong suốt ở đáy video và tự động lồng tiếng!');})();" class="btn btn-secondary" title="Kéo nút này vào thanh Dấu Trang để hiện Sub trong suốt 100% trên YouTube/Web">
+        <button id="btnTestSpeaker" class="btn btn-secondary" title="Kiểm tra hệ thống âm thanh & loa của trình duyệt">
+          🔊 Thử Loa
+        </button>
+        <a id="btnBookmarkletLink" href="javascript:(function(){if(window._lsActive){alert('LiveSub đang chạy trên trang này!');return;}window._lsActive=true;let lastT='',curA=null,origVol=null;function showSub(t){let c=document.getElementById('livesub-sub');if(!c){c=document.createElement('div');c.id='livesub-sub';c.style.cssText='position:absolute;bottom:65px;left:0;width:100%;text-align:center;z-index:99999999;pointer-events:none;';(document.querySelector('.html5-video-player')||document.body).appendChild(c);}c.innerHTML='<span style=\x22display:inline-block;background:rgba(0,0,0,0.5);color:#facc15;font-size:26px;font-weight:800;padding:4px 16px;border-radius:8px;-webkit-text-stroke:1.2px #000;text-shadow:0 2px 8px #000;max-width:85%;line-height:1.35;\x22>'+t+'</span>';}const obs=new MutationObserver(()=>{const el=document.querySelector('.ytp-caption-segment')||document.querySelector('.caption-window');if(el){const t=el.textContent.trim();if(t&&t!==lastT){lastT=t;fetch('http://localhost:3000/api/dub-subtitle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,voice:'vi-VN-HoaiMyNeural'})}).then(r=>r.json()).then(d=>{if(d.translated)showSub(d.translated);if(d.audio_base64){const v=document.querySelector('video');if(v){if(origVol===null)origVol=v.volume;v.volume=Math.min(origVol,0.1);}if(curA)curA.pause();curA=new Audio('data:'+(d.audio_mime||'audio/mpeg')+';base64,'+d.audio_base64);curA.playbackRate=1.15;curA.onended=()=>{const vid=document.querySelector('video');if(vid&&origVol!==null)vid.volume=origVol;};curA.play();}}).catch(console.error);}}});const v=document.querySelector('video');if(v){v.addEventListener('pause',()=>{if(curA)curA.pause();});v.addEventListener('seeking',()=>{if(curA)curA.pause();const c=document.getElementById('livesub-sub');if(c)c.innerHTML='';});}obs.observe(document.querySelector('.ytp-caption-window-container')||document.body,{childList:true,subtree:true,characterData:true});alert('✅ Đã bật LiveSub trong video! Phụ đề hiển thị 100% trong suốt ở đáy video và tự động lồng tiếng giọng Hoài My!');})();" class="btn btn-secondary" title="Kéo nút này vào thanh Dấu Trang để hiện Sub trong suốt 100% trên YouTube/Web">
           🔗 Sub Trong Suốt Trên Web (Bookmarklet)
         </a>
         <button id="btnFloatingWindow" class="btn btn-secondary" title="Mở thanh phụ đề nổi mỏng ở đáy màn hình">
@@ -158,9 +162,19 @@
           </div>
 
           <div class="input-with-button">
-            <input type="text" id="webUrlInput" class="form-control" placeholder="https://www.youtube.com/watch?v=...">
+            <input type="text" id="webUrlInput" class="form-control" placeholder="Dán link YouTube (VD: https://www.youtube.com/watch?v=...)">
             <button id="btnLoadWebUrl" class="btn btn-primary">Mở Video</button>
           </div>
+
+          <div class="quick-links-hint">
+            <span>💡 Video mẫu:</span>
+            <button class="btn-sample-link" data-url="https://www.youtube.com/watch?v=q6fgVVmdpgY">MrBeast ($250k)</button>
+            <button class="btn-sample-link" data-url="https://www.youtube.com/watch?v=UF8uR6Z6KLc">Steve Jobs</button>
+          </div>
+          <p class="source-desc-hint">
+            ⚡ <strong>Video YouTube có phụ đề (CC):</strong> Đồng bộ 100% khớp từng mili-giây, tua dừng tức thì, lồng tiếng Hoài My!<br>
+            🎙️ <strong>Video không có phụ đề (Livestream):</strong> Nhấn nút <em>"Bắt Âm Thanh Tab"</em> để Whisper GPU dịch trực tiếp.
+          </p>
         </div>
 
         <!-- DYNAMIC AUDIO LEVEL METER -->
@@ -214,9 +228,9 @@
             </button>
           </div>
           <select id="voiceSelect" class="form-control select-highlight">
-            <option value="google-vi" selected>⚡ Google Voice Tiếng Việt (Nữ tự nhiên, 0.15s siêu tốc - Khuyên dùng)</option>
-            <option value="vi-VN-HoaiMyNeural">🎙️ Hoài My (Microsoft AI - Nữ truyền cảm, ấm áp)</option>
-            <option value="vi-VN-NamMinhNeural">🎙️ Nam Minh (Microsoft AI - Nam trầm ấm, chuẩn phát thanh)</option>
+            <option value="vi-VN-HoaiMyNeural" selected>🎙️ Hoài My (Microsoft AI - Nữ nhẹ nhàng, truyền cảm)</option>
+            <option value="vi-VN-NamMinhNeural">🎙️ Nam Minh (Microsoft AI - Nam trầm ấm, phát thanh viên)</option>
+            <option value="google-vi">⚡ Google Voice Tiếng Việt (0.15s siêu tốc)</option>
             <option value="piper-vi">🔒 Piper Neural (Chạy Offline 100% trên máy)</option>
           </select>
         </div>
@@ -314,12 +328,24 @@
         <!-- 2. WEB VIDEO EMBED (Shown when user inputs a web/youtube URL) -->
         <div id="webVideoContainer" class="web-video-wrapper" style="display: none;">
           <div class="video-top-bar">
-            <span>Trình Phát Web Video Trực Tiếp</span>
-            <button id="btnCloseWebVideo" class="btn-icon" title="Đóng video">✕</button>
+            <div class="video-title-group">
+              <span class="live-dot"></span>
+              <span id="webVideoTitle">Trình Phát Web Video Trực Tiếp</span>
+            </div>
+            <div class="video-top-actions">
+              <button id="btnWebLiveCapture" class="btn btn-secondary btn-sm" title="Bắt âm thanh tab trực tiếp nếu video livestream không có phụ đề sẵn">🎙️ Bắt Âm Thanh Tab</button>
+              <button id="btnCloseWebVideo" class="btn-icon" title="Đóng video">✕</button>
+            </div>
           </div>
-          <div class="iframe-element-container">
-            <iframe id="webVideoIframe" src="" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+          <div class="iframe-element-container" style="position: relative;">
+            <div id="webVideoPlayer"></div>
+            <!-- In-Video Subtitle Overlay (100% Transparent, No black borders, Cinema yellow font) -->
+            <div id="invideoWebSubOverlay" class="invideo-subtitle-overlay" style="display: block;">
+              <div id="invideoWebSubSource" class="invideo-sub-source"></div>
+              <div id="invideoWebSubVi" class="invideo-sub-vi"></div>
+            </div>
           </div>
+          <div id="webSyncNotice" class="web-sync-notice"></div>
         </div>
 
         <!-- 3. LIVE SUBTITLE CINEMA BOX (For System Audio, Mic, and Live Dubbing) -->
@@ -396,6 +422,6 @@
     <audio id="dubbingAudio" preload="auto"></audio>
   </div>
 
-  <script src="app.js?v=20261119_11"></script>
+  <script src="app.js?v=20261119_13"></script>
 </body>
 </html>

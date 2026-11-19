@@ -26,13 +26,32 @@ class LiveDubStudio {
     this.fontSizePx = 26;
     this.floatingWindow = null;
 
+    // YouTube Subtitle Sync Engine
+    this.ytPlayer = null;
+    this.ytSegments = [];
+    this.ytSyncInterval = null;
+    this.currentYtSegmentIdx = -1;
+    this.originalYtVol = null;
+
     // History
     this.history = [];
 
     this.initElements();
+    this.restorePreferences();
     this.bindEvents();
     this.updateSubModeUI();
     this.applyTransparencyUI();
+  }
+
+  restorePreferences() {
+    const savedVoice = localStorage.getItem('livesub_voice');
+    if (savedVoice && this.voiceSelect) {
+      this.voiceSelect.value = savedVoice;
+    }
+    const savedLang = localStorage.getItem('livesub_sourcelang');
+    if (savedLang && this.sourceLangSelect) {
+      this.sourceLangSelect.value = savedLang;
+    }
   }
 
   initElements() {
@@ -71,8 +90,14 @@ class LiveDubStudio {
     this.webUrlInput = document.getElementById('webUrlInput');
     this.btnLoadWebUrl = document.getElementById('btnLoadWebUrl');
     this.webVideoContainer = document.getElementById('webVideoContainer');
-    this.webVideoIframe = document.getElementById('webVideoIframe');
+    this.webVideoTitle = document.getElementById('webVideoTitle');
+    this.btnWebLiveCapture = document.getElementById('btnWebLiveCapture');
     this.btnCloseWebVideo = document.getElementById('btnCloseWebVideo');
+    this.invideoWebSubVi = document.getElementById('invideoWebSubVi');
+    this.invideoWebSubSource = document.getElementById('invideoWebSubSource');
+    this.webSyncNotice = document.getElementById('webSyncNotice');
+    this.sampleLinks = document.querySelectorAll('.btn-sample-link');
+    this.btnTestSpeaker = document.getElementById('btnTestSpeaker');
 
     // Meter
     this.audioMeterFill = document.getElementById('audioMeterFill');
@@ -207,22 +232,53 @@ class LiveDubStudio {
         if (e.key === 'Enter') this.loadWebVideo();
       });
     }
+    if (this.sampleLinks) {
+      this.sampleLinks.forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (btn.dataset.url) this.loadWebVideo(btn.dataset.url);
+        });
+      });
+    }
+    if (this.btnWebLiveCapture) {
+      this.btnWebLiveCapture.addEventListener('click', () => this.toggleSystemAudio());
+    }
     if (this.btnCloseWebVideo) {
       this.btnCloseWebVideo.addEventListener('click', () => {
-        this.webVideoIframe.src = '';
+        if (this.ytSyncInterval) {
+          clearInterval(this.ytSyncInterval);
+          this.ytSyncInterval = null;
+        }
+        if (this.ytPlayer && typeof this.ytPlayer.stopVideo === 'function') {
+          this.ytPlayer.stopVideo();
+        }
+        if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = '';
+        if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = '';
         this.webVideoContainer.style.display = 'none';
+        this.stopAllAudio();
       });
+    }
+
+    // Speaker Test Button
+    if (this.btnTestSpeaker) {
+      this.btnTestSpeaker.addEventListener('click', () => this.testSpeaker());
     }
 
     // 6. Voice & Language Change Feedback
     if (this.voiceSelect) {
       this.voiceSelect.addEventListener('change', () => {
         const name = this.voiceSelect.selectedOptions[0].text;
+        localStorage.setItem('livesub_voice', this.voiceSelect.value);
         this.showToast(`🎙️ Đã chọn giọng: ${name}`);
+        this.auditionSelectedVoice();
       });
     }
     if (this.sourceLangSelect) {
       this.sourceLangSelect.addEventListener('change', () => {
+        const name = this.sourceLangSelect.selectedOptions[0].text;
+        localStorage.setItem('livesub_sourcelang', this.sourceLangSelect.value);
+        this.showToast(`🌐 Đã chọn ngôn ngữ gốc: ${name}`);
+      });
+    }
         const name = this.sourceLangSelect.selectedOptions[0].text;
         this.showToast(`🌐 Đã chọn ngôn ngữ gốc: ${name}`);
       });
@@ -352,6 +408,31 @@ class LiveDubStudio {
     }
   }
 
+  // Speaker & Audio Test
+  async testSpeaker() {
+    this.showToast('🔊 Đang kiểm tra âm thanh loa máy tính...');
+    const voice = this.voiceSelect ? this.voiceSelect.value : 'vi-VN-HoaiMyNeural';
+    try {
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          text: 'Xin chào bạn! Hệ thống loa và âm thanh của bạn đang hoạt động rất tốt!', 
+          voice 
+        })
+      });
+      if (res.ok) {
+        const buf = await res.arrayBuffer();
+        await this.playAudioBuffer(buf);
+        this.showToast('✅ Loa hoạt động hoàn hảo!');
+      } else {
+        this.showToast('⚠️ Lỗi kiểm tra loa từ máy chủ');
+      }
+    } catch (e) {
+      this.showToast('⚠️ Không thể phát âm thanh: ' + e.message);
+    }
+  }
+
   // --- SOURCE 1: SYSTEM AUDIO ---
   async toggleSystemAudio() {
     if (this.isListening && this.activeSource === 'system') {
@@ -463,26 +544,168 @@ class LiveDubStudio {
     }
   }
 
-  // --- SOURCE 4: WEB URL ---
-  loadWebVideo() {
-    const val = this.webUrlInput.value.trim();
+  // --- SOURCE 4: WEB URL (YOUTUBE WITH MILLISECOND SUBTITLE & VOICE DUB) ---
+  async loadWebVideo(customUrl = null) {
+    const val = (customUrl || this.webUrlInput.value).trim();
     if (!val) return;
+    this.webUrlInput.value = val;
+
     const match = val.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
     if (!match || !match[1]) {
-      alert('Vui lòng nhập link video YouTube hoặc web video hợp lệ.');
+      alert('Vui lòng nhập link video YouTube hợp lệ (VD: https://www.youtube.com/watch?v=q6fgVVmdpgY).');
       return;
     }
     const videoId = match[1];
-    this.webVideoIframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?enablejsapi=1&autoplay=1`;
+
     this.webVideoContainer.style.display = 'block';
     this.webVideoContainer.scrollIntoView({ behavior: 'smooth' });
-    this.showToast('🎬 Đã mở trình phát video web trong app!');
+    this.webSyncNotice.className = 'web-sync-notice show';
+    this.webSyncNotice.innerHTML = '⏳ Đang kết nối video và tải phụ đề gốc & kịch bản dịch chuẩn...';
+
+    // 1. Fetch YouTube Subtitles from Backend
+    this.ytSegments = [];
+    this.currentYtSegmentIdx = -1;
+
+    try {
+      const res = await fetch('/api/youtube-subtitles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: val, target_lang: 'vi' })
+      });
+      const data = await res.json();
+      if (data.success && data.segments && data.segments.length > 0) {
+        this.ytSegments = data.segments;
+        if (data.title) this.webVideoTitle.textContent = data.title;
+        this.webSyncNotice.innerHTML = `✅ <strong>Đã đồng bộ ${data.segments.length} câu thoại chuẩn xác 100%!</strong> Hãy bấm ▶️ Play trên video để thưởng thức thuyết minh chuẩn mili-giây.`;
+        this.showToast(`🎬 Đã nạp ${data.segments.length} câu thoại phụ đề từ video!`);
+      } else {
+        this.webSyncNotice.innerHTML = `ℹ️ ${data.error || 'Video không có phụ đề sẵn'}. Hãy bấm nút <strong>"🎙️ Bắt Âm Thanh Tab"</strong> để Whisper GPU nghe và dịch trực tiếp!`;
+      }
+    } catch (e) {
+      console.warn('Subtitles fetch error:', e);
+      this.webSyncNotice.innerHTML = 'ℹ️ Bấm nút "🎙️ Bắt Âm Thanh Tab" để Whisper GPU nghe và dịch trực tiếp!';
+    }
+
+    // 2. Initialize YouTube Player
+    this.initOrUpdateYouTubePlayer(videoId);
+  }
+
+  initOrUpdateYouTubePlayer(videoId) {
+    if (this.ytSyncInterval) {
+      clearInterval(this.ytSyncInterval);
+      this.ytSyncInterval = null;
+    }
+
+    const onPlayerReady = () => {
+      this.startXTSync();
+    };
+
+    const onPlayerStateChange = (event) => {
+      // YT.PlayerState.PAUSED = 2, ENDED = 0
+      if (event.data === 2 || event.data === 0) {
+        this.stopAllAudio();
+      }
+    };
+
+    if (window.YT && window.YT.Player) {
+      if (this.ytPlayer && typeof this.ytPlayer.loadVideoById === 'function') {
+        this.ytPlayer.loadVideoById(videoId);
+      } else {
+        document.getElementById('webVideoPlayer').innerHTML = '';
+        this.ytPlayer = new window.YT.Player('webVideoPlayer', {
+          height: '420',
+          width: '100%',
+          videoId: videoId,
+          playerVars: {
+            autoplay: 1,
+            enablejsapi: 1,
+            modestbranding: 1,
+            rel: 0
+          },
+          events: {
+            onReady: onPlayerReady,
+            onStateChange: onPlayerStateChange
+          }
+        });
+      }
+    } else {
+      setTimeout(() => this.initOrUpdateYouTubePlayer(videoId), 400);
+    }
+  }
+
+  startXTSync() {
+    if (this.ytSyncInterval) clearInterval(this.ytSyncInterval);
+
+    this.ytSyncInterval = setInterval(async () => {
+      if (!this.ytPlayer || typeof this.ytPlayer.getCurrentTime !== 'function') return;
+
+      const playerState = this.ytPlayer.getPlayerState ? this.ytPlayer.getPlayerState() : -1;
+      if (playerState !== 1) { // Only when playing
+        return;
+      }
+
+      const curTime = this.ytPlayer.getCurrentTime();
+      if (!this.ytSegments || this.ytSegments.length === 0) return;
+
+      const idx = this.ytSegments.findIndex(s => curTime >= s.start && curTime <= s.end);
+
+      if (idx !== -1 && idx !== this.currentYtSegmentIdx) {
+        this.currentYtSegmentIdx = idx;
+        const seg = this.ytSegments[idx];
+
+        // 1. In-video Subtitle (100% Transparent, No black borders, Cinema yellow font)
+        if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = seg.translated;
+        if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = seg.original;
+
+        // 2. Cinema View
+        this.displaySubtitle(seg.original, seg.translated);
+        const record = this.addHistory(seg.original, seg.translated, 'cc');
+
+        // 3. Dubbing Audio
+        if (this.isDubbingEnabled) {
+          try {
+            if (this.ytPlayer.getVolume && this.originalYtVol === null) {
+              this.originalYtVol = this.ytPlayer.getVolume();
+            }
+            if (this.ytPlayer.setVolume) this.ytPlayer.setVolume(12);
+
+            const res = await fetch('/api/dub-subtitle', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                text: seg.translated, 
+                voice: this.voiceSelect ? this.voiceSelect.value : 'vi-VN-HoaiMyNeural' 
+              })
+            });
+            const data = await res.json();
+            if (data.audio_base64) {
+              await this.playBase64Audio(data.audio_base64, record.id, data.audio_mime || 'audio/mpeg');
+            }
+          } catch (err) {
+            console.warn('Dubbing error:', err);
+          } finally {
+            if (this.ytPlayer && this.ytPlayer.setVolume && this.originalYtVol !== null) {
+              setTimeout(() => {
+                if (this.ytPlayer && this.ytPlayer.setVolume && !this.currentActiveAudioSource) {
+                  this.ytPlayer.setVolume(this.originalYtVol || 100);
+                }
+              }, 1200);
+            }
+          }
+        }
+      } else if (idx === -1) {
+        const isNearAny = this.ytSegments.some(s => curTime >= (s.start - 0.2) && curTime <= (s.end + 0.4));
+        if (!isNearAny) {
+          if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = '';
+          if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = '';
+        }
+      }
+    }, 70);
   }
 
   // =========================================================================
-  // ROCK-SOLID HARDWARE-COMPATIBLE PCM WAV VAD RECORDING ENGINE
-  // Stores mediaStreamSource on 'this' to prevent V8 garbage-collection,
-  // packages clean 16-bit PCM WAV on pause or timer (2.2s), zero corruption!
+  // CONTINUOUS 16kHz MONO WAV CHUNKING ENGINE (RTX 3050 GPU OPTIMIZED)
+  // Never drops speech syllables, resamples to 16kHz for instant GPU Whisper!
   // =========================================================================
   async setupVADAndRecording(stream) {
     this.isListening = true;
@@ -496,31 +719,34 @@ class LiveDubStudio {
       await this.audioContext.resume();
     }
 
-    // Isolate audio tracks
     const audioTracks = stream.getAudioTracks();
     const audioStream = audioTracks.length > 0 ? new MediaStream(audioTracks) : stream;
 
-    // STORE ON INSTANCE TO PREVENT V8 GARBAGE COLLECTION!
+    // STORE TO PREVENT V8 GARBAGE COLLECTION
     this.mediaStreamSource = this.audioContext.createMediaStreamSource(audioStream);
     const sampleRate = this.audioContext.sampleRate || 48000;
     const scriptNode = this.audioContext.createScriptProcessor(4096, 1, 1);
     this.scriptNode = scriptNode;
 
     this.pcmBuffers = [];
-    this.isSpeaking = false;
-    this.silenceFrames = 0;
-    this.phraseStartTime = Date.now();
+    this.currentChunkMaxRms = 0;
+    this.consecutiveQuietBlocks = 0;
 
     const triggerSendClause = () => {
-      const minBlocks = Math.max(3, Math.round((0.3 * sampleRate) / 4096));
-      if (this.pcmBuffers.length < minBlocks) {
+      const minBlocks = Math.max(4, Math.round((0.8 * sampleRate) / 4096));
+      if (this.pcmBuffers.length < minBlocks || this.currentChunkMaxRms < 0.003) {
         this.pcmBuffers = [];
+        this.currentChunkMaxRms = 0;
+        this.consecutiveQuietBlocks = 0;
         return;
       }
-      const wavBlob = this.encodeWAV(this.pcmBuffers, sampleRate);
+
+      const wavBlob = this.encodeWAV16k(this.pcmBuffers, sampleRate);
       this.pcmBuffers = [];
-      this.phraseStartTime = Date.now();
-      if (wavBlob.size > 1800) {
+      this.currentChunkMaxRms = 0;
+      this.consecutiveQuietBlocks = 0;
+
+      if (wavBlob && wavBlob.size > 1200) {
         this.sendSpeechPhraseToAI(wavBlob);
       }
     };
@@ -529,7 +755,7 @@ class LiveDubStudio {
       if (!this.isListening) return;
       const input = e.inputBuffer.getChannelData(0);
 
-      // 1. Calculate RMS Energy
+      // 1. RMS Energy Calculation
       let sumSq = 0;
       for (let i = 0; i < input.length; i++) {
         sumSq += input[i] * input[i];
@@ -540,34 +766,26 @@ class LiveDubStudio {
       this.audioMeterFill.style.width = `${percent}%`;
       this.meterPercentText.textContent = `${percent}%`;
 
-      // 2. VAD: Speech threshold (>= 2% energy)
-      const SPEECH_RMS = 0.006;
-      if (rms >= SPEECH_RMS) {
-        this.silenceFrames = 0;
-        this.isSpeaking = true;
-        this.pcmBuffers.push(new Float32Array(input));
+      // 2. Buffer Continuous Audio
+      this.pcmBuffers.push(new Float32Array(input));
+      if (rms > this.currentChunkMaxRms) {
+        this.currentChunkMaxRms = rms;
+      }
 
-        // Max phrase duration: ~2.4 seconds -> trigger chunk cleanly!
-        const maxBlocks = Math.round((2.4 * sampleRate) / 4096);
-        if (this.pcmBuffers.length >= maxBlocks) {
-          triggerSendClause();
-        }
+      if (rms < 0.005) {
+        this.consecutiveQuietBlocks++;
       } else {
-        if (this.isSpeaking) {
-          this.silenceFrames++;
-          // ~200ms of silence pause
-          const silenceBlockThreshold = Math.max(2, Math.round((0.2 * sampleRate) / 4096));
-          if (this.silenceFrames >= silenceBlockThreshold) {
-            this.isSpeaking = false;
-            this.silenceFrames = 0;
-            triggerSendClause();
-          }
-        } else {
-          // Timer fallback: If continuous audio has buffered > 2.2s, trigger anyway!
-          if (this.pcmBuffers.length > 0 && (Date.now() - this.phraseStartTime) >= 2200) {
-            triggerSendClause();
-          }
-        }
+        this.consecutiveQuietBlocks = 0;
+      }
+
+      // Max duration: 2.0s -> trigger!
+      const maxBlocks = Math.round((2.0 * sampleRate) / 4096);
+      if (this.pcmBuffers.length >= maxBlocks) {
+        triggerSendClause();
+      } 
+      // Early natural pause trigger: after at least 0.9s of audio and 3 quiet blocks (~250ms silence)
+      else if (this.pcmBuffers.length >= Math.round((0.9 * sampleRate) / 4096) && this.consecutiveQuietBlocks >= 3 && this.currentChunkMaxRms >= 0.005) {
+        triggerSendClause();
       }
     };
 
@@ -575,13 +793,34 @@ class LiveDubStudio {
     scriptNode.connect(this.audioContext.destination);
   }
 
-  // Pure 16-bit PCM WAV Encoder
-  encodeWAV(samplesArrays, sampleRate) {
-    let totalLength = 0;
+  // Pure 16-bit Mono WAV 16,000 Hz Encoder (Whisper Native)
+  encodeWAV16k(samplesArrays, inputSampleRate) {
+    let totalInputLen = 0;
     for (let i = 0; i < samplesArrays.length; i++) {
-      totalLength += samplesArrays[i].length;
+      totalInputLen += samplesArrays[i].length;
     }
-    const buffer = new ArrayBuffer(44 + totalLength * 2);
+    const fullInput = new Float32Array(totalInputLen);
+    let pos = 0;
+    for (let i = 0; i < samplesArrays.length; i++) {
+      fullInput.set(samplesArrays[i], pos);
+      pos += samplesArrays[i].length;
+    }
+
+    const targetSampleRate = 16000;
+    let resampled;
+    if (inputSampleRate === targetSampleRate) {
+      resampled = fullInput;
+    } else {
+      const ratio = inputSampleRate / targetSampleRate;
+      const targetLength = Math.round(fullInput.length / ratio);
+      resampled = new Float32Array(targetLength);
+      for (let i = 0; i < targetLength; i++) {
+        const srcIdx = Math.round(i * ratio);
+        resampled[i] = fullInput[Math.min(srcIdx, fullInput.length - 1)];
+      }
+    }
+
+    const buffer = new ArrayBuffer(44 + resampled.length * 2);
     const view = new DataView(buffer);
 
     const writeString = (offset, str) => {
@@ -591,42 +830,40 @@ class LiveDubStudio {
     };
 
     writeString(0, 'RIFF');
-    view.setUint32(4, 36 + totalLength * 2, true);
+    view.setUint32(4, 36 + resampled.length * 2, true);
     writeString(8, 'WAVE');
     writeString(12, 'fmt ');
     view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true); // PCM
+    view.setUint16(20, 1, true); // PCM format
     view.setUint16(22, 1, true); // Mono
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * 2, true);
+    view.setUint32(24, targetSampleRate, true);
+    view.setUint32(28, targetSampleRate * 2, true);
     view.setUint16(32, 2, true);
     view.setUint16(34, 16, true);
     writeString(36, 'data');
-    view.setUint32(40, totalLength * 2, true);
+    view.setUint32(40, resampled.length * 2, true);
 
     let offset = 44;
-    for (let i = 0; i < samplesArrays.length; i++) {
-      const arr = samplesArrays[i];
-      for (let j = 0; j < arr.length; j++) {
-        const s = Math.max(-1, Math.min(1, arr[j]));
-        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-        offset += 2;
-      }
+    for (let i = 0; i < resampled.length; i++) {
+      const s = Math.max(-1, Math.min(1, resampled[i]));
+      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      offset += 2;
     }
+
     return new Blob([view], { type: 'audio/wav' });
   }
 
   async sendSpeechPhraseToAI(audioBlob) {
-    if (!audioBlob || audioBlob.size < 1500 || this.isTranscribing) return;
+    if (!audioBlob || audioBlob.size < 1000 || this.isTranscribing) return;
 
     this.isTranscribing = true;
     this.setStatus('active', 'AI nhận diện GPU & dịch...');
 
     const formData = new FormData();
     formData.append('audio', audioBlob, 'audio.wav');
-    formData.append('source_lang', this.sourceLangSelect.value);
+    formData.append('source_lang', this.sourceLangSelect ? this.sourceLangSelect.value : 'auto');
     formData.append('dubbing', this.isDubbingEnabled ? 'true' : 'false');
-    formData.append('voice', this.voiceSelect.value);
+    formData.append('voice', this.voiceSelect ? this.voiceSelect.value : 'vi-VN-HoaiMyNeural');
 
     this.activeAbortController = new AbortController();
 
@@ -643,6 +880,8 @@ class LiveDubStudio {
         if (data.original.toLowerCase() !== this.lastProcessedText.toLowerCase()) {
           this.lastProcessedText = data.original;
           this.displaySubtitle(data.original, data.translated);
+          if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = data.translated;
+          if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = data.original;
           const record = this.addHistory(data.original, data.translated, data.detected_lang || 'auto');
 
           if (this.isDubbingEnabled && data.audio_base64) {
