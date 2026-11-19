@@ -523,6 +523,15 @@ async def api_youtube_subtitles(req: YouTubeSubtitleRequest):
         print(f"Error extracting youtube subtitles: {e}")
         return {"success": False, "error": str(e)}
 
+@app.get("/")
+async def get_index():
+    index_path = os.path.join(os.path.dirname(__file__), "public", "index.html")
+    return FileResponse(index_path, headers={
+        "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+        "Pragma": "no-cache",
+        "Expires": "0"
+    })
+
 # Overlay route
 @app.get("/overlay")
 async def get_overlay():

@@ -279,10 +279,6 @@ class LiveDubStudio {
         this.showToast(`🌐 Đã chọn ngôn ngữ gốc: ${name}`);
       });
     }
-        const name = this.sourceLangSelect.selectedOptions[0].text;
-        this.showToast(`🌐 Đã chọn ngôn ngữ gốc: ${name}`);
-      });
-    }
 
     // 7. Voice Audition Button
     if (this.btnTestVoiceSample) {
@@ -613,7 +609,7 @@ class LiveDubStudio {
       } else {
         document.getElementById('webVideoPlayer').innerHTML = '';
         this.ytPlayer = new window.YT.Player('webVideoPlayer', {
-          height: '420',
+          height: '100%',
           width: '100%',
           videoId: videoId,
           playerVars: {
@@ -1102,7 +1098,6 @@ class LiveDubStudio {
       }
       this.overlayChannel.postMessage(transPayload);
     } catch (e) {}
-  }
   }
 
   updateSubModeUI() {
