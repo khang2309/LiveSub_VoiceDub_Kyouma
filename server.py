@@ -358,14 +358,14 @@ async def api_transcribe(
             without_timestamps=True,
             vad_filter=True,
             vad_parameters=dict(
-                min_silence_duration_ms=200,
-                threshold=0.40,
-                speech_pad_ms=60
+                min_silence_duration_ms=160,
+                threshold=0.25,
+                speech_pad_ms=80
             ),
-            repetition_penalty=1.35,
+            repetition_penalty=1.20,
             no_repeat_ngram_size=2,
-            compression_ratio_threshold=2.0,
-            no_speech_threshold=0.45
+            compression_ratio_threshold=2.4,
+            no_speech_threshold=0.60
         )
 
         texts = []

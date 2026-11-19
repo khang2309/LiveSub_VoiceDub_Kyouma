@@ -733,8 +733,9 @@ class LiveDubStudio {
     this.consecutiveQuietBlocks = 0;
 
     const triggerSendClause = () => {
-      const minBlocks = Math.max(4, Math.round((0.8 * sampleRate) / 4096));
-      if (this.pcmBuffers.length < minBlocks || this.currentChunkMaxRms < 0.003) {
+      // Collect at least 0.4s of audio (~4 blocks at 48k)
+      const minBlocks = Math.max(3, Math.round((0.4 * sampleRate) / 4096));
+      if (this.pcmBuffers.length < minBlocks || this.currentChunkMaxRms < 0.0002) {
         this.pcmBuffers = [];
         this.currentChunkMaxRms = 0;
         this.consecutiveQuietBlocks = 0;
@@ -746,7 +747,7 @@ class LiveDubStudio {
       this.currentChunkMaxRms = 0;
       this.consecutiveQuietBlocks = 0;
 
-      if (wavBlob && wavBlob.size > 1200) {
+      if (wavBlob && wavBlob.size > 800) {
         this.sendSpeechPhraseToAI(wavBlob);
       }
     };
@@ -761,7 +762,7 @@ class LiveDubStudio {
         sumSq += input[i] * input[i];
       }
       const rms = Math.sqrt(sumSq / input.length);
-      const percent = Math.min(100, Math.round(rms * 100 * 5));
+      const percent = Math.min(100, Math.round(rms * 100 * 12));
 
       this.audioMeterFill.style.width = `${percent}%`;
       this.meterPercentText.textContent = `${percent}%`;
@@ -772,19 +773,19 @@ class LiveDubStudio {
         this.currentChunkMaxRms = rms;
       }
 
-      if (rms < 0.005) {
+      if (rms < 0.003) {
         this.consecutiveQuietBlocks++;
       } else {
         this.consecutiveQuietBlocks = 0;
       }
 
-      // Max duration: 2.0s -> trigger!
-      const maxBlocks = Math.round((2.0 * sampleRate) / 4096);
+      // Max duration: 1.6s -> trigger immediately to Whisper GPU!
+      const maxBlocks = Math.round((1.6 * sampleRate) / 4096);
       if (this.pcmBuffers.length >= maxBlocks) {
         triggerSendClause();
       } 
-      // Early natural pause trigger: after at least 0.9s of audio and 3 quiet blocks (~250ms silence)
-      else if (this.pcmBuffers.length >= Math.round((0.9 * sampleRate) / 4096) && this.consecutiveQuietBlocks >= 3 && this.currentChunkMaxRms >= 0.005) {
+      // Early natural pause trigger: after at least 0.7s of audio and 2 quiet blocks
+      else if (this.pcmBuffers.length >= Math.round((0.7 * sampleRate) / 4096) && this.consecutiveQuietBlocks >= 2 && this.currentChunkMaxRms >= 0.001) {
         triggerSendClause();
       }
     };
@@ -1055,14 +1056,23 @@ class LiveDubStudio {
       this.invideoSubVi.textContent = viText;
     }
 
+    const payload = {
+      type: 'UPDATE_SUBTITLE',
+      sourceText,
+      viText,
+      subMode: this.currentSubMode
+    };
+
     if (this.floatingWindow && !this.floatingWindow.closed) {
-      this.floatingWindow.postMessage({
-        type: 'UPDATE_SUBTITLE',
-        sourceText,
-        viText,
-        subMode: this.currentSubMode
-      }, '*');
+      this.floatingWindow.postMessage(payload, '*');
     }
+
+    try {
+      if (!this.overlayChannel) {
+        this.overlayChannel = new BroadcastChannel('livesub_overlay_channel');
+      }
+      this.overlayChannel.postMessage(payload);
+    } catch (e) {}
   }
 
   applyTransparencyUI() {
@@ -1077,12 +1087,22 @@ class LiveDubStudio {
       if (this.btnToggleBoxTransparent) this.btnToggleBoxTransparent.textContent = 'Bật Trong Suốt';
     }
 
+    const transPayload = {
+      type: 'SET_TRANSPARENCY',
+      mode: this.currentTransparency
+    };
+
     if (this.floatingWindow && !this.floatingWindow.closed) {
-      this.floatingWindow.postMessage({
-        type: 'SET_TRANSPARENCY',
-        mode: this.currentTransparency
-      }, '*');
+      this.floatingWindow.postMessage(transPayload, '*');
     }
+
+    try {
+      if (!this.overlayChannel) {
+        this.overlayChannel = new BroadcastChannel('livesub_overlay_channel');
+      }
+      this.overlayChannel.postMessage(transPayload);
+    } catch (e) {}
+  }
   }
 
   updateSubModeUI() {

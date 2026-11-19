@@ -81,10 +81,10 @@
       body.className = modes[modeIdx];
     });
 
-    window.addEventListener('message', (e) => {
-      if (!e.data) return;
-      if (e.data.type === 'UPDATE_SUBTITLE') {
-        const { sourceText, viText, subMode } = e.data;
+    function handleUpdate(data) {
+      if (!data) return;
+      if (data.type === 'UPDATE_SUBTITLE') {
+        const { sourceText, viText, subMode } = data;
         floatSource.textContent = sourceText || '';
         floatVi.textContent = viText || '';
 
@@ -101,16 +101,25 @@
           floatSource.style.display = sourceText ? 'block' : 'none';
           floatVi.style.display = 'block';
         }
-      } else if (e.data.type === 'SET_TRANSPARENCY') {
-        if (e.data.mode === 'transparent') {
+      } else if (data.type === 'SET_TRANSPARENCY') {
+        if (data.mode === 'transparent') {
           body.className = 'pure-transparent';
-        } else if (e.data.mode === 'glass') {
+        } else if (data.mode === 'glass') {
           body.className = '';
         } else {
           body.className = 'dark-mode';
         }
       }
-    });
+    }
+
+    window.addEventListener('message', (e) => handleUpdate(e.data));
+
+    try {
+      const channel = new BroadcastChannel('livesub_overlay_channel');
+      channel.onmessage = (e) => handleUpdate(e.data);
+    } catch (e) {
+      console.warn('BroadcastChannel error:', e);
+    }
   </script>
 </body>
 </html>
