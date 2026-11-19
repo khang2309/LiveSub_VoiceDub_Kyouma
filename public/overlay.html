@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LiveSub - Cửa Sổ Phụ Đề Nổi</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: rgba(10, 14, 23, 0.88);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      color: #f1f5f9;
+      user-select: none;
+    }
+    body.transparent-mode {
+      background: rgba(0, 0, 0, 0.55);
+    }
+    body.glass-mode {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(8px);
+    }
+    .overlay-container {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      height: 100%;
+      padding: 4px 16px;
+      text-align: center;
+    }
+    .sub-source {
+      font-size: 13px;
+      color: #94a3b8;
+      font-weight: 500;
+      max-width: 95%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 2px;
+      text-shadow: 0 1px 3px #000;
+    }
+    .sub-vi {
+      font-size: 22px;
+      font-weight: 800;
+      color: #facc15;
+      line-height: 1.25;
+      max-width: 95%;
+      -webkit-text-stroke: 1.2px #000;
+      text-shadow: 0 2px 6px #000, 0 0 12px rgba(0, 0, 0, 0.9);
+      letter-spacing: 0.02em;
+    }
+    /* Controls ticker */
+    .top-hint {
+      position: absolute;
+      top: 2px;
+      right: 8px;
+      font-size: 9px;
+      color: #64748b;
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body id="overlayBody">
+  <div class="top-hint">LiveSub Overlay</div>
+  <div class="overlay-container">
+    <div id="floatSource" class="sub-source">Waiting for speech...</div>
+    <div id="floatVi" class="sub-vi">Đang chờ âm thanh hoặc video...</div>
+  </div>
+
+  <script>
+    const floatSource = document.getElementById('floatSource');
+    const floatVi = document.getElementById('floatVi');
+    const body = document.getElementById('overlayBody');
+
+    window.addEventListener('message', (e) => {
+      if (!e.data) return;
+      if (e.data.type === 'UPDATE_SUBTITLE') {
+        const { sourceText, viText, subMode } = e.data;
+        floatSource.textContent = sourceText || '';
+        floatVi.textContent = viText || '';
+
+        if (subMode === 'vi_only') {
+          floatSource.style.display = 'none';
+          floatVi.style.display = 'block';
+        } else if (subMode === 'source_only') {
+          floatSource.style.display = 'block';
+          floatVi.style.display = 'none';
+        } else if (subMode === 'none') {
+          floatSource.style.display = 'none';
+          floatVi.style.display = 'none';
+        } else {
+          floatSource.style.display = 'block';
+          floatVi.style.display = 'block';
+        }
+      } else if (e.data.type === 'SET_TRANSPARENCY') {
+        body.className = '';
+        if (e.data.mode === 'transparent') {
+          body.classList.add('transparent-mode');
+        } else if (e.data.mode === 'glass') {
+          body.classList.add('glass-mode');
+        }
+      }
+    });
+  </script>
+</body>
+</html>

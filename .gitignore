@@ -1,0 +1,29 @@
+# Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Models & Media
+*.mp3
+*.wav
+*.webm
+*.ogg
+models/piper/*.onnx
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,113 @@
+/* LiveSub YouTube Floating Widget */
+#livesub-yt-widget {
+  position: fixed;
+  bottom: 80px;
+  right: 24px;
+  width: 320px;
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  z-index: 9999999;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #f8fafc;
+  padding: 12px 14px;
+  font-size: 13px;
+  transition: all 0.2s ease;
+}
+
+#livesub-yt-widget:hover {
+  border-color: #38bdf8;
+  box-shadow: 0 12px 36px rgba(56, 189, 248, 0.25);
+}
+
+.livesub-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.livesub-dot {
+  width: 8px;
+  height: 8px;
+  background: #22c55e;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 6px;
+  box-shadow: 0 0 8px #22c55e;
+}
+
+.livesub-title {
+  font-weight: 700;
+  font-size: 13px;
+  color: #38bdf8;
+  flex: 1;
+}
+
+.livesub-toggle {
+  background: #334155;
+  color: #94a3b8;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.livesub-toggle.active {
+  background: #38bdf8;
+  color: #0f172a;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+}
+
+.livesub-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.livesub-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.livesub-row label {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.livesub-row select {
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #e2e8f0;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+}
+
+.livesub-row select:focus {
+  border-color: #38bdf8;
+}
+
+.livesub-status {
+  font-size: 11px;
+  color: #facc15;
+  background: rgba(250, 204, 21, 0.1);
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(250, 204, 21, 0.2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 4px;
+}

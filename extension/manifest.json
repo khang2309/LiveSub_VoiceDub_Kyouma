@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "LiveSub - YouTube AI Thuyết Minh & Lồng Tiếng Realtime",
+  "version": "1.0.0",
+  "description": "Thuyết minh lồng tiếng AI đồng bộ từng giây cho YouTube. Dừng là dừng, tua là tua, tự động giảm tiếng gốc chống lẫn giọng!",
+  "icons": {
+    "48": "icon.png",
+    "128": "icon.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["content.js"],
+      "css": ["style.css"],
+      "run_at": "document_end"
+    }
+  ],
+  "permissions": [
+    "storage"
+  ]
+}
