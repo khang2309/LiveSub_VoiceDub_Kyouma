@@ -334,10 +334,12 @@ async def api_transcribe(
     voice: Optional[str] = Form("google-vi")
 ):
     contents = await audio.read()
-    if len(contents) < 600:
+    if len(contents) < 500:
         return {"empty": True, "reason": "audio too small"}
 
-    with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp:
+    # Detect extension from filename or default to .wav
+    ext = ".wav" if (audio.filename and audio.filename.endswith(".wav")) else ".webm"
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
         tmp.write(contents)
         tmp_path = tmp.name
 

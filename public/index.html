@@ -34,12 +34,15 @@
           <span class="status-dot"></span>
           <span id="statusText">Sẵn sàng</span>
         </div>
-        <button id="btnFloatingWindow" class="btn btn-secondary" title="Mở cửa sổ phụ đề nổi trong suốt ở đáy màn hình">
+        <a id="btnBookmarkletLink" href="javascript:(function(){if(window._lsActive){alert('LiveSub đang chạy trên trang này!');return;}window._lsActive=true;let lastT='',curA=null,origVol=null;function showSub(t){let c=document.getElementById('livesub-sub');if(!c){c=document.createElement('div');c.id='livesub-sub';c.style.cssText='position:absolute;bottom:65px;left:0;width:100%;text-align:center;z-index:99999999;pointer-events:none;';(document.querySelector('.html5-video-player')||document.body).appendChild(c);}c.innerHTML='<span style=\x22display:inline-block;background:rgba(0,0,0,0.5);color:#facc15;font-size:26px;font-weight:800;padding:4px 16px;border-radius:8px;-webkit-text-stroke:1.2px #000;text-shadow:0 2px 8px #000;max-width:85%;line-height:1.35;\x22>'+t+'</span>';}const obs=new MutationObserver(()=>{const el=document.querySelector('.ytp-caption-segment')||document.querySelector('.caption-window');if(el){const t=el.textContent.trim();if(t&&t!==lastT){lastT=t;fetch('http://localhost:3000/api/dub-subtitle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,voice:'google-vi'})}).then(r=>r.json()).then(d=>{if(d.translated)showSub(d.translated);if(d.audio_base64){const v=document.querySelector('video');if(v){if(origVol===null)origVol=v.volume;v.volume=Math.min(origVol,0.1);}if(curA)curA.pause();curA=new Audio('data:'+(d.audio_mime||'audio/mpeg')+';base64,'+d.audio_base64);curA.playbackRate=1.15;curA.onended=()=>{const vid=document.querySelector('video');if(vid&&origVol!==null)vid.volume=origVol;};curA.play();}}).catch(console.error);}}});const v=document.querySelector('video');if(v){v.addEventListener('pause',()=>{if(curA)curA.pause();});v.addEventListener('seeking',()=>{if(curA)curA.pause();const c=document.getElementById('livesub-sub');if(c)c.innerHTML='';});}obs.observe(document.querySelector('.ytp-caption-window-container')||document.body,{childList:true,subtree:true,characterData:true});alert('✅ Đã bật LiveSub trong video! Phụ đề hiển thị 100% trong suốt ở đáy video và tự động lồng tiếng!');})();" class="btn btn-secondary" title="Kéo nút này vào thanh Dấu Trang để hiện Sub trong suốt 100% trên YouTube/Web">
+          🔗 Sub Trong Suốt Trên Web (Bookmarklet)
+        </a>
+        <button id="btnFloatingWindow" class="btn btn-secondary" title="Mở thanh phụ đề nổi mỏng ở đáy màn hình">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect width="20" height="12" x="2" y="6" rx="2"/>
             <line x1="6" y1="12" x2="18" y2="12"/>
           </svg>
-          ✨ Cửa Sổ Phụ Đề Nổi (Overlay)
+          ✨ Thanh Phụ Đề Nổi (Overlay)
         </button>
       </div>
     </header>

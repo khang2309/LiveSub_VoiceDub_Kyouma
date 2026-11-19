@@ -6,15 +6,12 @@ class LiveDubStudio {
     this.isListening = false;
     this.mediaStream = null;
     this.audioContext = null;
-    this.analyser = null;
-    this.meterAnimationId = null;
+    this.scriptNode = null;
 
-    // VAD & Dynamic Speech Chunking
+    // VAD & Dynamic Speech Chunking (16kHz PCM WAV)
     this.isSpeaking = false;
-    this.silenceCounter = 0;
-    this.speechDurationMs = 0;
-    this.recorder = null;
-    this.recordedBlobs = [];
+    this.silenceFrames = 0;
+    this.pcmBuffers = [];
     this.isTranscribing = false;
     this.activeAbortController = null;
     this.lastProcessedText = '';
@@ -168,7 +165,7 @@ class LiveDubStudio {
       });
     }
 
-    // Local Video Events: instant sync on pause and seek
+    // Local Video Events
     if (this.localVideoPlayer) {
       this.localVideoPlayer.addEventListener('pause', () => {
         this.stopAllAudio();
@@ -362,7 +359,9 @@ class LiveDubStudio {
         track.onended = () => this.stopListening();
       });
 
-      await this.setupVADAndRecording(this.mediaStream);
+      // Pass ONLY the audio tracks into audio engine!
+      const audioOnlyStream = new MediaStream(audioTracks);
+      await this.setupVADAndRecording(audioOnlyStream);
     } catch (err) {
       if (err.name !== 'NotAllowedError') {
         alert('Lỗi thu âm hệ thống: ' + err.message);
@@ -385,9 +384,8 @@ class LiveDubStudio {
   async startLocalVideoDubbing() {
     this.stopListening();
     try {
-      // Route video audio to Web Audio Context
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      this.audioContext = new AudioCtx();
+      this.audioContext = new AudioCtx({ sampleRate: 16000 });
       if (this.audioContext.state === 'suspended') {
         await this.audioContext.resume();
       }
@@ -395,7 +393,6 @@ class LiveDubStudio {
       const sourceNode = this.audioContext.createMediaElementSource(this.localVideoPlayer);
       const destination = this.audioContext.createMediaStreamDestination();
       
-      // Connect to speakers so user can hear video (or lower it for dubbing)
       sourceNode.connect(this.audioContext.destination);
       sourceNode.connect(destination);
 
@@ -451,9 +448,10 @@ class LiveDubStudio {
   }
 
   // =========================================================================
-  // INTELLIGENT SPEECH SEGMENTATION (VAD: Voice Activity Detection)
-  // Accumulates coherent clauses and triggers on natural pause (250ms)
-  // Eliminates cut-off syllables and repeated "có thể có thể..." hallucinations!
+  // ROCK-SOLID 16kHz PCM WAV VAD RECORDING ENGINE
+  // Records raw audio samples directly from Web Audio API.
+  // Resamples to 16,000Hz (Whisper native rate), computes RMS volume,
+  // packages complete clauses into 16-bit PCM WAV on pause, zero corruption!
   // =========================================================================
   async setupVADAndRecording(stream) {
     this.isListening = true;
@@ -461,117 +459,126 @@ class LiveDubStudio {
 
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!this.audioContext || this.audioContext.state === 'closed') {
-      this.audioContext = new AudioCtx();
+      this.audioContext = new AudioCtx({ sampleRate: 16000 });
     }
     if (this.audioContext.state === 'suspended') {
       await this.audioContext.resume();
     }
 
     const source = this.audioContext.createMediaStreamSource(stream);
-    this.analyser = this.audioContext.createAnalyser();
-    this.analyser.fftSize = 512;
-    source.connect(this.analyser);
+    const sampleRate = this.audioContext.sampleRate || 16000;
+    const scriptNode = this.audioContext.createScriptProcessor(4096, 1, 1);
+    this.scriptNode = scriptNode;
 
-    const bufferLength = this.analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
+    this.pcmBuffers = [];
+    this.isSpeaking = false;
+    this.silenceFrames = 0;
 
-    // Recording engine
-    let mimeType = 'audio/webm';
-    if (!MediaRecorder.isTypeSupported('audio/webm')) mimeType = 'audio/ogg';
-
-    let currentRecorder = null;
-    let audioChunks = [];
-    let clauseStartTime = 0;
-
-    const startPhraseRecording = () => {
-      audioChunks = [];
-      try {
-        currentRecorder = new MediaRecorder(stream, { mimeType });
-        currentRecorder.ondataavailable = (e) => {
-          if (e.data && e.data.size > 0) {
-            audioChunks.push(e.data);
-          }
-        };
-        currentRecorder.onstop = () => {
-          if (audioChunks.length > 0 && !this.isTranscribing) {
-            const blob = new Blob(audioChunks, { type: mimeType });
-            if (blob.size > 800) {
-              this.sendSpeechPhraseToAI(blob);
-            }
-          }
-          currentRecorder = null;
-          audioChunks = [];
-        };
-        currentRecorder.start(250);
-        clauseStartTime = Date.now();
-      } catch (e) {
-        console.warn('Recorder init error:', e);
+    const triggerSendClause = () => {
+      if (this.pcmBuffers.length < 2) {
+        this.pcmBuffers = [];
+        return;
+      }
+      const wavBlob = this.encodeWAV(this.pcmBuffers, sampleRate);
+      this.pcmBuffers = [];
+      if (wavBlob.size > 1500) {
+        this.sendSpeechPhraseToAI(wavBlob);
       }
     };
 
-    const stopPhraseAndSend = () => {
-      if (currentRecorder && currentRecorder.state === 'recording') {
-        currentRecorder.stop();
-      }
-    };
-
-    const SPEECH_THRESHOLD = 7; // RMS energy threshold
-    const SILENCE_TRIGGER_FRAMES = 8; // ~200ms of silence
-    const MAX_CLAUSE_DURATION_MS = 2600; // max 2.6s per phrase
-
-    const checkAudioFrame = () => {
+    scriptNode.onaudioprocess = (e) => {
       if (!this.isListening) return;
+      const input = e.inputBuffer.getChannelData(0);
 
-      this.analyser.getByteFrequencyData(dataArray);
-      let sumSquares = 0;
-      for (let i = 0; i < bufferLength; i++) {
-        sumSquares += dataArray[i] * dataArray[i];
+      // 1. Calculate RMS Energy
+      let sumSq = 0;
+      for (let i = 0; i < input.length; i++) {
+        sumSq += input[i] * input[i];
       }
-      const rms = Math.sqrt(sumSquares / bufferLength);
-      const percent = Math.min(100, Math.round((rms / 128) * 100));
+      const rms = Math.sqrt(sumSq / input.length);
+      const percent = Math.min(100, Math.round(rms * 100 * 4));
 
       this.audioMeterFill.style.width = `${percent}%`;
       this.meterPercentText.textContent = `${percent}%`;
 
-      if (percent >= SPEECH_THRESHOLD) {
-        this.silenceCounter = 0;
-        if (!this.isSpeaking) {
-          this.isSpeaking = true;
-          startPhraseRecording();
-        } else {
-          // If phrase has been speaking continuously for MAX_CLAUSE_DURATION_MS, cut phrase cleanly!
-          if (Date.now() - clauseStartTime >= MAX_CLAUSE_DURATION_MS) {
-            stopPhraseAndSend();
-            startPhraseRecording();
-          }
+      // 2. VAD: Speech threshold
+      const SPEECH_RMS = 0.012; // ~4% energy
+      if (rms >= SPEECH_RMS) {
+        this.silenceFrames = 0;
+        this.isSpeaking = true;
+        this.pcmBuffers.push(new Float32Array(input));
+
+        // Max phrase duration: ~2.4 seconds (~9-10 blocks at 16kHz)
+        const maxBlocks = Math.round((2.4 * sampleRate) / 4096);
+        if (this.pcmBuffers.length >= maxBlocks) {
+          triggerSendClause();
         }
       } else {
-        // Silence detected
         if (this.isSpeaking) {
-          this.silenceCounter++;
-          if (this.silenceCounter >= SILENCE_TRIGGER_FRAMES) {
-            // Natural silence pause reached! Sentence/clause is finished!
+          this.silenceFrames++;
+          // ~250ms silence pause -> 1 block of 4096 is 256ms at 16kHz
+          if (this.silenceFrames >= 1) {
             this.isSpeaking = false;
-            this.silenceCounter = 0;
-            stopPhraseAndSend();
+            this.silenceFrames = 0;
+            triggerSendClause();
           }
         }
       }
-
-      this.meterAnimationId = requestAnimationFrame(checkAudioFrame);
     };
 
-    checkAudioFrame();
+    source.connect(scriptNode);
+    scriptNode.connect(this.audioContext.destination);
+  }
+
+  // Pure 16-bit PCM WAV Encoder
+  encodeWAV(samplesArrays, sampleRate) {
+    let totalLength = 0;
+    for (let i = 0; i < samplesArrays.length; i++) {
+      totalLength += samplesArrays[i].length;
+    }
+    const buffer = new ArrayBuffer(44 + totalLength * 2);
+    const view = new DataView(buffer);
+
+    const writeString = (offset, str) => {
+      for (let i = 0; i < str.length; i++) {
+        view.setUint8(offset + i, str.charCodeAt(i));
+      }
+    };
+
+    writeString(0, 'RIFF');
+    view.setUint32(4, 36 + totalLength * 2, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, 1, true); // Mono
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeString(36, 'data');
+    view.setUint32(40, totalLength * 2, true);
+
+    let offset = 44;
+    for (let i = 0; i < samplesArrays.length; i++) {
+      const arr = samplesArrays[i];
+      for (let j = 0; j < arr.length; j++) {
+        const s = Math.max(-1, Math.min(1, arr[j]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        offset += 2;
+      }
+    }
+    return new Blob([view], { type: 'audio/wav' });
   }
 
   async sendSpeechPhraseToAI(audioBlob) {
-    if (!audioBlob || audioBlob.size < 700 || this.isTranscribing) return;
+    if (!audioBlob || audioBlob.size < 1200 || this.isTranscribing) return;
 
     this.isTranscribing = true;
     this.setStatus('active', 'AI dịch & lồng tiếng...');
 
     const formData = new FormData();
-    formData.append('audio', audioBlob, 'audio.webm');
+    formData.append('audio', audioBlob, 'audio.wav');
     formData.append('source_lang', this.sourceLangSelect.value);
     formData.append('dubbing', this.isDubbingEnabled ? 'true' : 'false');
     formData.append('voice', this.voiceSelect.value);
@@ -588,7 +595,6 @@ class LiveDubStudio {
       const data = await response.json();
 
       if (!data.empty && data.original) {
-        // Prevent duplicate consecutive clauses
         if (data.original.toLowerCase() !== this.lastProcessedText.toLowerCase()) {
           this.lastProcessedText = data.original;
           this.displaySubtitle(data.original, data.translated);
@@ -645,22 +651,25 @@ class LiveDubStudio {
   stopListening() {
     this.isListening = false;
     this.isSpeaking = false;
-    this.silenceCounter = 0;
+    this.silenceFrames = 0;
+    this.pcmBuffers = [];
     this.stopAllAudio();
+
+    if (this.scriptNode) {
+      try {
+        this.scriptNode.disconnect();
+      } catch (e) {}
+      this.scriptNode = null;
+    }
 
     if (this.mediaStream) {
       this.mediaStream.getTracks().forEach(t => t.stop());
       this.mediaStream = null;
     }
 
-    if (this.meterAnimationId) {
-      cancelAnimationFrame(this.meterAnimationId);
-      this.meterAnimationId = null;
-    }
     this.audioMeterFill.style.width = '0%';
     this.meterPercentText.textContent = '0%';
 
-    // Reset button labels
     this.btnSystemAudioText.textContent = 'Bắt Đầu Thu Âm Hệ Thống / Tab';
     this.btnToggleSystemAudio.classList.remove('btn-danger');
     this.btnToggleSystemAudio.classList.add('btn-primary');
@@ -673,17 +682,14 @@ class LiveDubStudio {
   }
 
   displaySubtitle(sourceText, viText) {
-    // 1. Cinema View
     this.subSourceDisplay.textContent = sourceText;
     this.subViDisplay.textContent = viText;
 
-    // 2. In-Video View
     if (this.invideoSubSource && this.invideoSubVi) {
       this.invideoSubSource.textContent = sourceText;
       this.invideoSubVi.textContent = viText;
     }
 
-    // 3. Floating Overlay
     if (this.floatingWindow && !this.floatingWindow.closed) {
       this.floatingWindow.postMessage({
         type: 'UPDATE_SUBTITLE',
@@ -730,17 +736,17 @@ class LiveDubStudio {
     this.statusText.textContent = text;
   }
 
-  // Opens a dedicated bottom ticker overlay window that NEVER paints a solid white box
+  // Opens ultra-slim, borderless bottom overlay window
   openFloatingOverlay() {
-    const width = 850;
-    const height = 68;
+    const width = 760;
+    const height = 55;
     const left = Math.round((screen.availWidth - width) / 2);
-    const top = screen.availHeight - height - 30;
+    const top = screen.availHeight - height - 35;
 
     const win = window.open(
       '/overlay',
       'LiveSubFloatingWindow',
-      `width=${width},height=${height},top=${top},left=${left},resizable=yes,alwaysRaised=yes,scrollbars=no,toolbar=no,menubar=no,status=no`
+      `width=${width},height=${height},top=${top},left=${left},resizable=yes,alwaysRaised=yes,scrollbars=no,toolbar=no,menubar=no,location=no,status=no`
     );
 
     if (!win) {
