@@ -448,10 +448,9 @@ class LiveDubStudio {
   }
 
   // =========================================================================
-  // ROCK-SOLID 16kHz PCM WAV VAD RECORDING ENGINE
-  // Records raw audio samples directly from Web Audio API.
-  // Resamples to 16,000Hz (Whisper native rate), computes RMS volume,
-  // packages complete clauses into 16-bit PCM WAV on pause, zero corruption!
+  // ROCK-SOLID HARDWARE-COMPATIBLE PCM WAV VAD RECORDING ENGINE
+  // Uses default hardware sample rate (48000Hz/44100Hz on Windows) to avoid
+  // any driver conflicts, packages clean 16-bit PCM WAV on pause, zero errors!
   // =========================================================================
   async setupVADAndRecording(stream) {
     this.isListening = true;
@@ -459,14 +458,14 @@ class LiveDubStudio {
 
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!this.audioContext || this.audioContext.state === 'closed') {
-      this.audioContext = new AudioCtx({ sampleRate: 16000 });
+      this.audioContext = new AudioCtx();
     }
     if (this.audioContext.state === 'suspended') {
       await this.audioContext.resume();
     }
 
     const source = this.audioContext.createMediaStreamSource(stream);
-    const sampleRate = this.audioContext.sampleRate || 16000;
+    const sampleRate = this.audioContext.sampleRate || 48000;
     const scriptNode = this.audioContext.createScriptProcessor(4096, 1, 1);
     this.scriptNode = scriptNode;
 
@@ -475,13 +474,15 @@ class LiveDubStudio {
     this.silenceFrames = 0;
 
     const triggerSendClause = () => {
-      if (this.pcmBuffers.length < 2) {
+      // Need at least ~0.35s of speech
+      const minBlocks = Math.max(3, Math.round((0.35 * sampleRate) / 4096));
+      if (this.pcmBuffers.length < minBlocks) {
         this.pcmBuffers = [];
         return;
       }
       const wavBlob = this.encodeWAV(this.pcmBuffers, sampleRate);
       this.pcmBuffers = [];
-      if (wavBlob.size > 1500) {
+      if (wavBlob.size > 2000) {
         this.sendSpeechPhraseToAI(wavBlob);
       }
     };
@@ -496,28 +497,29 @@ class LiveDubStudio {
         sumSq += input[i] * input[i];
       }
       const rms = Math.sqrt(sumSq / input.length);
-      const percent = Math.min(100, Math.round(rms * 100 * 4));
+      const percent = Math.min(100, Math.round(rms * 100 * 5));
 
       this.audioMeterFill.style.width = `${percent}%`;
       this.meterPercentText.textContent = `${percent}%`;
 
-      // 2. VAD: Speech threshold
-      const SPEECH_RMS = 0.012; // ~4% energy
+      // 2. VAD: Speech threshold (>= 3% energy)
+      const SPEECH_RMS = 0.008;
       if (rms >= SPEECH_RMS) {
         this.silenceFrames = 0;
         this.isSpeaking = true;
         this.pcmBuffers.push(new Float32Array(input));
 
-        // Max phrase duration: ~2.4 seconds (~9-10 blocks at 16kHz)
-        const maxBlocks = Math.round((2.4 * sampleRate) / 4096);
+        // Max phrase duration: ~2.5 seconds
+        const maxBlocks = Math.round((2.5 * sampleRate) / 4096);
         if (this.pcmBuffers.length >= maxBlocks) {
           triggerSendClause();
         }
       } else {
         if (this.isSpeaking) {
           this.silenceFrames++;
-          // ~250ms silence pause -> 1 block of 4096 is 256ms at 16kHz
-          if (this.silenceFrames >= 1) {
+          // ~200ms of silence pause
+          const silenceBlockThreshold = Math.max(2, Math.round((0.2 * sampleRate) / 4096));
+          if (this.silenceFrames >= silenceBlockThreshold) {
             this.isSpeaking = false;
             this.silenceFrames = 0;
             triggerSendClause();
