@@ -6,15 +6,18 @@ class LiveDubStudio {
     this.isListening = false;
     this.mediaStream = null;
     this.audioContext = null;
+    this.mediaStreamSource = null; // Stored to prevent V8 GC!
     this.scriptNode = null;
+    this.currentActiveAudioSource = null;
 
-    // VAD & Dynamic Speech Chunking (16kHz PCM WAV)
+    // VAD & Dynamic Speech Chunking (PCM WAV)
     this.isSpeaking = false;
     this.silenceFrames = 0;
     this.pcmBuffers = [];
     this.isTranscribing = false;
     this.activeAbortController = null;
     this.lastProcessedText = '';
+    this.phraseStartTime = 0;
 
     // Subtitle & Voice Settings
     this.currentSubMode = 'bilingual';
@@ -110,6 +113,21 @@ class LiveDubStudio {
 
     // Native audio element for dubbing playback
     this.dubbingAudio = document.getElementById('dubbingAudio');
+
+    // Toast element
+    this.toastEl = document.createElement('div');
+    this.toastEl.className = 'studio-toast';
+    document.body.appendChild(this.toastEl);
+  }
+
+  showToast(msg) {
+    if (!this.toastEl) return;
+    this.toastEl.textContent = msg;
+    this.toastEl.classList.add('show');
+    clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => {
+      this.toastEl.classList.remove('show');
+    }, 2400);
   }
 
   bindEvents() {
@@ -196,22 +214,41 @@ class LiveDubStudio {
       });
     }
 
-    // 6. Voice Audition Button
+    // 6. Voice & Language Change Feedback
+    if (this.voiceSelect) {
+      this.voiceSelect.addEventListener('change', () => {
+        const name = this.voiceSelect.selectedOptions[0].text;
+        this.showToast(`🎙️ Đã chọn giọng: ${name}`);
+      });
+    }
+    if (this.sourceLangSelect) {
+      this.sourceLangSelect.addEventListener('change', () => {
+        const name = this.sourceLangSelect.selectedOptions[0].text;
+        this.showToast(`🌐 Đã chọn ngôn ngữ gốc: ${name}`);
+      });
+    }
+
+    // 7. Voice Audition Button
     if (this.btnTestVoiceSample) {
       this.btnTestVoiceSample.addEventListener('click', () => this.auditionSelectedVoice());
     }
 
-    // 7. Sliders & Radios
+    // 8. Sliders & Radios
     if (this.rateRange) {
       this.rateRange.addEventListener('input', (e) => {
         this.rateValue.textContent = `${parseFloat(e.target.value).toFixed(2)}x`;
+      });
+      this.rateRange.addEventListener('change', () => {
+        this.showToast(`⚡ Tốc độ đọc: ${this.rateRange.value}x`);
       });
     }
     if (this.volumeRange) {
       this.volumeRange.addEventListener('input', (e) => {
         const vol = parseInt(e.target.value, 10);
         this.volumeValue.textContent = `${vol}%`;
-        this.dubbingAudio.volume = vol / 100;
+      });
+      this.volumeRange.addEventListener('change', () => {
+        this.showToast(`🔊 Âm lượng: ${this.volumeRange.value}%`);
       });
     }
 
@@ -238,7 +275,7 @@ class LiveDubStudio {
       });
     }
 
-    // 8. Subtitle Font Sizing
+    // 9. Subtitle Font Sizing
     this.btnSubtitleFontPlus.addEventListener('click', () => {
       this.fontSizePx = Math.min(52, this.fontSizePx + 2);
       document.documentElement.style.setProperty('--sub-font-size', `${this.fontSizePx}px`);
@@ -248,34 +285,27 @@ class LiveDubStudio {
       document.documentElement.style.setProperty('--sub-font-size', `${this.fontSizePx}px`);
     });
 
-    // 9. Panic Kill Switch
+    // 10. Panic Kill Switch
     this.btnPanicKill.addEventListener('click', () => {
       this.stopAllAudio();
       this.subSourceDisplay.textContent = '';
       this.subViDisplay.textContent = 'Đã dừng và làm sạch âm thanh.';
+      this.showToast('🛑 Đã dừng âm thanh khẩn cấp');
     });
 
-    // 10. Floating Window
+    // 11. Floating Window
     this.btnFloatingWindow.addEventListener('click', () => this.openFloatingOverlay());
 
-    // 11. Quick Test Text
+    // 12. Quick Test Text
     this.btnSendTestText.addEventListener('click', () => this.handleTestText());
     this.testTextInput.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') this.handleTestText();
     });
 
-    // 12. History Actions
+    // 13. History Actions
     this.btnExportSRT.addEventListener('click', () => this.exportSRT());
     this.btnExportTXT.addEventListener('click', () => this.exportTXT());
     this.btnClearHistory.addEventListener('click', () => this.clearHistory());
-
-    // Audio Playback Events
-    this.dubbingAudio.addEventListener('ended', () => {
-      this.dubbingIndicator.classList.remove('active');
-    });
-    this.dubbingAudio.addEventListener('error', () => {
-      this.dubbingIndicator.classList.remove('active');
-    });
   }
 
   switchSourceTab(source) {
@@ -303,6 +333,8 @@ class LiveDubStudio {
     const text = sampleTexts[voice] || 'Xin chào, đây là giọng đọc tiếng Việt chất lượng cao.';
 
     this.setStatus('active', 'Đang tải âm thanh giọng mẫu...');
+    this.showToast(`🔊 Đang phát giọng: ${this.voiceSelect.selectedOptions[0].text}`);
+
     try {
       const res = await fetch('/api/tts', {
         method: 'POST',
@@ -310,13 +342,8 @@ class LiveDubStudio {
         body: JSON.stringify({ text, voice })
       });
       if (res.ok) {
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        this.stopAllAudio();
-        this.dubbingAudio.src = url;
-        this.dubbingAudio.playbackRate = parseFloat(this.rateRange.value) || 1.15;
-        this.dubbingAudio.volume = parseInt(this.volumeRange.value, 10) / 100;
-        this.dubbingAudio.play();
+        const arrayBuf = await res.arrayBuffer();
+        await this.playAudioBuffer(arrayBuf);
         this.setStatus('ready', `Đang phát giọng: ${this.voiceSelect.selectedOptions[0].text}`);
       }
     } catch (e) {
@@ -359,9 +386,8 @@ class LiveDubStudio {
         track.onended = () => this.stopListening();
       });
 
-      // Pass ONLY the audio tracks into audio engine!
-      const audioOnlyStream = new MediaStream(audioTracks);
-      await this.setupVADAndRecording(audioOnlyStream);
+      this.showToast('🟢 Đã kết nối âm thanh hệ thống! Hãy phát video để nghe lồng tiếng.');
+      await this.setupVADAndRecording(this.mediaStream);
     } catch (err) {
       if (err.name !== 'NotAllowedError') {
         alert('Lỗi thu âm hệ thống: ' + err.message);
@@ -379,13 +405,16 @@ class LiveDubStudio {
     this.localVideoFileInfo.style.display = 'flex';
     this.localVideoContainer.style.display = 'block';
     this.localVideoContainer.scrollIntoView({ behavior: 'smooth' });
+    this.showToast(`📁 Đã nạp file: ${file.name}`);
   }
 
   async startLocalVideoDubbing() {
     this.stopListening();
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      this.audioContext = new AudioCtx({ sampleRate: 16000 });
+      if (!this.audioContext || this.audioContext.state === 'closed') {
+        this.audioContext = new AudioCtx();
+      }
       if (this.audioContext.state === 'suspended') {
         await this.audioContext.resume();
       }
@@ -399,6 +428,7 @@ class LiveDubStudio {
       await this.setupVADAndRecording(destination.stream);
       this.localVideoPlayer.play();
       this.btnStartLocalDubbing.textContent = 'Đang Thuyết Minh...';
+      this.showToast('🎬 Đang phát video và thuyết minh realtime!');
     } catch (err) {
       console.error('Local dubbing error:', err);
     }
@@ -426,6 +456,7 @@ class LiveDubStudio {
       this.btnToggleMic.classList.remove('btn-primary');
       this.btnToggleMic.classList.add('btn-danger');
 
+      this.showToast('🎤 Đang lắng nghe qua Microphone!');
       await this.setupVADAndRecording(this.mediaStream);
     } catch (err) {
       alert('Không thể mở Microphone: ' + err.message);
@@ -445,12 +476,13 @@ class LiveDubStudio {
     this.webVideoIframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?enablejsapi=1&autoplay=1`;
     this.webVideoContainer.style.display = 'block';
     this.webVideoContainer.scrollIntoView({ behavior: 'smooth' });
+    this.showToast('🎬 Đã mở trình phát video web trong app!');
   }
 
   // =========================================================================
   // ROCK-SOLID HARDWARE-COMPATIBLE PCM WAV VAD RECORDING ENGINE
-  // Uses default hardware sample rate (48000Hz/44100Hz on Windows) to avoid
-  // any driver conflicts, packages clean 16-bit PCM WAV on pause, zero errors!
+  // Stores mediaStreamSource on 'this' to prevent V8 garbage-collection,
+  // packages clean 16-bit PCM WAV on pause or timer (2.2s), zero corruption!
   // =========================================================================
   async setupVADAndRecording(stream) {
     this.isListening = true;
@@ -464,7 +496,12 @@ class LiveDubStudio {
       await this.audioContext.resume();
     }
 
-    const source = this.audioContext.createMediaStreamSource(stream);
+    // Isolate audio tracks
+    const audioTracks = stream.getAudioTracks();
+    const audioStream = audioTracks.length > 0 ? new MediaStream(audioTracks) : stream;
+
+    // STORE ON INSTANCE TO PREVENT V8 GARBAGE COLLECTION!
+    this.mediaStreamSource = this.audioContext.createMediaStreamSource(audioStream);
     const sampleRate = this.audioContext.sampleRate || 48000;
     const scriptNode = this.audioContext.createScriptProcessor(4096, 1, 1);
     this.scriptNode = scriptNode;
@@ -472,17 +509,18 @@ class LiveDubStudio {
     this.pcmBuffers = [];
     this.isSpeaking = false;
     this.silenceFrames = 0;
+    this.phraseStartTime = Date.now();
 
     const triggerSendClause = () => {
-      // Need at least ~0.35s of speech
-      const minBlocks = Math.max(3, Math.round((0.35 * sampleRate) / 4096));
+      const minBlocks = Math.max(3, Math.round((0.3 * sampleRate) / 4096));
       if (this.pcmBuffers.length < minBlocks) {
         this.pcmBuffers = [];
         return;
       }
       const wavBlob = this.encodeWAV(this.pcmBuffers, sampleRate);
       this.pcmBuffers = [];
-      if (wavBlob.size > 2000) {
+      this.phraseStartTime = Date.now();
+      if (wavBlob.size > 1800) {
         this.sendSpeechPhraseToAI(wavBlob);
       }
     };
@@ -502,15 +540,15 @@ class LiveDubStudio {
       this.audioMeterFill.style.width = `${percent}%`;
       this.meterPercentText.textContent = `${percent}%`;
 
-      // 2. VAD: Speech threshold (>= 3% energy)
-      const SPEECH_RMS = 0.008;
+      // 2. VAD: Speech threshold (>= 2% energy)
+      const SPEECH_RMS = 0.006;
       if (rms >= SPEECH_RMS) {
         this.silenceFrames = 0;
         this.isSpeaking = true;
         this.pcmBuffers.push(new Float32Array(input));
 
-        // Max phrase duration: ~2.5 seconds
-        const maxBlocks = Math.round((2.5 * sampleRate) / 4096);
+        // Max phrase duration: ~2.4 seconds -> trigger chunk cleanly!
+        const maxBlocks = Math.round((2.4 * sampleRate) / 4096);
         if (this.pcmBuffers.length >= maxBlocks) {
           triggerSendClause();
         }
@@ -524,11 +562,16 @@ class LiveDubStudio {
             this.silenceFrames = 0;
             triggerSendClause();
           }
+        } else {
+          // Timer fallback: If continuous audio has buffered > 2.2s, trigger anyway!
+          if (this.pcmBuffers.length > 0 && (Date.now() - this.phraseStartTime) >= 2200) {
+            triggerSendClause();
+          }
         }
       }
     };
 
-    source.connect(scriptNode);
+    this.mediaStreamSource.connect(scriptNode);
     scriptNode.connect(this.audioContext.destination);
   }
 
@@ -574,10 +617,10 @@ class LiveDubStudio {
   }
 
   async sendSpeechPhraseToAI(audioBlob) {
-    if (!audioBlob || audioBlob.size < 1200 || this.isTranscribing) return;
+    if (!audioBlob || audioBlob.size < 1500 || this.isTranscribing) return;
 
     this.isTranscribing = true;
-    this.setStatus('active', 'AI dịch & lồng tiếng...');
+    this.setStatus('active', 'AI nhận diện GPU & dịch...');
 
     const formData = new FormData();
     formData.append('audio', audioBlob, 'audio.wav');
@@ -603,8 +646,7 @@ class LiveDubStudio {
           const record = this.addHistory(data.original, data.translated, data.detected_lang || 'auto');
 
           if (this.isDubbingEnabled && data.audio_base64) {
-            const mime = data.audio_mime || 'audio/mpeg';
-            this.playDubbedVoice(data.audio_base64, record.id, mime);
+            await this.playBase64Audio(data.audio_base64, record.id, data.audio_mime || 'audio/mpeg');
           }
         }
       }
@@ -621,21 +663,96 @@ class LiveDubStudio {
     }
   }
 
-  playDubbedVoice(base64Audio, historyId, mime = 'audio/mpeg') {
+  // Unblockable Web Audio API buffer playback
+  async playBase64Audio(base64Audio, historyId, mime = 'audio/mpeg') {
     this.stopAllAudio();
     this.dubbingIndicator.classList.add('active');
 
-    const audioUrl = `data:${mime};base64,` + base64Audio;
-    const item = this.history.find(h => h.id === historyId);
-    if (item) item.audioBlobUrl = audioUrl;
+    try {
+      const binaryString = window.atob(base64Audio);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
 
-    this.dubbingAudio.src = audioUrl;
-    this.dubbingAudio.volume = parseInt(this.volumeRange.value, 10) / 100;
-    this.dubbingAudio.playbackRate = parseFloat(this.rateRange.value) || 1.15;
-    this.dubbingAudio.play().catch(e => console.warn('Audio play error:', e));
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!this.audioContext || this.audioContext.state === 'closed') {
+        this.audioContext = new AudioCtx();
+      }
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
+
+      const audioBuffer = await this.audioContext.decodeAudioData(bytes.buffer.slice(0));
+      const sourceNode = this.audioContext.createBufferSource();
+      sourceNode.buffer = audioBuffer;
+      sourceNode.playbackRate.value = parseFloat(this.rateRange.value) || 1.15;
+
+      const gainNode = this.audioContext.createGain();
+      gainNode.gain.value = (parseInt(this.volumeRange.value, 10) || 100) / 100;
+
+      sourceNode.connect(gainNode);
+      gainNode.connect(this.audioContext.destination);
+
+      this.currentActiveAudioSource = sourceNode;
+      sourceNode.onended = () => {
+        this.dubbingIndicator.classList.remove('active');
+        this.currentActiveAudioSource = null;
+      };
+      sourceNode.start(0);
+
+      const item = this.history.find(h => h.id === historyId);
+      if (item) item.audioBlobUrl = `data:${mime};base64,` + base64Audio;
+    } catch (err) {
+      console.warn('Web Audio API playback fallback to HTML5 Audio:', err);
+      const audioUrl = `data:${mime};base64,` + base64Audio;
+      this.dubbingAudio.src = audioUrl;
+      this.dubbingAudio.volume = parseInt(this.volumeRange.value, 10) / 100;
+      this.dubbingAudio.playbackRate = parseFloat(this.rateRange.value) || 1.15;
+      this.dubbingAudio.play().catch(e => console.warn('HTML5 audio play error:', e));
+    }
+  }
+
+  async playAudioBuffer(arrayBuffer) {
+    this.stopAllAudio();
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!this.audioContext || this.audioContext.state === 'closed') {
+        this.audioContext = new AudioCtx();
+      }
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
+
+      const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer.slice(0));
+      const sourceNode = this.audioContext.createBufferSource();
+      sourceNode.buffer = audioBuffer;
+      sourceNode.playbackRate.value = parseFloat(this.rateRange.value) || 1.15;
+
+      const gainNode = this.audioContext.createGain();
+      gainNode.gain.value = (parseInt(this.volumeRange.value, 10) || 100) / 100;
+
+      sourceNode.connect(gainNode);
+      gainNode.connect(this.audioContext.destination);
+
+      this.currentActiveAudioSource = sourceNode;
+      sourceNode.onended = () => {
+        this.currentActiveAudioSource = null;
+      };
+      sourceNode.start(0);
+    } catch (e) {
+      console.warn('playAudioBuffer error:', e);
+    }
   }
 
   stopAllAudio() {
+    if (this.currentActiveAudioSource) {
+      try {
+        this.currentActiveAudioSource.stop();
+      } catch (e) {}
+      this.currentActiveAudioSource = null;
+    }
     if (this.dubbingAudio) {
       this.dubbingAudio.pause();
       this.dubbingAudio.currentTime = 0;
@@ -662,6 +779,13 @@ class LiveDubStudio {
         this.scriptNode.disconnect();
       } catch (e) {}
       this.scriptNode = null;
+    }
+
+    if (this.mediaStreamSource) {
+      try {
+        this.mediaStreamSource.disconnect();
+      } catch (e) {}
+      this.mediaStreamSource = null;
     }
 
     if (this.mediaStream) {
@@ -785,14 +909,8 @@ class LiveDubStudio {
           body: JSON.stringify({ text: data.translated, voice })
         });
         if (ttsRes.ok) {
-          const blob = await ttsRes.blob();
-          const audioUrl = URL.createObjectURL(blob);
-          record.audioBlobUrl = audioUrl;
-          this.stopAllAudio();
-          this.dubbingAudio.src = audioUrl;
-          this.dubbingAudio.playbackRate = parseFloat(this.rateRange.value) || 1.15;
-          this.dubbingAudio.volume = parseInt(this.volumeRange.value, 10) / 100;
-          this.dubbingAudio.play();
+          const arrayBuf = await ttsRes.arrayBuffer();
+          await this.playAudioBuffer(arrayBuf);
         }
       }
     } catch (e) {
@@ -928,7 +1046,6 @@ class LiveDubStudio {
         case '<': return '&lt;';
         case '>': return '&gt;';
         case '"': return '&quot;';
-        case "'": return '&#039;';
         default: return m;
       }
     });
