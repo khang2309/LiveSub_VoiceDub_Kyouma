@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Studio phụ đề và lồng tiếng tiếng Việt theo thời gian thực cho video, âm thanh hệ thống và microphone.">
   <title>LiveSub & VoiceDub AI - Studio Thuyết Minh & Lồng Tiếng Đa Nguồn</title>
-  <link rel="stylesheet" href="style.css?v=20261119_30">
+  <link rel="stylesheet" href="style.css?v=20261119_31">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com">
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Young+Serif&display=swap" rel="stylesheet">
   <script src="https://www.youtube.com/iframe_api"></script>
 </head>
 <body>
@@ -16,7 +17,7 @@
     <header class="app-header">
       <div class="brand">
         <div class="brand-icon">
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
             <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
             <line x1="12" y1="19" x2="12" y2="22"/>
@@ -36,17 +37,17 @@
           <span id="statusText">Sẵn sàng</span>
         </div>
         <button id="btnTestSpeaker" class="btn btn-secondary" title="Kiểm tra hệ thống âm thanh & loa của trình duyệt">
-          🔊 Thử Loa
+          Thử loa
         </button>
-        <a id="btnBookmarkletLink" href="javascript:(function(){if(window._lsActive){alert('LiveSub đang chạy trên trang này!');return;}window._lsActive=true;let lastT='',curA=null,origVol=null;function showSub(t){let c=document.getElementById('livesub-sub');if(!c){c=document.createElement('div');c.id='livesub-sub';c.style.cssText='position:absolute;bottom:65px;left:0;width:100%;text-align:center;z-index:99999999;pointer-events:none;';(document.querySelector('.html5-video-player')||document.body).appendChild(c);}c.innerHTML='<span style=\x22display:inline-block;background:rgba(0,0,0,0.5);color:#facc15;font-size:26px;font-weight:800;padding:4px 16px;border-radius:8px;-webkit-text-stroke:1.2px #000;text-shadow:0 2px 8px #000;max-width:85%;line-height:1.35;\x22>'+t+'</span>';}const obs=new MutationObserver(()=>{const el=document.querySelector('.ytp-caption-segment')||document.querySelector('.caption-window');if(el){const t=el.textContent.trim();if(t&&t!==lastT){lastT=t;fetch('http://localhost:3000/api/dub-subtitle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,voice:'vi-VN-HoaiMyNeural'})}).then(r=>r.json()).then(d=>{if(d.translated)showSub(d.translated);if(d.audio_base64){const v=document.querySelector('video');if(v){if(origVol===null)origVol=v.volume;v.volume=Math.min(origVol,0.1);}if(curA)curA.pause();curA=new Audio('data:'+(d.audio_mime||'audio/mpeg')+';base64,'+d.audio_base64);curA.playbackRate=1.15;curA.onended=()=>{const vid=document.querySelector('video');if(vid&&origVol!==null)vid.volume=origVol;};curA.play();}}).catch(console.error);}}});const v=document.querySelector('video');if(v){v.addEventListener('pause',()=>{if(curA)curA.pause();});v.addEventListener('seeking',()=>{if(curA)curA.pause();const c=document.getElementById('livesub-sub');if(c)c.innerHTML='';});}obs.observe(document.querySelector('.ytp-caption-window-container')||document.body,{childList:true,subtree:true,characterData:true});alert('✅ Đã bật LiveSub trong video! Phụ đề hiển thị 100% trong suốt ở đáy video và tự động lồng tiếng giọng Hoài My!');})();" class="btn btn-secondary" title="Kéo nút này vào thanh Dấu Trang để hiện Sub trong suốt 100% trên YouTube/Web">
-          🔗 Sub Trong Suốt Trên Web (Bookmarklet)
+        <a id="btnBookmarkletLink" href="javascript:(function(){if(window._lsActive){alert('LiveSub đang chạy trên trang này!');return;}window._lsActive=true;let lastT='',curA=null,origVol=null;function showSub(t){let c=document.getElementById('livesub-sub');if(!c){c=document.createElement('div');c.id='livesub-sub';c.style.cssText='position:absolute;bottom:65px;left:0;width:100%;text-align:center;z-index:99999999;pointer-events:none;';(document.querySelector('.html5-video-player')||document.body).appendChild(c);}c.innerHTML='<span style=\x22display:inline-block;background:rgba(0,0,0,0.5);color:#facc15;font-size:26px;font-weight:800;padding:4px 16px;border-radius:8px;-webkit-text-stroke:1.2px #000;text-shadow:0 2px 8px #000;max-width:85%;line-height:1.35;\x22>'+t+'</span>';}const obs=new MutationObserver(()=>{const el=document.querySelector('.ytp-caption-segment')||document.querySelector('.caption-window');if(el){const t=el.textContent.trim();if(t&&t!==lastT){lastT=t;fetch('http://localhost:3000/api/dub-subtitle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,voice:'vi-VN-HoaiMyNeural'})}).then(r=>r.json()).then(d=>{if(d.translated)showSub(d.translated);if(d.audio_base64){const v=document.querySelector('video');if(v){if(origVol===null)origVol=v.volume;v.volume=Math.min(origVol,0.1);}if(curA)curA.pause();curA=new Audio('data:'+(d.audio_mime||'audio/mpeg')+';base64,'+d.audio_base64);curA.playbackRate=1.15;curA.onended=()=>{const vid=document.querySelector('video');if(vid&&origVol!==null)vid.volume=origVol;};curA.play();}}).catch(console.error);}}});const v=document.querySelector('video');if(v){v.addEventListener('pause',()=>{if(curA)curA.pause();});v.addEventListener('seeking',()=>{if(curA)curA.pause();const c=document.getElementById('livesub-sub');if(c)c.innerHTML='';});}obs.observe(document.querySelector('.ytp-caption-window-container')||document.body,{childList:true,subtree:true,characterData:true});alert(' Đã bật LiveSub trong video! Phụ đề hiển thị 100% trong suốt ở đáy video và tự động lồng tiếng giọng Hoài My!');})();" class="btn btn-link" title="Kéo nút này vào thanh Dấu Trang để hiện Sub trong suốt 100% trên YouTube/Web">
+          Sub trong suốt trên web
         </a>
         <button id="btnFloatingWindow" class="btn btn-secondary" title="Mở thanh phụ đề nổi mỏng ở đáy màn hình">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect width="20" height="12" x="2" y="6" rx="2"/>
             <line x1="6" y1="12" x2="18" y2="12"/>
           </svg>
-          ✨ Thanh Phụ Đề Nổi (Overlay)
+          Thanh phụ đề nổi
         </button>
       </div>
     </header>
@@ -54,7 +55,7 @@
     <!-- UNIVERSAL INPUT SOURCE SELECTOR (Tất cả nguồn phát video & âm thanh) -->
     <nav class="source-nav-bar">
       <button class="source-tab active" id="tabSourceSystem" data-source="system">
-        <div class="tab-icon">💻</div>
+        <div class="tab-icon"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></div>
         <div class="tab-info">
           <strong>Âm Thanh Hệ Thống / Mọi Ứng Dụng</strong>
           <span>VLC, Netflix, Zoom, Tab Trình duyệt, Game, Phim</span>
@@ -62,7 +63,7 @@
       </button>
 
       <button class="source-tab" id="tabSourceLocalFile" data-source="local">
-        <div class="tab-icon">📁</div>
+        <div class="tab-icon"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h7l2 2h9v10H3z"/></svg></div>
         <div class="tab-info">
           <strong>File Video / Phim Trên Máy Tính</strong>
           <span>Mở file .mp4, .mkv, .webm - Lồng tiếng & Sub trong suốt</span>
@@ -70,7 +71,7 @@
       </button>
 
       <button class="source-tab" id="tabSourceMic" data-source="mic">
-        <div class="tab-icon">🎤</div>
+        <div class="tab-icon"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></div>
         <div class="tab-info">
           <strong>Microphone Thu Âm</strong>
           <span>Giọng nói trực tiếp, hội thảo ngoài đời</span>
@@ -78,7 +79,7 @@
       </button>
 
       <button class="source-tab" id="tabSourceWebUrl" data-source="weburl">
-        <div class="tab-icon">🌐</div>
+        <div class="tab-icon"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg></div>
         <div class="tab-info">
           <strong>Link Video Web</strong>
           <span>Dán link xem trực tiếp trong Studio</span>
@@ -100,7 +101,7 @@
 
           <div class="stream-action-group">
             <button id="btnToggleSystemAudio" class="btn btn-primary btn-large w-full">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect width="20" height="15" x="2" y="3" rx="2"/>
                 <line x1="8" y1="21" x2="16" y2="21"/>
                 <line x1="12" y1="17" x2="12" y2="21"/>
@@ -109,7 +110,7 @@
             </button>
           </div>
           <p class="source-guide-text">
-            💡 <em>Lưu ý:</em> Khi hộp thoại trình duyệt hiện ra, chọn <strong>Toàn bộ màn hình</strong> hoặc <strong>Tab</strong> và nhớ <strong>tích chọn "Chia sẻ âm thanh"</strong>.
+             <em>Lưu ý:</em> Khi hộp thoại trình duyệt hiện ra, chọn <strong>Toàn bộ màn hình</strong> hoặc <strong>Tab</strong> và nhớ <strong>tích chọn “Chia sẻ âm thanh”</strong>.
           </p>
         </div>
 
@@ -121,7 +122,7 @@
           </div>
 
           <div class="drop-zone" id="localVideoDropZone">
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="drop-icon">
+            <svg aria-hidden="true" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="drop-icon">
               <polygon points="23 7 16 12 23 17 23 7"/>
               <rect width="14" height="14" x="1" y="5" rx="2" ry="2"/>
             </svg>
@@ -145,7 +146,7 @@
           </div>
 
           <button id="btnToggleMic" class="btn btn-primary btn-large w-full">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
               <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
               <line x1="12" y1="19" x2="12" y2="22"/>
@@ -161,19 +162,48 @@
             <span class="block-hint">YouTube, Vimeo, Web Video</span>
           </div>
 
-          <div class="input-with-button">
-            <input type="text" id="webUrlInput" class="form-control" placeholder="Dán link YouTube (VD: https://www.youtube.com/watch?v=...)">
-            <button id="btnLoadWebUrl" class="btn btn-primary">Mở Video</button>
+          <div class="source-intelligence" aria-labelledby="sourceIntelligenceTitle">
+            <div class="source-intelligence-heading">
+              <strong id="sourceIntelligenceTitle">Nguồn lời thoại của video</strong>
+              <span id="sourceIntelligenceState" class="source-state" data-state="ready">Sẵn sàng</span>
+            </div>
+            <div class="source-intelligence-grid">
+              <fieldset id="webCaptionMode" class="choice-group">
+                <legend>Nguồn lời thoại</legend>
+                <label class="choice-option"><input type="radio" name="webCaptionMode" value="auto"><span><strong>Tự nhận diện</strong><small>Ưu tiên phụ đề, thiếu thì hướng dẫn dùng Whisper</small></span></label>
+                <label class="choice-option"><input type="radio" name="webCaptionMode" value="has_captions" checked><span><strong>Có phụ đề / CC</strong><small>Dùng đúng track phụ đề của video</small></span></label>
+                <label class="choice-option"><input type="radio" name="webCaptionMode" value="audio_only"><span><strong>Chỉ có tiếng</strong><small>Nghe trực tiếp bằng Whisper</small></span></label>
+              </fieldset>
+              <fieldset id="webCaptionLanguage" class="choice-group">
+                <legend>Ngôn ngữ phụ đề có sẵn</legend>
+                <label class="choice-option"><input type="radio" name="webCaptionLanguage" value="auto"><span><strong>Tự động</strong><small>Chọn track phù hợp nhất</small></span></label>
+                <label class="choice-option"><input type="radio" name="webCaptionLanguage" value="original" checked><span><strong>Tiếng gốc</strong><small>Ưu tiên CC thủ công của video</small></span></label>
+                <label class="choice-option"><input type="radio" name="webCaptionLanguage" value="en"><span><strong>Tiếng Anh</strong><small>Chỉ nhận track English</small></span></label>
+                <label class="choice-option"><input type="radio" name="webCaptionLanguage" value="vi"><span><strong>Tiếng Việt</strong><small>Chỉ nhận track Việt</small></span></label>
+              </fieldset>
+            </div>
+            <p id="sourceIntelligenceHint" class="source-intelligence-hint">
+              Hệ thống sẽ ưu tiên CC gốc để đồng bộ chính xác; nếu không có, bạn có thể chuyển sang Whisper.
+            </p>
           </div>
 
+          <form id="webVideoForm" class="web-url-form">
+            <label for="webUrlInput">Link video YouTube</label>
+            <div class="input-with-button">
+              <input type="url" id="webUrlInput" name="videoUrl" class="form-control" placeholder="https://www.youtube.com/watch?v=..." inputmode="url" autocomplete="url" autocapitalize="none" autocorrect="off" spellcheck="false" aria-describedby="webUrlHint">
+              <button type="submit" id="btnLoadWebUrl" class="btn btn-primary">Mở video</button>
+            </div>
+            <p id="webUrlHint" class="field-hint">Dán link rồi chọn đúng nguồn lời thoại và ngôn ngữ phụ đề ở trên.</p>
+          </form>
+
           <div class="quick-links-hint">
-            <span>💡 Video mẫu:</span>
+            <span> Video mẫu:</span>
             <button class="btn-sample-link" data-url="https://www.youtube.com/watch?v=q6fgVVmdpgY">MrBeast ($250k)</button>
             <button class="btn-sample-link" data-url="https://www.youtube.com/watch?v=UF8uR6Z6KLc">Steve Jobs</button>
           </div>
           <p class="source-desc-hint">
-            ⚡ <strong>Video YouTube có phụ đề (CC):</strong> Đồng bộ 100% khớp từng mili-giây, tua dừng tức thì, lồng tiếng Hoài My!<br>
-            🎙️ <strong>Video không có phụ đề (Livestream):</strong> Nhấn nút <em>"Bắt Âm Thanh Tab"</em> để Whisper GPU dịch trực tiếp.
+             <strong>Video YouTube có phụ đề (CC):</strong> Đồng bộ 100% khớp từng mili-giây, tua dừng tức thì, lồng tiếng Hoài My!<br>
+             <strong>Video không có phụ đề (Livestream):</strong> Nhấn nút <em>“Bắt Âm Thanh Tab”</em> để Whisper GPU dịch trực tiếp.
           </p>
         </div>
 
@@ -197,7 +227,7 @@
             <div class="form-group">
               <label for="sourceLang">Nói / Gốc:</label>
               <select id="sourceLang" class="form-control">
-                <option value="auto" selected>✨ Tự động nhận diện</option>
+                <option value="auto" selected> Tự động nhận diện</option>
                 <option value="en-US">Tiếng Anh (English)</option>
                 <option value="zh-CN">Tiếng Trung (Chinese)</option>
                 <option value="ja-JP">Tiếng Nhật (Japanese)</option>
@@ -224,21 +254,21 @@
           <div class="voice-header-row">
             <label class="group-title" for="voiceSelect">Giọng Đọc Thuyết Minh Thật</label>
             <button id="btnTestVoiceSample" class="btn-audition" title="Bấm để nghe thử ngay giọng này phát âm">
-              🔊 Nghe thử giọng
+               Nghe thử giọng
             </button>
           </div>
           <select id="voiceSelect" class="form-control select-highlight">
-            <option value="vieneu:Trúc Ly" selected>🌟 VieNeu-TTS: Trúc Ly (Nữ · Bắc · Tự nhiên, truyền cảm)</option>
-            <option value="vieneu:Thiện Minh">🌟 VieNeu-TTS: Thiện Minh (Nam · Bắc · Kể chuyện, phim ảnh)</option>
-            <option value="vieneu:Thùy Dung">🌟 VieNeu-TTS: Thùy Dung (Nữ · Nam · Tin tức, phát thanh)</option>
-            <option value="vieneu:Thái Sơn">🌟 VieNeu-TTS: Thái Sơn (Nam · Nam · Kể chuyện)</option>
-            <option value="vieneu:Quang Sơn">🌟 VieNeu-TTS: Quang Sơn (Nam · Trung · Tự nhiên)</option>
-            <option value="vieneu:Mai Anh">🌟 VieNeu-TTS: Mai Anh (Nữ · Bắc · Tin tức)</option>
-            <option value="vieneu:Adam bựa">🌟 VieNeu-TTS: Adam (Nam · Bắc · Hài hước, tự nhiên)</option>
-            <option value="vi-VN-HoaiMyNeural">🎙️ Hoài My (Microsoft AI - Nữ nhẹ nhàng, truyền cảm)</option>
-            <option value="vi-VN-NamMinhNeural">🎙️ Nam Minh (Microsoft AI - Nam trầm ấm, phát thanh viên)</option>
-            <option value="google-vi">⚡ Google Voice Tiếng Việt (0.15s siêu tốc)</option>
-            <option value="piper-vi">🔒 Piper Neural (Chạy Offline 100% trên máy)</option>
+            <option value="vieneu:Trúc Ly" selected> VieNeu-TTS: Trúc Ly (Nữ, Bắc, Tự nhiên, truyền cảm)</option>
+            <option value="vieneu:Thiện Minh"> VieNeu-TTS: Thiện Minh (Nam, Bắc, Kể chuyện, phim ảnh)</option>
+            <option value="vieneu:Thùy Dung"> VieNeu-TTS: Thùy Dung (Nữ, Nam, Tin tức, phát thanh)</option>
+            <option value="vieneu:Thái Sơn"> VieNeu-TTS: Thái Sơn (Nam, Nam, Kể chuyện)</option>
+            <option value="vieneu:Quang Sơn"> VieNeu-TTS: Quang Sơn (Nam, Trung, Tự nhiên)</option>
+            <option value="vieneu:Mai Anh"> VieNeu-TTS: Mai Anh (Nữ, Bắc, Tin tức)</option>
+            <option value="vieneu:Adam bựa"> VieNeu-TTS: Adam (Nam, Bắc, Hài hước, tự nhiên)</option>
+            <option value="vi-VN-HoaiMyNeural"> Hoài My (Microsoft AI - Nữ nhẹ nhàng, truyền cảm)</option>
+            <option value="vi-VN-NamMinhNeural"> Nam Minh (Microsoft AI - Nam trầm ấm, phát thanh viên)</option>
+            <option value="google-vi"> Google Voice Tiếng Việt (0.15s siêu tốc)</option>
+            <option value="piper-vi"> Piper Neural (Chạy Offline 100% trên máy)</option>
           </select>
         </div>
 
@@ -320,7 +350,7 @@
         <div id="localVideoContainer" class="local-video-wrapper" style="display: none;">
           <div class="video-top-bar">
             <span id="videoTitleDisplay">Video Máy Tính</span>
-            <button id="btnCloseLocalVideo" class="btn-icon" title="Đóng video">✕</button>
+            <button id="btnCloseLocalVideo" class="btn-icon" title="Đóng video"></button>
           </div>
           <div class="video-element-container">
             <video id="localVideoPlayer" controls playsinline></video>
@@ -342,10 +372,10 @@
             <div class="video-top-actions">
               <button id="btnMasterDubToggle" class="btn-master-dub-toggle active" title="Bấm để Bật hoặc Tắt Lồng Tiếng Hoài My">
                 <span class="toggle-indicator-dot"></span>
-                <span id="btnMasterDubText">🟢 ĐÃ BẬT LỒNG TIẾNG (Hoài My)</span>
+                <span id="btnMasterDubText"> ĐÃ BẬT LỒNG TIẾNG (Hoài My)</span>
               </button>
-              <button id="btnWebLiveCapture" class="btn btn-secondary btn-sm" title="Bắt âm thanh tab trực tiếp nếu video livestream không có phụ đề sẵn">🎙️ Bắt Âm Thanh Tab</button>
-              <button id="btnCloseWebVideo" class="btn-icon" title="Đóng video">✕</button>
+              <button id="btnWebLiveCapture" class="btn btn-secondary btn-sm" title="Bắt âm thanh tab trực tiếp nếu video livestream không có phụ đề sẵn"> Bắt Âm Thanh Tab</button>
+              <button id="btnCloseWebVideo" class="btn-icon" title="Đóng video"></button>
             </div>
           </div>
           <div class="iframe-element-container" style="position: relative;">
@@ -369,7 +399,7 @@
             <div class="cinema-controls">
               <button id="btnCinemaMasterDubToggle" class="btn-master-dub-toggle active" title="Bật hoặc Tắt Lồng Tiếng Hoài My">
                 <span class="toggle-indicator-dot"></span>
-                <span id="btnCinemaMasterDubText">🟢 ĐÃ BẬT LỒNG TIẾNG (Hoài My)</span>
+                <span id="btnCinemaMasterDubText"> ĐÃ BẬT LỒNG TIẾNG (Hoài My)</span>
               </button>
               <button id="btnToggleBoxTransparent" class="btn-icon-label" title="Bật/Tắt chế độ nền trong suốt">
                 Tắt Trong Suốt
@@ -377,7 +407,7 @@
               <button id="btnSubtitleFontMinus" class="btn-icon" title="Giảm cỡ chữ">A-</button>
               <button id="btnSubtitleFontPlus" class="btn-icon" title="Tăng cỡ chữ">A+</button>
               <button id="btnPanicKill" class="btn-danger-pill" title="Dừng âm thanh ngay lập tức">
-                🛑 Dừng Âm Thanh
+                 Dừng Âm Thanh
               </button>
             </div>
           </div>
@@ -385,10 +415,10 @@
           <div class="subtitle-viewport" id="subtitleViewport">
             <div class="subtitle-container" id="subtitleContainer">
               <div class="sub-line sub-source" id="subSourceDisplay">
-                Waiting for audio or video speech...
+                Waiting for audio or video speech…
               </div>
               <div class="sub-line sub-vi" id="subViDisplay">
-                Đang chờ phụ đề hoặc âm thanh video...
+                Đang chờ phụ đề hoặc âm thanh video…
               </div>
             </div>
 
@@ -396,7 +426,7 @@
               <div class="waveform">
                 <span></span><span></span><span></span><span></span><span></span>
               </div>
-              <span id="dubbingStatusText">AI đang thuyết minh...</span>
+              <span id="dubbingStatusText">AI đang thuyết minh…</span>
             </div>
           </div>
         </div>
@@ -405,7 +435,7 @@
         <div class="history-box">
           <div class="history-header">
             <div class="history-title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M3 3v5h5"/>
                 <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/>
                 <path d="M12 7v5l4 2"/>
@@ -437,6 +467,6 @@
     <audio id="dubbingAudio" preload="auto"></audio>
   </div>
 
-  <script src="app.js?v=20261119_30"></script>
+  <script src="app.js?v=20261119_35"></script>
 </body>
 </html>

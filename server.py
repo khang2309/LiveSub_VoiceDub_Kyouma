@@ -9,14 +9,37 @@ import tempfile
 import urllib.request
 import urllib.parse
 import asyncio
+import time
 from typing import Optional
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import Response, FileResponse
+from fastapi.responses import Response, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel
 import edge_tts
+# Load optional .env file if present (e.g. AZURE_TRANSLATOR_KEY)
+env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+if os.path.exists(env_path):
+    try:
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    k, v = k.strip(), v.strip().strip("\"'")
+                    if k and k not in os.environ:
+                        os.environ[k] = v
+    except Exception as e:
+        print(f"Notice: Failed to load .env: {e}")
+
+from livesub_core import (
+    TranslationService,
+    merge_caption_segments,
+    select_caption_track,
+    should_translate_to_vietnamese,
+)
+from local_translation import LocalEnViTranslator
 
 # 0. Setup NVIDIA CUDA DLLs for RTX 3050 GPU Acceleration
 site_packages = os.path.join(sys.prefix, "Lib", "site-packages")
@@ -58,10 +81,12 @@ app.add_middleware(NoCacheMiddleware)
 print("⏳ Khởi tạo mô hình Faster-Whisper...")
 try:
     whisper_model = WhisperModel("base", device="cuda", compute_type="float16")
+    whisper_runtime = {"provider": "faster-whisper", "model": "base", "device": "cuda", "compute_type": "float16"}
     print("🚀 ĐÃ KÍCH HOẠT GPU NVIDIA RTX 3050 (CUDA float16) - Tốc độ siêu tốc ~0.3s!")
 except Exception as ge:
     print(f"Chuyển sang CPU do lỗi CUDA: {ge}")
     whisper_model = WhisperModel("base", device="cpu", compute_type="int8", cpu_threads=8)
+    whisper_runtime = {"provider": "faster-whisper", "model": "base", "device": "cpu", "compute_type": "int8"}
     print("✅ Đã sẵn sàng trên CPU (int8, 8 luồng)!")
 
 # 2. Load Piper Local Neural Model (offline option with auto-download if missing)
@@ -97,6 +122,13 @@ if os.path.exists(piper_model_path) and os.path.exists(piper_json_path):
 
 # 3. Load VieNeu-TTS v3 Turbo Engine (pnnbao97/VieNeu-TTS)
 _vieneu_engine = None
+_vieneu_warm_task = None
+_vieneu_warm_state = {
+    "status": "idle",
+    "backend": None,
+    "device": None,
+    "error": None,
+}
 
 def get_vieneu_engine():
     global _vieneu_engine
@@ -104,16 +136,94 @@ def get_vieneu_engine():
         try:
             from vieneu import Vieneu
             print("🚀 Đang nạp mô hình VieNeu-TTS v3 Turbo (pnnbao97)...")
-            _vieneu_engine = Vieneu()
+            # Four stream slots are enough for one browser and consume less of
+            # the RTX 3050's 4 GB VRAM than the library default of sixteen.
+            _vieneu_engine = Vieneu(
+                device="cuda",
+                backend="pytorch",
+                max_streams=4,
+                max_batch_size=8,
+            )
             print("✅ VieNeu-TTS Engine (48kHz) đã sẵn sàng!")
         except Exception as e:
             print(f"⚠️ Lỗi khởi tạo VieNeu-TTS: {e}")
             _vieneu_engine = False
     return _vieneu_engine if _vieneu_engine is not False else None
 
+
+async def warm_vieneu_engine():
+    """Load VieNeu and capture its first CUDA graph without blocking the page."""
+    if _vieneu_warm_state["status"] in {"warming", "ready"}:
+        return
+    _vieneu_warm_state.update(status="warming", error=None)
+    try:
+        engine = await asyncio.to_thread(get_vieneu_engine)
+        if engine is None:
+            raise RuntimeError("VieNeu engine could not be initialized")
+        _vieneu_warm_state["backend"] = getattr(engine, "backend", None)
+        inner_engine = getattr(engine, "engine", None)
+        _vieneu_warm_state["device"] = str(getattr(inner_engine, "device", None))
+        def warm_streaming_path():
+            # Consume the generator so the exact CUDA streaming graph used by
+            # the browser is captured before the first real sentence.
+            for _ in engine.infer_stream(
+                "Xin chào, hệ thống lồng tiếng đã sẵn sàng.",
+                voice="Thái Sơn",
+                apply_watermark=False,
+                max_chars=128,
+            ):
+                pass
+
+        await asyncio.to_thread(warm_streaming_path)
+        _vieneu_warm_state["status"] = "ready"
+        print(
+            "VieNeu warm-up ready "
+            f"(backend={_vieneu_warm_state['backend']}, device={_vieneu_warm_state['device']})"
+        )
+    except Exception as error:
+        _vieneu_warm_state.update(status="error", error=str(error))
+        print(f"VieNeu warm-up failed: {error}")
+
+
+def schedule_vieneu_warmup():
+    global _vieneu_warm_task
+    if _vieneu_warm_state["status"] in {"warming", "ready"}:
+        return
+    if _vieneu_warm_task is None or _vieneu_warm_task.done():
+        _vieneu_warm_task = asyncio.create_task(warm_vieneu_engine())
+
 # In-memory translation & audio cache
 translation_cache = {}
 audio_cache = {}
+translation_service = TranslationService(cache=translation_cache)
+local_translation = LocalEnViTranslator(
+    os.path.join(
+        os.path.dirname(__file__),
+        "models",
+        "vinai-translate-en2vi-v2-int8",
+    )
+)
+_translation_warm_task = None
+_stream_metrics = {
+    "requests": 0,
+    "last_first_chunk_ms": None,
+    "last_total_ms": None,
+    "last_error": None,
+}
+
+
+async def warm_local_translation():
+    if local_translation.status in {"loading", "ready"}:
+        return
+    await asyncio.to_thread(local_translation.load)
+
+
+def schedule_translation_warmup():
+    global _translation_warm_task
+    if local_translation.status in {"loading", "ready", "missing"}:
+        return
+    if _translation_warm_task is None or _translation_warm_task.done():
+        _translation_warm_task = asyncio.create_task(warm_local_translation())
 
 # Anti-Hallucination & Repetition Interceptor
 def is_hallucination_or_loop(text: str) -> bool:
@@ -149,7 +259,8 @@ def clean_speech_text(text: str) -> str:
         return ""
     # Strip sound tags
     cleaned = re.sub(r'\[.*?\]|\(.*?\)|♪+|♫+', '', text)
-    cleaned = re.sub(r'[^\w\s\.,\?!\'\"À-ỹà-ỹ]', ' ', cleaned)
+    # Keep currency/percent symbols until they have been expanded.
+    cleaned = re.sub(r'[^\w\s\.,\?!\'\"$₫%À-ỹà-ỹ，。！？；：“”‘’（）\-]', ' ', cleaned)
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
 
     # Deduplicate consecutive repeated words
@@ -168,39 +279,73 @@ def clean_speech_text(text: str) -> str:
     cleaned = re.sub(r'(\d+)\.000\.000', r'\1 triệu', cleaned)
     cleaned = re.sub(r'(\d+)\.000', r'\1 nghìn', cleaned)
     cleaned = re.sub(r'(\d+)\.(\d+)', r'\1 \2', cleaned)
-    cleaned = cleaned.replace('$', ' đô la ')
-    cleaned = cleaned.replace('₫', ' đồng ')
+    cleaned = re.sub(r'\$(\s*)([\d,.]+)', r'\2 dollars', cleaned)
+    cleaned = re.sub(r'([\d,.]+)(\s*)₫', r'\1 đồng', cleaned)
 
     return re.sub(r'\s+', ' ', cleaned).strip()
 
-def fast_translate_to_vi(text: str) -> str:
+def fast_translate_to_vi(
+    text: str,
+    source_lang: str = "auto",
+    target_lang: str = "vi",
+    previous_context: str = ""
+) -> str:
     cleaned = clean_speech_text(text)
     if not cleaned or len(cleaned) < 2:
         return ""
-
-    # If text already contains Vietnamese accents, return directly to save latency
-    if re.search(r'[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]', cleaned, re.IGNORECASE):
+    source = (source_lang or "auto").split("-")[0].lower()
+    target = (target_lang or "vi").split("-")[0].lower()
+    if source == target or target != "vi":
         return cleaned
 
-    cache_key = cleaned.lower()
-    if cache_key in translation_cache:
-        return translation_cache[cache_key]
+    # The local specialist is both faster and deterministic for English. With
+    # auto language, only choose it for plain Latin text without Vietnamese
+    # diacritics; other languages retain the multilingual network fallback.
+    vietnamese_marks = re.search(r"[ăâđêôơưĂÂĐÊÔƠƯáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]", cleaned)
+    likely_english = source == "en" or (
+        source == "auto"
+        and not vietnamese_marks
+        and len(re.findall(r"[A-Za-z]+", cleaned)) >= 2
+    )
+    if likely_english and local_translation.available:
+        cache_key = ("local-en", "vi", "", cleaned.casefold(), "vinai-v2")
+        if cache_key in translation_cache:
+            return translation_cache[cache_key]
+        try:
+            translated = local_translation.translate(cleaned)
+            if translated:
+                translation_cache[cache_key] = translated
+                return translated
+        except Exception as error:
+            print(f"Local VinAI translation failed, using fallback: {error}")
 
     try:
-        url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=vi&dt=t&q=' + urllib.parse.quote(cleaned)
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-        with urllib.request.urlopen(req, timeout=2.0) as r:
-            data = json.loads(r.read().decode('utf-8'))
-            trans = ''.join([part[0] for part in data[0] if part and part[0]]).strip()
-            if trans:
-                translation_cache[cache_key] = trans
-                return trans
+        return translation_service.translate(
+            cleaned,
+            source_lang=source,
+            target_lang=target,
+            previous_context=previous_context,
+        )
     except Exception as e:
         print(f"Fast translate error: {e}")
-
     return cleaned
 
-    return cleaned
+
+def translate_many_to_vi(texts: list[str], source_lang: str = "auto") -> list[str]:
+    cleaned = [clean_speech_text(text) for text in texts]
+    source = (source_lang or "auto").split("-")[0].lower()
+    if source == "vi":
+        return cleaned
+    if source == "en" and local_translation.available:
+        try:
+            return local_translation.translate_many(cleaned)
+        except Exception as error:
+            print(f"Local VinAI batch translation failed, using fallback: {error}")
+    return translation_service.translate_many(
+        cleaned,
+        source_lang=source,
+        target_lang="vi",
+    )
 
 # Google Voice Vietnamese (0.15s Latency, 100% Reliable Natural Voice)
 def synthesize_google_vi(text: str) -> bytes:
@@ -258,25 +403,27 @@ def generate_vieneu_wav(text: str, voice_name: str = "Trúc Ly") -> bytes:
         audio_arr = engine.infer(text, voice=voice_name)
         if audio_arr is None or len(audio_arr) == 0:
             return b""
-        import numpy as np
-        if isinstance(audio_arr, np.ndarray):
-            if audio_arr.dtype in [np.float32, np.float64]:
-                pcm = (np.clip(audio_arr, -1.0, 1.0) * 32767).astype(np.int16)
-            else:
-                pcm = audio_arr.astype(np.int16)
-        else:
-            pcm = np.array(audio_arr, dtype=np.int16)
-
-        buf = io.BytesIO()
-        with wave.open(buf, 'wb') as wav:
-            wav.setnchannels(1)
-            wav.setsampwidth(2)
-            wav.setframerate(48000)
-            wav.writeframes(pcm.tobytes())
-        return buf.getvalue()
+        return audio_array_to_wav(audio_arr)
     except Exception as e:
         print(f"VieNeu-TTS ({voice_name}) error: {e}")
         return b""
+
+
+def audio_array_to_wav(audio_arr) -> bytes:
+    import numpy as np
+
+    array = np.asarray(audio_arr)
+    if np.issubdtype(array.dtype, np.floating):
+        pcm = (np.clip(array, -1.0, 1.0) * 32767).astype("<i2")
+    else:
+        pcm = array.astype("<i2")
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(48000)
+        wav_file.writeframes(pcm.tobytes())
+    return buf.getvalue()
 
 async def generate_tts_bytes(text: str, voice: str = "vieneu:Trúc Ly") -> tuple[bytes, str]:
     cleaned = clean_speech_text(text)
@@ -328,9 +475,34 @@ async def generate_tts_bytes(text: str, voice: str = "vieneu:Trúc Ly") -> tuple
 
     return b"", "audio/mpeg"
 
+
+def generate_vieneu_pcm_chunks(text: str, voice_name: str):
+    """Yield headerless mono PCM16 chunks at 48 kHz as VieNeu generates them."""
+    import numpy as np
+
+    engine = get_vieneu_engine()
+    if not engine:
+        raise RuntimeError("VieNeu engine is unavailable")
+    for audio_arr in engine.infer_stream(
+        text,
+        voice=voice_name,
+        apply_watermark=False,
+        max_chars=192,
+    ):
+        if audio_arr is None or len(audio_arr) == 0:
+            continue
+        array = np.asarray(audio_arr)
+        if np.issubdtype(array.dtype, np.floating):
+            pcm = (np.clip(array, -1.0, 1.0) * 32767).astype("<i2")
+        else:
+            pcm = array.astype("<i2")
+        yield pcm.tobytes()
+
 class SubtitleDubRequest(BaseModel):
     text: str
     voice: Optional[str] = "google-vi"
+    source_lang: Optional[str] = "auto"
+    previous_context: Optional[str] = ""
 
 # Direct Subtitle-to-Voiceover Endpoint (Latency < 0.2s)
 @app.post("/api/dub-subtitle")
@@ -341,7 +513,12 @@ async def api_dub_subtitle(req: SubtitleDubRequest):
     if is_hallucination_or_loop(req.text):
         return {"empty": True}
 
-    translated = fast_translate_to_vi(req.text)
+    if should_translate_to_vietnamese(req.source_lang):
+        translated = fast_translate_to_vi(
+            req.text, req.source_lang or "auto", "vi", req.previous_context or ""
+        )
+    else:
+        translated = clean_speech_text(req.text)
     if not translated:
         translated = req.text
 
@@ -361,16 +538,27 @@ class TranslateRequest(BaseModel):
     text: str
     from_lang: Optional[str] = "auto"
     to_lang: Optional[str] = "vi"
+    previous_context: Optional[str] = ""
 
 class TTSRequest(BaseModel):
     text: str
     voice: Optional[str] = "google-vi"
 
+
+class TTSBatchRequest(BaseModel):
+    texts: list[str]
+    voice: Optional[str] = "vieneu:Trúc Ly"
+
 @app.post("/api/translate")
 async def api_translate(req: TranslateRequest):
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="Text required")
-    translated = fast_translate_to_vi(req.text)
+    translated = fast_translate_to_vi(
+        req.text,
+        req.from_lang or "auto",
+        req.to_lang or "vi",
+        req.previous_context or "",
+    )
     return {
         "original": req.text,
         "translated": translated or req.text,
@@ -387,13 +575,102 @@ async def api_tts(req: TTSRequest):
         raise HTTPException(status_code=500, detail="Could not generate TTS")
     return Response(content=audio_bytes, media_type=mime)
 
+
+@app.post("/api/tts-stream")
+async def api_tts_stream(req: TTSRequest):
+    """Stream VieNeu PCM to the browser instead of waiting for a complete WAV."""
+    cleaned = clean_speech_text(req.text)
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="Text required")
+    voice = req.voice or "vieneu:Trúc Ly"
+    if not voice.startswith("vieneu"):
+        raise HTTPException(status_code=400, detail="Streaming is available for VieNeu voices")
+    voice_name = voice.split(":", 1)[1] if ":" in voice else "Trúc Ly"
+    engine = await asyncio.to_thread(get_vieneu_engine)
+    if engine is None:
+        raise HTTPException(status_code=503, detail="VieNeu engine is unavailable")
+
+    def measured_stream():
+        began = time.perf_counter()
+        first = True
+        _stream_metrics["requests"] += 1
+        _stream_metrics["last_error"] = None
+        try:
+            for chunk in generate_vieneu_pcm_chunks(cleaned, voice_name):
+                if first:
+                    _stream_metrics["last_first_chunk_ms"] = round(
+                        (time.perf_counter() - began) * 1000, 1
+                    )
+                    first = False
+                yield chunk
+            _stream_metrics["last_total_ms"] = round(
+                (time.perf_counter() - began) * 1000, 1
+            )
+        except Exception as error:
+            _stream_metrics["last_error"] = str(error)
+            print(f"VieNeu streaming error: {error}")
+            raise
+
+    return StreamingResponse(
+        measured_stream(),
+        media_type="application/octet-stream",
+        headers={
+            "X-Audio-Format": "pcm_s16le",
+            "X-Audio-Sample-Rate": "48000",
+            "X-Audio-Channels": "1",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/api/tts-batch")
+async def api_tts_batch(req: TTSBatchRequest):
+    """Generate upcoming VieNeu cues in one GPU batch for subtitle prefetch."""
+    texts = [clean_speech_text(text) for text in req.texts[:8]]
+    if not texts or any(not text for text in texts):
+        raise HTTPException(status_code=400, detail="1-8 non-empty texts required")
+    voice = req.voice or "vieneu:Trúc Ly"
+    if not voice.startswith("vieneu"):
+        results = []
+        for text in texts:
+            data, mime = await generate_tts_bytes(text, voice)
+            results.append({
+                "audio_base64": base64.b64encode(data).decode("utf-8") if data else None,
+                "audio_mime": mime,
+            })
+        return {"items": results}
+
+    voice_name = voice.split(":", 1)[1] if ":" in voice else "Trúc Ly"
+    engine = await asyncio.to_thread(get_vieneu_engine)
+    if engine is None:
+        raise HTTPException(status_code=503, detail="VieNeu engine is unavailable")
+
+    arrays = await asyncio.to_thread(
+        engine.infer_batch,
+        texts,
+        voice=voice_name,
+        batch_size=min(8, len(texts)),
+        apply_watermark=False,
+    )
+    items = []
+    for text, audio_arr in zip(texts, arrays):
+        data = audio_array_to_wav(audio_arr)
+        if data:
+            audio_cache[f"{voice}:{text}"] = (data, "audio/wav")
+        items.append({
+            "audio_base64": base64.b64encode(data).decode("utf-8") if data else None,
+            "audio_mime": "audio/wav",
+        })
+    return {"items": items}
+
 # Universal Audio Slicing & Transcription (Handles any App / Tab / Mic / Local File)
 @app.post("/api/transcribe")
 async def api_transcribe(
     audio: UploadFile = File(...),
     source_lang: Optional[str] = Form("auto"),
     dubbing: Optional[bool] = Form(True),
-    voice: Optional[str] = Form("google-vi")
+    voice: Optional[str] = Form("google-vi"),
+    previous_context: Optional[str] = Form("")
 ):
     contents = await audio.read()
     if len(contents) < 500:
@@ -417,6 +694,7 @@ async def api_transcribe(
             best_of=1,
             temperature=0.0,
             condition_on_previous_text=False,
+            initial_prompt=(previous_context or "")[-300:] or None,
             without_timestamps=True,
             vad_filter=True,
             vad_parameters=dict(
@@ -443,14 +721,24 @@ async def api_transcribe(
             return {"empty": True}
 
         full_text = clean_speech_text(raw_text)
-        if not full_text or len(full_text) < 2 or not re.search(r'[a-zA-ZÀ-ỹ0-9]', full_text):
+        if not full_text or len(full_text) < 1 or not any(c.isalnum() for c in full_text):
             return {"empty": True}
 
         # Filter junk hallucination tokens
         if full_text.lower() in ["you", "thank you", "bye", "subtitles by", "amara.org", "the end", "tiếp theo"]:
             return {"empty": True}
 
-        translated_text = fast_translate_to_vi(full_text)
+        effective_source_lang = (
+            info.language
+            if not source_lang or source_lang == "auto"
+            else source_lang
+        )
+        translated_text = fast_translate_to_vi(
+            full_text,
+            source_lang=effective_source_lang or "auto",
+            target_lang="vi",
+            previous_context=previous_context or "",
+        )
         if not translated_text:
             translated_text = full_text
 
@@ -484,6 +772,8 @@ async def api_transcribe(
 class YouTubeSubtitleRequest(BaseModel):
     url: str
     target_lang: Optional[str] = "vi"
+    caption_mode: Optional[str] = "auto"
+    caption_language: Optional[str] = "auto"
 
 @app.post("/api/youtube-subtitles")
 async def api_youtube_subtitles(req: YouTubeSubtitleRequest):
@@ -491,6 +781,12 @@ async def api_youtube_subtitles(req: YouTubeSubtitleRequest):
     url = req.url.strip()
     if not url.startswith("http"):
         url = f"https://www.youtube.com/watch?v={url}"
+    if req.caption_mode == "audio_only":
+        return {
+            "success": False,
+            "mode": "audio_only",
+            "error": "Đã chọn video chỉ có tiếng. Hãy bật thu âm Tab để Whisper nhận dạng trực tiếp."
+        }
 
     def extract_subs():
         ydl_opts = {
@@ -503,28 +799,20 @@ async def api_youtube_subtitles(req: YouTubeSubtitleRequest):
             subtitles = info.get('subtitles', {}) or {}
             auto_caps = info.get('automatic_captions', {}) or {}
 
-            sub_track = None
-            is_already_vi = False
-
-            if 'vi' in subtitles:
-                sub_track = subtitles['vi']
-                is_already_vi = True
-            elif 'vi' in auto_caps:
-                sub_track = auto_caps['vi']
-                is_already_vi = True
-            elif 'en' in subtitles:
-                sub_track = subtitles['en']
-            elif 'en' in auto_caps:
-                sub_track = auto_caps['en']
-            else:
-                all_keys = list(subtitles.keys()) or list(auto_caps.keys())
-                if all_keys:
-                    sub_track = subtitles.get(all_keys[0]) or auto_caps.get(all_keys[0])
+            sub_track, source_caption_lang, caption_source = select_caption_track(
+                subtitles,
+                auto_caps,
+                preference=req.caption_language or "auto",
+                video_language=info.get("language") or "",
+            )
+            is_already_vi = source_caption_lang == "vi"
 
             if not sub_track:
                 return {
-                    "success": False, 
-                    "error": "Video này không có phụ đề sẵn (CC). Bạn có thể bật nút 'Bắt Đầu Thu Âm Trực Tiếp' để AI Whisper GPU nhận diện âm thanh và lồng tiếng theo thời gian thực!"
+                    "success": False,
+                    "mode": "no_captions",
+                    "requested_caption_language": req.caption_language,
+                    "error": "Không tìm thấy track phụ đề đúng lựa chọn. Hãy chọn Tự động hoặc dùng chế độ Chỉ có tiếng (Whisper)."
                 }
 
             json_url = None
@@ -563,67 +851,33 @@ async def api_youtube_subtitles(req: YouTubeSubtitleRequest):
                         "text": cleaned
                     })
 
-            # Natural Sentence Merger & Collision Eliminator
-            merged = []
-            curr = None
-            for s in raw_segments:
-                if not curr:
-                    curr = dict(s)
-                    continue
+            # Normalize rolling captions ("Hello" -> "Hello world") before
+            # sentence merging so repeated prefixes are never spoken twice.
+            merged = merge_caption_segments(raw_segments)
 
-                if s['start'] >= curr['start'] and s['end'] <= curr['end'] and s['text'] in curr['text']:
-                    continue
-
-                pause = s['start'] - curr['end']
-                duration = curr['end'] - curr['start']
-                ends_sentence = bool(re.search(r'[\.\?!…]$', curr['text']))
-                same_text = (curr['text'] == s['text'])
-
-                if same_text:
-                    curr['end'] = max(curr['end'], s['end'])
-                    continue
-
-                starts_lowercase = s['text'][0].islower() if s['text'] else False
-                is_connective = bool(re.match(r'^(và|để|nhưng|bởi|vì|mà|thì|là|rằng|nên|cho|với|and|or|but|because|so|to|that|which|who|whom)\b', s['text'], re.IGNORECASE))
-                can_merge = (pause < 0.8 and duration < 6.0 and len(curr['text'].split()) < 26) and (
-                    not ends_sentence or starts_lowercase or is_connective
-                )
-
-                if can_merge:
-                    if s['text'] not in curr['text']:
-                        curr['text'] += ' ' + s['text']
-                    curr['end'] = max(curr['end'], s['end'])
-                else:
-                    if curr['end'] > curr['start']:
-                        merged.append(curr)
-                    curr = dict(s)
-            if curr and curr['end'] > curr['start']:
-                merged.append(curr)
-
-            # Secondary pass: format complete coherent sentences and translate
-            segments = []
-            for m in merged:
-                if segments and m['start'] < segments[-1]['end'] - 0.2:
-                    if m['text'] in segments[-1]['original']:
-                        continue
-                    m['start'] = segments[-1]['end']
-
-                orig = m['text']
-                trans = orig if is_already_vi else fast_translate_to_vi(orig)
-                if not trans:
-                    trans = orig
-
-                segments.append({
+            # Translate the real video CC in bounded parallel batches. The old
+            # per-caption loop could make a long video wait hundreds of network
+            # round trips before the player appeared.
+            originals = [m['text'] for m in merged]
+            translations = originals if is_already_vi else translate_many_to_vi(
+                originals, source_lang=source_caption_lang
+            )
+            segments = [
+                {
                     "start": m['start'],
                     "end": m['end'],
-                    "original": orig,
-                    "translated": trans
-                })
+                    "original": original,
+                    "translated": translated or original,
+                }
+                for m, original, translated in zip(merged, originals, translations)
+            ]
 
             return {
                 "success": True,
                 "title": info.get('title', 'YouTube Video'),
                 "duration": info.get('duration', 0),
+                "caption_language": source_caption_lang,
+                "caption_source": caption_source,
                 "segments": segments
             }
 
@@ -636,12 +890,28 @@ async def api_youtube_subtitles(req: YouTubeSubtitleRequest):
 
 @app.get("/")
 async def get_index():
+    schedule_vieneu_warmup()
+    schedule_translation_warmup()
     index_path = os.path.join(os.path.dirname(__file__), "public", "index.html")
     return FileResponse(index_path, headers={
         "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
         "Pragma": "no-cache",
         "Expires": "0"
     })
+
+
+@app.get("/api/tts-status")
+async def get_tts_status():
+    return {**_vieneu_warm_state, "streaming": dict(_stream_metrics)}
+
+
+@app.get("/api/pipeline-status")
+async def get_pipeline_status():
+    return {
+        "asr": {**whisper_runtime, "role": "final transcript"},
+        "translation": local_translation.snapshot(),
+        "tts": {**_vieneu_warm_state, "streaming": dict(_stream_metrics)},
+    }
 
 # Overlay route
 @app.get("/overlay")
