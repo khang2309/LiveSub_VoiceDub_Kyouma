@@ -32,6 +32,8 @@ class LiveDubStudio {
     this.ytSyncInterval = null;
     this.currentYtSegmentIdx = -1;
     this.originalYtVol = null;
+    this.audioPreCache = new Map();
+    this.isFetchingPreCache = new Set();
 
     // History
     this.history = [];
@@ -41,9 +43,13 @@ class LiveDubStudio {
     this.bindEvents();
     this.updateSubModeUI();
     this.applyTransparencyUI();
+    this.updateMasterDubUI();
   }
 
   restorePreferences() {
+    const savedDub = localStorage.getItem('livesub_dubbing_enabled');
+    if (savedDub !== null) this.isDubbingEnabled = (savedDub !== 'false');
+
     const savedVoice = localStorage.getItem('livesub_voice');
     if (savedVoice && this.voiceSelect) {
       this.voiceSelect.value = savedVoice;
@@ -92,6 +98,10 @@ class LiveDubStudio {
     this.webVideoContainer = document.getElementById('webVideoContainer');
     this.webVideoTitle = document.getElementById('webVideoTitle');
     this.btnWebLiveCapture = document.getElementById('btnWebLiveCapture');
+    this.btnMasterDubToggle = document.getElementById('btnMasterDubToggle');
+    this.btnMasterDubText = document.getElementById('btnMasterDubText');
+    this.btnCinemaMasterDubToggle = document.getElementById('btnCinemaMasterDubToggle');
+    this.btnCinemaMasterDubText = document.getElementById('btnCinemaMasterDubText');
     this.btnCloseWebVideo = document.getElementById('btnCloseWebVideo');
     this.invideoWebSubVi = document.getElementById('invideoWebSubVi');
     this.invideoWebSubSource = document.getElementById('invideoWebSubSource');
@@ -258,6 +268,30 @@ class LiveDubStudio {
       });
     }
 
+    // Master Dubbing Toggle
+    const toggleMasterDub = () => {
+      this.isDubbingEnabled = !this.isDubbingEnabled;
+      localStorage.setItem('livesub_dubbing_enabled', this.isDubbingEnabled);
+      if (!this.isDubbingEnabled) {
+        this.stopAllAudio();
+      } else {
+        if (this.currentYtSegmentIdx >= 0) {
+          this.prefetchUpcomingAudio(this.currentYtSegmentIdx);
+        } else {
+          this.prefetchUpcomingAudio(0);
+        }
+      }
+      this.updateMasterDubUI();
+      this.showToast(this.isDubbingEnabled ? '🟢 ĐÃ BẬT LỒNG TIẾNG' : '⏸️ ĐÃ TẮT LỒNG TIẾNG');
+    };
+
+    if (this.btnMasterDubToggle) {
+      this.btnMasterDubToggle.addEventListener('click', toggleMasterDub);
+    }
+    if (this.btnCinemaMasterDubToggle) {
+      this.btnCinemaMasterDubToggle.addEventListener('click', toggleMasterDub);
+    }
+
     // Speaker Test Button
     if (this.btnTestSpeaker) {
       this.btnTestSpeaker.addEventListener('click', () => this.testSpeaker());
@@ -268,6 +302,7 @@ class LiveDubStudio {
       this.voiceSelect.addEventListener('change', () => {
         const name = this.voiceSelect.selectedOptions[0].text;
         localStorage.setItem('livesub_voice', this.voiceSelect.value);
+        this.updateMasterDubUI();
         this.showToast(`🎙️ Đã chọn giọng: ${name}`);
         this.auditionSelectedVoice();
       });
@@ -371,6 +406,26 @@ class LiveDubStudio {
     this.panelSourceLocalFile.style.display = source === 'local' ? 'flex' : 'none';
     this.panelSourceMic.style.display = source === 'mic' ? 'flex' : 'none';
     this.panelSourceWebUrl.style.display = source === 'weburl' ? 'flex' : 'none';
+  }
+
+  updateMasterDubUI() {
+    let voiceName = 'Hoài My';
+    if (this.voiceSelect && this.voiceSelect.selectedOptions && this.voiceSelect.selectedOptions[0]) {
+      const fullText = this.voiceSelect.selectedOptions[0].text;
+      voiceName = fullText.split('(')[0].replace(/[^\w\sÀ-ỹ]/gi, '').trim() || 'Hoài My';
+    }
+
+    const activeHtml = `<span class="toggle-indicator-dot"></span><span>🟢 ĐÃ BẬT LỒNG TIẾNG (${voiceName})</span>`;
+    const pausedHtml = `<span class="toggle-indicator-dot"></span><span>⏸️ ĐÃ TẮT LỒNG TIẾNG (Bấm để bật)</span>`;
+
+    if (this.btnMasterDubToggle) {
+      this.btnMasterDubToggle.className = `btn-master-dub-toggle ${this.isDubbingEnabled ? 'active' : 'paused'}`;
+      this.btnMasterDubToggle.innerHTML = this.isDubbingEnabled ? activeHtml : pausedHtml;
+    }
+    if (this.btnCinemaMasterDubToggle) {
+      this.btnCinemaMasterDubToggle.className = `btn-master-dub-toggle ${this.isDubbingEnabled ? 'active' : 'paused'}`;
+      this.btnCinemaMasterDubToggle.innerHTML = this.isDubbingEnabled ? activeHtml : pausedHtml;
+    }
   }
 
   // Audition sample in the exact selected voice
@@ -574,6 +629,8 @@ class LiveDubStudio {
         if (data.title) this.webVideoTitle.textContent = data.title;
         this.webSyncNotice.innerHTML = `✅ <strong>Đã đồng bộ ${data.segments.length} câu thoại chuẩn xác 100%!</strong> Hãy bấm ▶️ Play trên video để thưởng thức thuyết minh chuẩn mili-giây.`;
         this.showToast(`🎬 Đã nạp ${data.segments.length} câu thoại phụ đề từ video!`);
+        this.audioPreCache.clear();
+        this.prefetchUpcomingAudio(0);
       } else {
         this.webSyncNotice.innerHTML = `ℹ️ ${data.error || 'Video không có phụ đề sẵn'}. Hãy bấm nút <strong>"🎙️ Bắt Âm Thanh Tab"</strong> để Whisper GPU nghe và dịch trực tiếp!`;
       }
@@ -594,12 +651,19 @@ class LiveDubStudio {
 
     const onPlayerReady = () => {
       this.startXTSync();
+      this.prefetchUpcomingAudio(0);
     };
 
     const onPlayerStateChange = (event) => {
       // YT.PlayerState.PAUSED = 2, ENDED = 0
       if (event.data === 2 || event.data === 0) {
         this.stopAllAudio();
+      } else if (event.data === 1) { // PLAYING
+        if (this.currentYtSegmentIdx >= 0) {
+          this.prefetchUpcomingAudio(this.currentYtSegmentIdx);
+        } else {
+          this.prefetchUpcomingAudio(0);
+        }
       }
     };
 
@@ -643,7 +707,8 @@ class LiveDubStudio {
       const curTime = this.ytPlayer.getCurrentTime();
       if (!this.ytSegments || this.ytSegments.length === 0) return;
 
-      const idx = this.ytSegments.findIndex(s => curTime >= s.start && curTime <= s.end);
+      // Anticipate 0.15s before speech starts for zero perceived latency
+      const idx = this.ytSegments.findIndex(s => curTime >= (s.start - 0.15) && curTime <= s.end);
 
       if (idx !== -1 && idx !== this.currentYtSegmentIdx) {
         this.currentYtSegmentIdx = idx;
@@ -657,7 +722,7 @@ class LiveDubStudio {
         this.displaySubtitle(seg.original, seg.translated);
         const record = this.addHistory(seg.original, seg.translated, 'cc');
 
-        // 3. Dubbing Audio
+        // 3. Dubbing Audio: Instant Start via Pre-cached AudioBuffer
         if (this.isDubbingEnabled) {
           try {
             if (this.ytPlayer.getVolume && this.originalYtVol === null) {
@@ -665,38 +730,160 @@ class LiveDubStudio {
             }
             if (this.ytPlayer.setVolume) this.ytPlayer.setVolume(12);
 
-            const res = await fetch('/api/dub-subtitle', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                text: seg.translated, 
-                voice: this.voiceSelect ? this.voiceSelect.value : 'vi-VN-HoaiMyNeural' 
-              })
-            });
-            const data = await res.json();
-            if (data.audio_base64) {
-              await this.playBase64Audio(data.audio_base64, record.id, data.audio_mime || 'audio/mpeg');
-            }
+            const nextSeg = this.ytSegments[idx + 1];
+            const slotDuration = nextSeg ? Math.max(1.5, nextSeg.start - seg.start) : (seg.end - seg.start);
+
+            await this.playSegmentAudio(idx, slotDuration);
           } catch (err) {
-            console.warn('Dubbing error:', err);
-          } finally {
-            if (this.ytPlayer && this.ytPlayer.setVolume && this.originalYtVol !== null) {
-              setTimeout(() => {
-                if (this.ytPlayer && this.ytPlayer.setVolume && !this.currentActiveAudioSource) {
-                  this.ytPlayer.setVolume(this.originalYtVol || 100);
-                }
-              }, 1200);
-            }
+            console.warn('Dubbing play error:', err);
           }
+          this.prefetchUpcomingAudio(idx + 1);
         }
       } else if (idx === -1) {
-        const isNearAny = this.ytSegments.some(s => curTime >= (s.start - 0.2) && curTime <= (s.end + 0.4));
+        // Keep subtitle readable for up to 1.4s after sentence ends
+        const isNearAny = this.ytSegments.some(s => curTime >= (s.start - 0.2) && curTime <= (s.end + 1.4));
         if (!isNearAny) {
           if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = '';
           if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = '';
         }
       }
-    }, 70);
+    }, 60);
+  }
+
+  async playSegmentAudio(segIdx, expectedSlotDuration = 0) {
+    if (!this.isDubbingEnabled) return;
+
+    // Fast Path: Decoded Audio Buffer already in memory (0ms Latency!)
+    if (this.audioPreCache.has(segIdx)) {
+      const cached = this.audioPreCache.get(segIdx);
+      await this.playDecodedAudioBuffer(cached.buffer, expectedSlotDuration);
+      return;
+    }
+
+    // Fallback: Fetch on-demand
+    const seg = this.ytSegments[segIdx];
+    if (!seg || !seg.translated) return;
+
+    try {
+      const voice = this.voiceSelect ? this.voiceSelect.value : 'vi-VN-HoaiMyNeural';
+      const res = await fetch('/api/dub-subtitle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          text: seg.translated, 
+          voice: voice 
+        })
+      });
+      const data = await res.json();
+      if (data && data.audio_base64) {
+        await this.playBase64Audio(data.audio_base64, null, data.audio_mime || 'audio/mpeg', expectedSlotDuration);
+      }
+    } catch (err) {
+      console.warn('On-demand dub error for seg ' + segIdx, err);
+    }
+  }
+
+  async playDecodedAudioBuffer(audioBuffer, expectedSlotDuration = 0) {
+    this.stopAllAudio();
+    this.dubbingIndicator.classList.add('active');
+
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!this.audioContext || this.audioContext.state === 'closed') {
+        this.audioContext = new AudioCtx();
+      }
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
+
+      const sourceNode = this.audioContext.createBufferSource();
+      sourceNode.buffer = audioBuffer;
+
+      // Smart adaptive speech pacing
+      const userRate = parseFloat(this.rateRange.value) || 1.15;
+      let effectiveRate = userRate;
+      if (expectedSlotDuration > 0 && audioBuffer.duration > expectedSlotDuration) {
+        const fitRate = audioBuffer.duration / expectedSlotDuration;
+        effectiveRate = Math.min(1.35, Math.max(userRate, fitRate));
+      }
+      sourceNode.playbackRate.value = effectiveRate;
+
+      const gainNode = this.audioContext.createGain();
+      gainNode.gain.value = (parseInt(this.volumeRange.value, 10) || 100) / 100;
+
+      sourceNode.connect(gainNode);
+      gainNode.connect(this.audioContext.destination);
+
+      this.currentActiveAudioSource = sourceNode;
+
+      sourceNode.onended = () => {
+        if (this.currentActiveAudioSource === sourceNode) {
+          this.currentActiveAudioSource = null;
+        }
+        this.dubbingIndicator.classList.remove('active');
+        if (this.ytPlayer && this.ytPlayer.setVolume && this.originalYtVol !== null) {
+          setTimeout(() => {
+            if (!this.currentActiveAudioSource && this.ytPlayer && this.ytPlayer.setVolume) {
+              this.ytPlayer.setVolume(this.originalYtVol || 100);
+            }
+          }, 350);
+        }
+      };
+
+      sourceNode.start(0);
+    } catch (err) {
+      console.warn('Decoded audio playback error:', err);
+      this.dubbingIndicator.classList.remove('active');
+    }
+  }
+
+  prefetchUpcomingAudio(fromIdx) {
+    if (!this.isDubbingEnabled || !this.ytSegments || this.ytSegments.length === 0) return;
+
+    const toIdx = Math.min(this.ytSegments.length, fromIdx + 4);
+    for (let i = fromIdx; i < toIdx; i++) {
+      if (i < 0) continue;
+      const seg = this.ytSegments[i];
+      if (!seg || !seg.translated) continue;
+
+      if (!this.audioPreCache.has(i) && !this.isFetchingPreCache.has(i)) {
+        this.isFetchingPreCache.add(i);
+        const voice = this.voiceSelect ? this.voiceSelect.value : 'vi-VN-HoaiMyNeural';
+
+        fetch('/api/dub-subtitle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: seg.translated, voice: voice })
+        })
+        .then(r => r.json())
+        .then(async data => {
+          if (data && data.audio_base64) {
+            const binary = atob(data.audio_base64);
+            const bytes = new Uint8Array(binary.length);
+            for (let b = 0; b < binary.length; b++) bytes[b] = binary.charCodeAt(b);
+
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (!this.audioContext || this.audioContext.state === 'closed') {
+              this.audioContext = new AudioCtx();
+            }
+            try {
+              const decoded = await this.audioContext.decodeAudioData(bytes.buffer.slice(0));
+              this.audioPreCache.set(i, {
+                buffer: decoded,
+                translated: seg.translated,
+                original: seg.original
+              });
+            } catch (decErr) {
+              // Ignore decode errors
+            }
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          this.isFetchingPreCache.delete(i);
+        });
+      }
+    }
   }
 
   // =========================================================================
@@ -899,8 +1086,8 @@ class LiveDubStudio {
     }
   }
 
-  // Unblockable Web Audio API buffer playback
-  async playBase64Audio(base64Audio, historyId, mime = 'audio/mpeg') {
+  // Unblockable Web Audio API buffer playback with Adaptive Pacing
+  async playBase64Audio(base64Audio, historyId, mime = 'audio/mpeg', expectedSlotDuration = 0) {
     this.stopAllAudio();
     this.dubbingIndicator.classList.add('active');
 
@@ -923,7 +1110,15 @@ class LiveDubStudio {
       const audioBuffer = await this.audioContext.decodeAudioData(bytes.buffer.slice(0));
       const sourceNode = this.audioContext.createBufferSource();
       sourceNode.buffer = audioBuffer;
-      sourceNode.playbackRate.value = parseFloat(this.rateRange.value) || 1.15;
+
+      // Adaptive speech pacing: if speech is longer than video slot, gently accelerate to fit perfectly!
+      const userRate = parseFloat(this.rateRange.value) || 1.15;
+      let effectiveRate = userRate;
+      if (expectedSlotDuration > 0 && audioBuffer.duration > expectedSlotDuration) {
+        const fitRate = audioBuffer.duration / expectedSlotDuration;
+        effectiveRate = Math.min(1.38, Math.max(userRate, fitRate));
+      }
+      sourceNode.playbackRate.value = effectiveRate;
 
       const gainNode = this.audioContext.createGain();
       gainNode.gain.value = (parseInt(this.volumeRange.value, 10) || 100) / 100;

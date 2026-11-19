@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LiveSub & VoiceDub AI - Studio Thuyết Minh & Lồng Tiếng Đa Nguồn</title>
-  <link rel="stylesheet" href="style.css?v=20261119_15">
+  <link rel="stylesheet" href="style.css?v=20261119_20">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com">
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -333,6 +333,10 @@
               <span id="webVideoTitle">Trình Phát Web Video Trực Tiếp</span>
             </div>
             <div class="video-top-actions">
+              <button id="btnMasterDubToggle" class="btn-master-dub-toggle active" title="Bấm để Bật hoặc Tắt Lồng Tiếng Hoài My">
+                <span class="toggle-indicator-dot"></span>
+                <span id="btnMasterDubText">🟢 ĐÃ BẬT LỒNG TIẾNG (Hoài My)</span>
+              </button>
               <button id="btnWebLiveCapture" class="btn btn-secondary btn-sm" title="Bắt âm thanh tab trực tiếp nếu video livestream không có phụ đề sẵn">🎙️ Bắt Âm Thanh Tab</button>
               <button id="btnCloseWebVideo" class="btn-icon" title="Đóng video">✕</button>
             </div>
@@ -356,6 +360,10 @@
               <span>Màn Hình Phụ Đề Realtime (Cinema View)</span>
             </div>
             <div class="cinema-controls">
+              <button id="btnCinemaMasterDubToggle" class="btn-master-dub-toggle active" title="Bật hoặc Tắt Lồng Tiếng Hoài My">
+                <span class="toggle-indicator-dot"></span>
+                <span id="btnCinemaMasterDubText">🟢 ĐÃ BẬT LỒNG TIẾNG (Hoài My)</span>
+              </button>
               <button id="btnToggleBoxTransparent" class="btn-icon-label" title="Bật/Tắt chế độ nền trong suốt">
                 Tắt Trong Suốt
               </button>
@@ -422,6 +430,6 @@
     <audio id="dubbingAudio" preload="auto"></audio>
   </div>
 
-  <script src="app.js?v=20261119_15"></script>
+  <script src="app.js?v=20261119_20"></script>
 </body>
 </html>

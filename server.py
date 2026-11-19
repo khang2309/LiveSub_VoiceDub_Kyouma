@@ -162,6 +162,10 @@ def fast_translate_to_vi(text: str) -> str:
     if not cleaned or len(cleaned) < 2:
         return ""
 
+    # If text already contains Vietnamese accents, return directly to save latency
+    if re.search(r'[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]', cleaned, re.IGNORECASE):
+        return cleaned
+
     cache_key = cleaned.lower()
     if cache_key in translation_cache:
         return translation_cache[cache_key]
@@ -177,6 +181,8 @@ def fast_translate_to_vi(text: str) -> str:
                 return trans
     except Exception as e:
         print(f"Fast translate error: {e}")
+
+    return cleaned
 
     return cleaned
 
@@ -482,7 +488,7 @@ async def api_youtube_subtitles(req: YouTubeSubtitleRequest):
                 raw_data = json.loads(resp.read().decode('utf-8'))
 
             events = raw_data.get('events', [])
-            segments = []
+            raw_segments = []
 
             for ev in events:
                 tStartMs = ev.get('tStartMs', 0)
@@ -495,19 +501,68 @@ async def api_youtube_subtitles(req: YouTubeSubtitleRequest):
                 if cleaned and not cleaned.startswith('\n') and len(cleaned) > 1:
                     start_sec = round(tStartMs / 1000.0, 2)
                     end_sec = round((tStartMs + dDurationMs) / 1000.0, 2)
-                    if segments and segments[-1]['original'] == cleaned:
-                        continue
-
-                    translated = cleaned if is_already_vi else fast_translate_to_vi(cleaned)
-                    if not translated:
-                        translated = cleaned
-
-                    segments.append({
+                    raw_segments.append({
                         "start": start_sec,
                         "end": end_sec,
-                        "original": cleaned,
-                        "translated": translated
+                        "text": cleaned
                     })
+
+            # Natural Sentence Merger & Collision Eliminator
+            merged = []
+            curr = None
+            for s in raw_segments:
+                if not curr:
+                    curr = dict(s)
+                    continue
+
+                if s['start'] >= curr['start'] and s['end'] <= curr['end'] and s['text'] in curr['text']:
+                    continue
+
+                pause = s['start'] - curr['end']
+                duration = curr['end'] - curr['start']
+                ends_sentence = bool(re.search(r'[\.\?!…]$', curr['text']))
+                same_text = (curr['text'] == s['text'])
+
+                if same_text:
+                    curr['end'] = max(curr['end'], s['end'])
+                    continue
+
+                starts_lowercase = s['text'][0].islower() if s['text'] else False
+                is_connective = bool(re.match(r'^(và|để|nhưng|bởi|vì|mà|thì|là|rằng|nên|cho|với|and|or|but|because|so|to|that|which|who|whom)\b', s['text'], re.IGNORECASE))
+                can_merge = (pause < 0.8 and duration < 6.0 and len(curr['text'].split()) < 26) and (
+                    not ends_sentence or starts_lowercase or is_connective
+                )
+
+                if can_merge:
+                    if s['text'] not in curr['text']:
+                        curr['text'] += ' ' + s['text']
+                    curr['end'] = max(curr['end'], s['end'])
+                else:
+                    if curr['end'] > curr['start']:
+                        merged.append(curr)
+                    curr = dict(s)
+            if curr and curr['end'] > curr['start']:
+                merged.append(curr)
+
+            # Secondary pass: format complete coherent sentences and translate
+            segments = []
+            for m in merged:
+                if segments and m['start'] < segments[-1]['end'] - 0.2:
+                    if m['text'] in segments[-1]['original']:
+                        continue
+                    m['start'] = segments[-1]['end']
+
+                orig = m['text']
+                trans = orig if is_already_vi else fast_translate_to_vi(orig)
+                if not trans:
+                    trans = orig
+
+                segments.append({
+                    "start": m['start'],
+                    "end": m['end'],
+                    "original": orig,
+                    "translated": trans
+                })
 
             return {
                 "success": True,
