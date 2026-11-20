@@ -607,4 +607,72 @@ test('webCaptionMode hard_sub prompts for Tab capture and does not block on CC f
   assert.match(app.webSyncNotice.innerHTML, /Bắt Âm Thanh Tab/);
 });
 
+test('displaySubtitle updates invideoWebSubVi, invideoWebSubSource and PiP element', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.subSourceDisplay = el();
+  app.subViDisplay = el();
+  app.invideoWebSubSource = el();
+  app.invideoWebSubVi = el();
+  app.broadcastOverlay = () => {};
+  const pipSrc = el();
+  const pipVi = el();
+  app.pipWindow = {
+    closed: false,
+    document: {
+      getElementById: (id) => (id === 'pipSource' ? pipSrc : id === 'pipVi' ? pipVi : null)
+    }
+  };
+
+  app.displaySubtitle('Hello world', 'Xin chào thế giới');
+  assert.equal(app.subSourceDisplay.textContent, 'Hello world');
+  assert.equal(app.subViDisplay.textContent, 'Xin chào thế giới');
+  assert.equal(app.invideoWebSubSource.textContent, 'Hello world');
+  assert.equal(app.invideoWebSubVi.textContent, 'Xin chào thế giới');
+  assert.equal(pipSrc.textContent, 'Hello world');
+  assert.equal(pipVi.textContent, 'Xin chào thế giới');
+});
+
+test('toggleWebVideoFullscreen requests fullscreen on webVideoContainer', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  let requestCalled = false;
+  app.webVideoContainer = {
+    requestFullscreen: async () => { requestCalled = true; }
+  };
+
+  app.toggleWebVideoFullscreen();
+  assert.equal(requestCalled, true);
+});
+
+test('openFloatingOverlay prioritizes documentPictureInPicture when available', async () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.ensureAudioUnlocked = () => {};
+  app.subSourceDisplay = el();
+  app.subViDisplay = el();
+  app.showToast = () => {};
+  app.escapeHtml = (s) => s;
+
+  let pipRequested = false;
+  const mockPipDoc = {
+    head: { appendChild() {} },
+    body: { innerHTML: '' }
+  };
+  global.window = {
+    documentPictureInPicture: {
+      requestWindow: async () => {
+        pipRequested = true;
+        return {
+          document: mockPipDoc,
+          addEventListener() {},
+          closed: false
+        };
+      }
+    }
+  };
+
+  await app.openFloatingOverlay();
+  assert.equal(pipRequested, true);
+  assert.ok(app.pipWindow);
+});
+
+
 

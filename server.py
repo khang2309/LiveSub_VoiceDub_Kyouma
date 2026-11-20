@@ -703,20 +703,32 @@ def generate_vieneu_pcm_chunks(text: str, voice_name: str):
     if not engine:
         raise RuntimeError("VieNeu engine is unavailable")
     voice_name = resolve_vieneu_voice(engine, voice_name)
-    for audio_arr in engine.infer_stream(
-        text,
-        voice=voice_name,
-        apply_watermark=False,
-        max_chars=192,
-    ):
-        if audio_arr is None or len(audio_arr) == 0:
-            continue
-        array = np.asarray(audio_arr)
-        if np.issubdtype(array.dtype, np.floating):
-            pcm = (np.clip(array, -1.0, 1.0) * 32767).astype("<i2")
-        else:
-            pcm = array.astype("<i2")
-        yield pcm.tobytes()
+    try:
+        for audio_arr in engine.infer_stream(
+            text,
+            voice=voice_name,
+            apply_watermark=False,
+            max_chars=192,
+        ):
+            if audio_arr is None or len(audio_arr) == 0:
+                continue
+            array = np.asarray(audio_arr)
+            if np.issubdtype(array.dtype, np.floating):
+                pcm = (np.clip(array, -1.0, 1.0) * 32767).astype("<i2")
+            else:
+                pcm = array.astype("<i2")
+            yield pcm.tobytes()
+    except Exception as exc:
+        # If client disconnected or stream aborted, ensure tokenizer session does not stay wedged
+        try:
+            tok = getattr(getattr(engine, "tts", None), "audio_tokenizer", None)
+            if tok is not None:
+                reset_fn = getattr(tok, "_reset_batch_decode_streaming_state", None)
+                if callable(reset_fn):
+                    reset_fn()
+        except Exception:
+            pass
+        raise exc
 
 class SubtitleDubRequest(BaseModel):
     text: str
@@ -929,13 +941,29 @@ async def api_tts_batch(req: TTSBatchRequest):
         raise HTTPException(status_code=503, detail="VieNeu engine is unavailable")
     voice_name = resolve_vieneu_voice(engine, voice_name)
 
-    arrays = await asyncio.to_thread(
-        engine.infer_batch,
-        texts,
-        voice=voice_name,
-        batch_size=min(8, len(texts)),
-        apply_watermark=False,
-    )
+    # Check if a streaming decode session is active on the audio tokenizer
+    try:
+        tok = getattr(getattr(engine, "tts", None), "audio_tokenizer", None)
+        active_sess = getattr(tok, "_active_decode_session", None) if tok else None
+        if active_sess is not None and not getattr(active_sess, "_closed", False):
+            # Live stream is currently generating on GPU; prefetch degrades gracefully to avoid tokenizer collision
+            return {"items": []}
+    except Exception:
+        pass
+
+    try:
+        arrays = await asyncio.to_thread(
+            engine.infer_batch,
+            texts,
+            voice=voice_name,
+            batch_size=min(8, len(texts)),
+            apply_watermark=False,
+        )
+    except RuntimeError as rerr:
+        err_msg = str(rerr).lower()
+        if "decode session is active" in err_msg or "streaming conflict" in err_msg:
+            return {"items": []}
+        raise
     items = []
     for text, audio_arr in zip(texts, arrays):
         data = audio_array_to_wav(audio_arr)

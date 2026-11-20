@@ -279,6 +279,9 @@ class LiveDubStudio {
     this.btnCloseWebVideo = document.getElementById('btnCloseWebVideo');
     this.invideoWebSubVi = document.getElementById('invideoWebSubVi');
     this.invideoWebSubSource = document.getElementById('invideoWebSubSource');
+    this.btnFullscreenWebVideo = document.getElementById('btnFullscreenWebVideo');
+    this.btnFullscreenWebVideoText = document.getElementById('btnFullscreenWebVideoText');
+    this.btnCinemaPiP = document.getElementById('btnCinemaPiP');
     this.webSyncNotice = document.getElementById('webSyncNotice');
     this.sampleLinks = document.querySelectorAll('.btn-sample-link');
     this.btnTestSpeaker = document.getElementById('btnTestSpeaker');
@@ -334,6 +337,27 @@ class LiveDubStudio {
     this.toastEl = document.createElement('div');
     this.toastEl.className = 'studio-toast';
     document.body.appendChild(this.toastEl);
+
+    // Global user-interaction audio unlock to defeat browser autoplay policies
+    if (typeof window !== 'undefined') {
+      const unlock = () => this.ensureAudioUnlocked();
+      ['pointerdown', 'keydown', 'touchstart'].forEach(evt => {
+        window.addEventListener(evt, unlock, { passive: true });
+      });
+    }
+  }
+
+  ensureAudioUnlocked() {
+    try {
+      if (typeof window === 'undefined') return;
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!this.audioContext || this.audioContext.state === 'closed') {
+        this.audioContext = new AudioCtx();
+      }
+      if (this.audioContext && this.audioContext.state === 'suspended') {
+        this.audioContext.resume().catch(() => {});
+      }
+    } catch (_) {}
   }
 
   showToast(msg) {
@@ -688,19 +712,73 @@ class LiveDubStudio {
       this.showToast(' Đã dừng âm thanh khẩn cấp');
     });
 
-    // 11. Floating Window
-    this.btnFloatingWindow.addEventListener('click', () => this.openFloatingOverlay());
+    // 11. Floating Window & Picture-in-Picture
+    if (this.btnFloatingWindow) {
+      this.btnFloatingWindow.addEventListener('click', () => this.openFloatingOverlay());
+    }
+    if (this.btnCinemaPiP) {
+      this.btnCinemaPiP.addEventListener('click', () => this.openFloatingOverlay());
+    }
+    if (this.btnFullscreenWebVideo) {
+      this.btnFullscreenWebVideo.addEventListener('click', () => this.toggleWebVideoFullscreen());
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('fullscreenchange', () => this.handleFullscreenChange());
+      document.addEventListener('webkitfullscreenchange', () => this.handleFullscreenChange());
+      document.addEventListener('keydown', (e) => {
+        if ((e.key === 'f' || e.key === 'F') && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) {
+          if (this.webVideoContainer && this.webVideoContainer.style.display !== 'none') {
+            e.preventDefault();
+            this.toggleWebVideoFullscreen();
+          }
+        }
+      });
+    }
 
     // 12. Quick Test Text
-    this.btnSendTestText.addEventListener('click', () => this.handleTestText());
-    this.testTextInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') this.handleTestText();
-    });
+    if (this.btnSendTestText) {
+      this.btnSendTestText.addEventListener('click', () => this.handleTestText());
+    }
+    if (this.testTextInput) {
+      this.testTextInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') this.handleTestText();
+      });
+    }
 
     // 13. History Actions
-    this.btnExportSRT.addEventListener('click', () => this.exportSRT());
-    this.btnExportTXT.addEventListener('click', () => this.exportTXT());
-    this.btnClearHistory.addEventListener('click', () => this.clearHistory());
+    if (this.btnExportSRT) this.btnExportSRT.addEventListener('click', () => this.exportSRT());
+    if (this.btnExportTXT) this.btnExportTXT.addEventListener('click', () => this.exportTXT());
+    if (this.btnClearHistory) this.btnClearHistory.addEventListener('click', () => this.clearHistory());
+  }
+
+  toggleWebVideoFullscreen() {
+    const container = this.webVideoContainer;
+    if (!container) return;
+    const isDoc = typeof document !== 'undefined';
+    const isFs = isDoc && Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+    if (!isFs) {
+      if (container.requestFullscreen) {
+        container.requestFullscreen().catch(() => {});
+      } else if (container.webkitRequestFullscreen) {
+        container.webkitRequestFullscreen();
+      }
+    } else if (isDoc) {
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen().catch(() => {});
+      }
+    }
+  }
+
+  handleFullscreenChange() {
+    const isFs = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+    if (this.btnFullscreenWebVideoText) {
+      this.btnFullscreenWebVideoText.textContent = isFs ? '🗗 Thu Nhỏ' : '⛶ Toàn Màn Hình';
+    }
+    if (this.btnFullscreenWebVideo) {
+      this.btnFullscreenWebVideo.title = isFs ? 'Thoát chế độ toàn màn hình' : 'Phóng to toàn màn hình (Luôn hiện phụ đề)';
+    }
   }
 
   switchSourceTab(source) {
@@ -892,12 +970,13 @@ class LiveDubStudio {
   async startLocalVideoDubbing() {
     this.stopListening();
     try {
+      this.ensureAudioUnlocked();
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!this.audioContext || this.audioContext.state === 'closed') {
         this.audioContext = new AudioCtx();
       }
       if (this.audioContext.state === 'suspended') {
-        await this.audioContext.resume();
+        await this.audioContext.resume().catch(() => {});
       }
 
       const sourceNode = this.audioContext.createMediaElementSource(this.localVideoPlayer);
@@ -1524,12 +1603,13 @@ class LiveDubStudio {
     this.dubbingIndicator.classList.add('active');
 
     try {
+      this.ensureAudioUnlocked();
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!this.audioContext || this.audioContext.state === 'closed') {
         this.audioContext = new AudioCtx();
       }
       if (this.audioContext.state === 'suspended') {
-        await this.audioContext.resume();
+        await this.audioContext.resume().catch(() => {});
       }
 
       const sourceNode = this.audioContext.createBufferSource();
@@ -2076,9 +2156,9 @@ class LiveDubStudio {
     this.isProcessingLiveDubbing = true;
     try {
       while (this.liveDubbingQueue.length > 0) {
-        // If congested, keep only the latest items so audio never falls behind video
-        if (this.liveDubbingQueue.length > 2) {
-          const dropped = this.liveDubbingQueue.splice(0, this.liveDubbingQueue.length - 1);
+        // If congested (> 5), keep only the latest items so audio never falls behind video
+        if (this.liveDubbingQueue.length > 5) {
+          const dropped = this.liveDubbingQueue.splice(0, this.liveDubbingQueue.length - 2);
           for (const d of dropped) {
             this.displaySubtitle(d.sourceText, d.text);
           }
@@ -2092,9 +2172,9 @@ class LiveDubStudio {
         if (isStale()) continue;
 
         // Latency-bound eviction: If item queued for > 2200ms and newer speech is pending,
-        // show subtitle but skip audio playback to eliminate 3-second delay!
+        // show subtitle but skip audio playback to eliminate delay
         const queuedAgeMs = item.enqueuedAt ? (performance.now() - item.enqueuedAt) : 0;
-        if (queuedAgeMs > 2200 && this.liveDubbingQueue.length > 0) {
+        if (queuedAgeMs > 2200 && this.liveDubbingQueue.length > 0 && this.liveDubbingQueue.some(q => (performance.now() - q.enqueuedAt) < 1500)) {
           this.displaySubtitle(item.sourceText, item.text);
           continue;
         }
@@ -2172,12 +2252,13 @@ class LiveDubStudio {
         bytes[i] = binaryString.charCodeAt(i);
       }
 
+      this.ensureAudioUnlocked();
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!this.audioContext || this.audioContext.state === 'closed') {
         this.audioContext = new AudioCtx();
       }
       if (this.audioContext.state === 'suspended') {
-        await this.audioContext.resume();
+        await this.audioContext.resume().catch(() => {});
       }
 
       const audioBuffer = await this.audioContext.decodeAudioData(bytes.buffer.slice(0));
@@ -2229,12 +2310,13 @@ class LiveDubStudio {
   async playAudioBuffer(arrayBuffer, waitForEnd = false, onStart = null, originalDuration = 0, textLength = 0) {
     this.stopAllAudio();
     try {
+      this.ensureAudioUnlocked();
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!this.audioContext || this.audioContext.state === 'closed') {
         this.audioContext = new AudioCtx();
       }
       if (this.audioContext.state === 'suspended') {
-        await this.audioContext.resume();
+        await this.audioContext.resume().catch(() => {});
       }
 
       const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer.slice(0));
@@ -2271,7 +2353,7 @@ class LiveDubStudio {
   // the complete WAV (typically several seconds) while preserving queue order.
   async playStreamingTts(text, voice, waitForEnd = true, onStart = null, token = null, queueDepth = 0, originalDuration = 0) {
     if (token && !this.isPlaybackCurrent(token)) return;
-    this.stopDubbingAudio(false, !token);
+    if (token) this.stopDubbingAudio(false, false);
     if (token && !this.isPlaybackCurrent(token)) return;
 
     const prefetchKey = `${voice}:::${text}`;
@@ -2286,6 +2368,7 @@ class LiveDubStudio {
     let readingDone = false;
     let resolveEnded;
     let startCallbackTimer = null;
+    let safetyTimeout = null;
     const ended = new Promise(resolve => { resolveEnded = resolve; });
 
     try {
@@ -2302,11 +2385,14 @@ class LiveDubStudio {
       }
       if (token && !this.isPlaybackCurrent(token)) return;
 
+      this.ensureAudioUnlocked();
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!this.audioContext || this.audioContext.state === 'closed') {
         this.audioContext = new AudioCtx();
       }
-      if (this.audioContext.state === 'suspended') await this.audioContext.resume();
+      if (this.audioContext.state === 'suspended') {
+        await this.audioContext.resume().catch(() => {});
+      }
 
       const sampleRate = parseInt(response.headers.get('X-Audio-Sample-Rate') || '48000', 10);
       const serverRateCap = parseFloat(response.headers.get('X-Safe-Playback-Rate') || '1.0');
@@ -2324,8 +2410,20 @@ class LiveDubStudio {
       let carry = null;
       let started = false;
 
-      const finishIfDone = () => {
-        if (readingDone && localSources.size === 0) resolveEnded();
+      const finishIfDone = (force = false) => {
+        if (force || (readingDone && localSources.size === 0)) {
+          if (safetyTimeout) clearTimeout(safetyTimeout);
+          if (resolveEnded) resolveEnded();
+        }
+      };
+
+      const setSafetyTimeout = (extraSec = 1.5) => {
+        if (safetyTimeout) clearTimeout(safetyTimeout);
+        const curTime = this.audioContext ? this.audioContext.currentTime : 0;
+        const durSec = (nextStart > curTime ? nextStart - curTime : 0.8) + extraSec;
+        safetyTimeout = setTimeout(() => {
+          finishIfDone(true);
+        }, Math.max(1000, durSec * 1000));
       };
 
       while (true) {
@@ -2401,11 +2499,14 @@ class LiveDubStudio {
         }
       }
       readingDone = true;
+      setSafetyTimeout(1.5);
       finishIfDone();
       if (waitForEnd) await ended;
     } catch (error) {
       if (error.name !== 'AbortError') throw error;
     } finally {
+      if (safetyTimeout) clearTimeout(safetyTimeout);
+      if (resolveEnded) resolveEnded();
       if (typeof startCallbackTimer !== 'undefined' && startCallbackTimer) clearTimeout(startCallbackTimer);
       if (this.streamingAbortController === controller) this.streamingAbortController = null;
       if (waitForEnd) {
@@ -2531,12 +2632,22 @@ class LiveDubStudio {
   }
 
   displaySubtitle(sourceText, viText) {
-    this.subSourceDisplay.textContent = sourceText;
-    this.subViDisplay.textContent = viText;
+    if (this.subSourceDisplay) this.subSourceDisplay.textContent = sourceText || '';
+    if (this.subViDisplay) this.subViDisplay.textContent = viText || '';
 
-    if (this.invideoSubSource && this.invideoSubVi) {
-      this.invideoSubSource.textContent = sourceText;
-      this.invideoSubVi.textContent = viText;
+    if (this.invideoSubSource) this.invideoSubSource.textContent = sourceText || '';
+    if (this.invideoSubVi) this.invideoSubVi.textContent = viText || '';
+
+    if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = sourceText || '';
+    if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = viText || '';
+
+    if (this.pipWindow && !this.pipWindow.closed) {
+      try {
+        const srcEl = this.pipWindow.document.getElementById('pipSource');
+        const viEl = this.pipWindow.document.getElementById('pipVi');
+        if (srcEl) srcEl.textContent = sourceText || '';
+        if (viEl) viEl.textContent = viText || '';
+      } catch (_) {}
     }
 
     const payload = {
@@ -2615,12 +2726,58 @@ class LiveDubStudio {
     this.statusText.textContent = text;
   }
 
-  // Opens ultra-slim, borderless bottom overlay window
-  openFloatingOverlay() {
+  // Opens ultra-slim Picture-in-Picture window or borderless bottom overlay window
+  async openFloatingOverlay() {
+    this.ensureAudioUnlocked();
+    // 1. Prefer Document Picture-in-Picture (OS Always-on-Top over Fullscreen video/apps)
+    if (typeof window !== 'undefined' && 'documentPictureInPicture' in window && typeof window.documentPictureInPicture.requestWindow === 'function') {
+      try {
+        if (this.pipWindow && !this.pipWindow.closed) {
+          this.pipWindow.close();
+          this.pipWindow = null;
+          return;
+        }
+        const pip = await window.documentPictureInPicture.requestWindow({
+          width: 820,
+          height: 100
+        });
+        this.pipWindow = pip;
+
+        // Copy styles
+        if (typeof document !== 'undefined') {
+          document.querySelectorAll('link[rel="stylesheet"], style').forEach(node => {
+            try { pip.document.head.appendChild(node.cloneNode(true)); } catch (_) {}
+          });
+        }
+
+        const currentSource = this.subSourceDisplay ? this.subSourceDisplay.textContent : '';
+        const currentVi = this.subViDisplay ? this.subViDisplay.textContent || 'Đang chờ phụ đề…' : 'Đang chờ phụ đề…';
+
+        pip.document.body.innerHTML = `
+          <div id="pipContainer" style="width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:4px 14px;background:rgba(10,12,18,0.92);box-sizing:border-box;user-select:none;font-family:var(--font-subtitle,sans-serif);text-align:center;overflow:hidden;border-radius:10px;">
+            <div id="pipSource" style="font-size:13px;color:rgba(255,255,255,0.8);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:98%;margin-bottom:2px;">${this.escapeHtml(currentSource)}</div>
+            <div id="pipVi" style="font-size:24px;color:#FFE600;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:98%;text-shadow:0 2px 6px rgba(0,0,0,0.95);">${this.escapeHtml(currentVi)}</div>
+          </div>
+        `;
+
+        pip.addEventListener('pagehide', () => {
+          this.pipWindow = null;
+        });
+
+        this.showToast('📌 Đã bật Phụ Đề Ghim Nổi (Always-on-Top trên video toàn màn hình)!');
+        return;
+      } catch (err) {
+        console.warn('Document PiP request error, falling back to popup overlay:', err);
+      }
+    }
+
+    // 2. Fallback to popup overlay window
+    const screenWidth = typeof screen !== 'undefined' ? screen.availWidth : 1280;
+    const screenHeight = typeof screen !== 'undefined' ? screen.availHeight : 720;
     const width = 760;
-    const height = 55;
-    const left = Math.round((screen.availWidth - width) / 2);
-    const top = screen.availHeight - height - 35;
+    const height = 65;
+    const left = Math.round((screenWidth - width) / 2);
+    const top = screenHeight - height - 35;
 
     const win = window.open(
       '/overlay',
@@ -2634,6 +2791,7 @@ class LiveDubStudio {
     }
 
     this.floatingWindow = win;
+    this.showToast('📌 Đã mở cửa sổ Phụ Đề Nổi!');
   }
 
   async handleTestText() {
