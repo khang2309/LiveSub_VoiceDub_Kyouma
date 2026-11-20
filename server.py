@@ -398,6 +398,92 @@ def is_hallucination_or_loop(text: str) -> bool:
 
     return False
 
+# Loanword translation & Vietnamese phonetic expansion dictionary for natural TTS
+LOANWORD_TRANSLATION_MAP = {
+    "HERO": "anh hùng",
+    "BOSS": "trùm",
+    "GAME": "trò chơi",
+    "GAMING": "chơi game",
+    "LEVEL": "cấp độ",
+    "SERVER": "máy chủ",
+    "ADMIN": "quản trị viên",
+    "NPC": "nhân vật phụ",
+    "PC": "máy tính",
+    "VIP": "khách quý",
+    "OK": "đồng ý",
+    "BUG": "lỗi",
+    "TEAM": "đội",
+    "PRO": "chuyên nghiệp",
+    "NOOB": "người mới",
+    "SOLO": "đấu đơn",
+    "TOP": "hàng đầu",
+    "BOT": "người máy",
+    "LIVE": "trực tiếp",
+    "STREAM": "phát trực tiếp",
+    "CHAT": "trò chuyện",
+    "AUTO": "tự động",
+    "PASS": "mật khẩu",
+    "FAIL": "thất bại",
+    "WIN": "chiến thắng",
+    "LOSE": "thua cuộc",
+    "MAP": "bản đồ",
+    "SKILL": "kỹ năng",
+    "ITEM": "vật phẩm",
+    "QUEST": "nhiệm vụ",
+    "EVENT": "sự kiện",
+    "UPDATE": "cập nhật",
+    "HACKER": "tin tặc",
+    "ONLINE": "trực tuyến",
+    "OFFLINE": "ngoại tuyến",
+    "LINK": "đường dẫn",
+    "POST": "bài đăng",
+    "LIKE": "thích",
+    "SHARE": "chia sẻ",
+    "COMMENT": "bình luận",
+    "VIDEO": "vi-đê-ô",
+    "CLIP": "đoạn phim",
+    "TOURIST": "du khách",
+    "CLERK": "nhân viên",
+    "CHEF": "bếp trưởng",
+}
+
+PHONETIC_EXPANSION_MAP = {
+    "MRBEAST": "Mít-tơ Bít",
+    "BEAST": "Bít",
+    "YOUTUBE": "Du-túp",
+    "FACEBOOK": "Phây-búc",
+    "TIKTOK": "Tích-tốc",
+    "GOOGLE": "Gú-gồ",
+    "GTA": "Gờ-tê-a",
+    "AI": "A-I",
+    "MIC": "Mích",
+    "BURGER": "Bơ-gơ",
+    "TAREQ": "Ta-rếch",
+    "JIMMY": "Gim-mi",
+    "JEFF": "Giép",
+    "JUAN": "Hoan",
+    "STEVE": "Xti-vơ",
+    "JOBS": "Gióp",
+}
+
+def normalize_loanwords_and_phonetics(text: str) -> str:
+    """Translate loanwords like HERO -> anh hùng or phonetically expand proper nouns for TTS."""
+    if not text:
+        return ""
+    def _replace_token(match):
+        token = match.group(0)
+        upper = token.upper()
+        if upper in LOANWORD_TRANSLATION_MAP:
+            return LOANWORD_TRANSLATION_MAP[upper]
+        if upper in PHONETIC_EXPANSION_MAP:
+            return PHONETIC_EXPANSION_MAP[upper]
+        # Acronyms (e.g. 2-4 uppercase consonants) that would be spelled out letter-by-letter
+        if len(token) >= 2 and token.isupper() and not re.search(r'[AEIOUY]', token):
+            return "-".join(list(token))
+        return token
+    return re.sub(r'\b[A-Za-z0-9]+\b', _replace_token, text)
+
+
 def clean_speech_text(text: str) -> str:
     if not text:
         return ""
@@ -643,6 +729,7 @@ def audio_array_to_wav(audio_arr) -> bytes:
 
 async def generate_tts_bytes(text: str, voice: str = "vieneu:Trúc Ly") -> tuple[bytes, str]:
     cleaned = clean_speech_text(text)
+    cleaned = normalize_loanwords_and_phonetics(cleaned)
     if not cleaned or not re.search(r'[a-zA-ZÀ-ỹ]', cleaned):
         return b"", "audio/mpeg"
 
@@ -860,6 +947,7 @@ async def api_tts(req: TTSRequest):
 async def api_tts_stream(req: TTSRequest):
     """Stream VieNeu PCM to the browser instead of waiting for a complete WAV."""
     cleaned = clean_speech_text(req.text)
+    cleaned = normalize_loanwords_and_phonetics(cleaned)
     if not cleaned:
         raise HTTPException(status_code=400, detail="Text required")
     voice = req.voice or "vieneu:Trúc Ly"
