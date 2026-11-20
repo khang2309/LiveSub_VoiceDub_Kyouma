@@ -1304,7 +1304,7 @@ class LiveDubStudio {
 
     const match = val.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
     if (!match || !match[1]) {
-      alert('Vui lòng nhập link video YouTube hợp lệ (VD: https://www.youtube.com/watch?v=q6fgVVmdpgY).');
+      alert('Mục này chỉ hỗ trợ nhúng link video YouTube (VD: https://www.youtube.com/watch?v=...).\n\nĐối với các trang web phim khác (như AnimeHay, Bilibili, Netflix, v.v.), bạn hãy mở phim trên một tab riêng của trình duyệt, sau đó quay lại LiveSub chọn tab đầu tiên "Âm Thanh Hệ Thống / Mọi Ứng Dụng" rồi bấm "Bắt Đầu Xem & Lồng Tiếng"!');
       return;
     }
     const videoId = match[1];
