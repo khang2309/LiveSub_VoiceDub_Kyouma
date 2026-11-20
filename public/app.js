@@ -42,6 +42,8 @@ class LiveDubStudio {
     this.currentSubMode = 'bilingual';
     this.currentTransparency = 'transparent';
     this.isDubbingEnabled = true;
+    this.isAdaptiveSpeedEnabled = true;
+    this.isHybridModeActive = false;
     // Local VieNeu is the safe zero-cost default. The server benchmarks all
     // warmed providers once at startup and this value is refreshed once.
     this.autoVoiceProvider = 'vieneu:Thái Sơn';
@@ -78,6 +80,7 @@ class LiveDubStudio {
     this.liveSpeechSequence = 0;
     this.liveDubbingQueue = [];
     this.isProcessingLiveDubbing = false;
+    this.liveTtsPrefetch = new Map();
     this.currentGainNode = null;
 
     // Ignore stale subtitle responses when the user quickly loads another URL.
@@ -126,8 +129,9 @@ class LiveDubStudio {
     };
     const modeNames = {
       bilingual: 'Song ngữ',
-      vi_only: 'Chỉ tiếng Việt',
-      source_only: 'Chỉ tiếng gốc',
+      vi_only: 'Sub Tiếng Việt',
+      source_only: 'Sub Tiếng Gốc',
+      en_only: 'Sub Tiếng Anh',
       none: 'Đã tắt phụ đề'
     };
     const languageText = this.sourceLangSelect && this.sourceLangSelect.selectedOptions[0]
@@ -140,7 +144,8 @@ class LiveDubStudio {
     const baseVoiceText = this.voiceSelect && this.voiceSelect.value === 'auto-fast'
       ? `${selectedVoice.split('(')[0].trim()} → ${effectiveVoice.replace('vieneu:', 'VieNeu ')}`
       : selectedVoice.split('(')[0].trim();
-    const voiceText = `${baseVoiceText} · ${this.getSafePlaybackRate().toFixed(2)}×`;
+    const adaptiveSuffix = this.isAdaptiveSpeedEnabled ? ' (Thích ứng)' : '';
+    const voiceText = `${baseVoiceText} · ${this.getSafePlaybackRate().toFixed(2)}×${adaptiveSuffix}`;
 
     if (this.runtimeSourceValue) this.runtimeSourceValue.textContent = sourceNames[this.activeSource] || this.activeSource;
     if (this.runtimeLanguageValue) this.runtimeLanguageValue.textContent = languageText;
@@ -181,6 +186,16 @@ class LiveDubStudio {
     const savedDub = localStorage.getItem('livesub_dubbing_enabled');
     if (savedDub !== null) this.isDubbingEnabled = (savedDub !== 'false');
 
+    const savedAdaptive = localStorage.getItem('livesub_adaptive_speed');
+    if (savedAdaptive !== null) {
+      this.isAdaptiveSpeedEnabled = (savedAdaptive !== 'false');
+      if (this.chkAdaptiveSpeed) this.chkAdaptiveSpeed.checked = this.isAdaptiveSpeedEnabled;
+    }
+    const savedSystemCapture = localStorage.getItem('livesub_system_capture_mode');
+    if (savedSystemCapture && this.systemCaptureMode) {
+      this.setRadioGroupValue(this.systemCaptureMode, savedSystemCapture);
+    }
+
     const savedVoice = localStorage.getItem('livesub_voice');
     if (savedVoice && this.voiceSelect) {
       this.voiceSelect.value = savedVoice;
@@ -190,10 +205,12 @@ class LiveDubStudio {
       this.sourceLangSelect.value = savedLang;
     }
     const savedSubMode = localStorage.getItem('livesub_sub_mode');
-    if (savedSubMode && ['bilingual', 'vi_only', 'source_only', 'none'].includes(savedSubMode)) {
+    if (savedSubMode && ['bilingual', 'vi_only', 'source_only', 'en_only', 'none'].includes(savedSubMode)) {
       this.currentSubMode = savedSubMode;
       const radio = Array.from(this.subModeRadios || []).find(item => item.value === savedSubMode);
       if (radio) radio.checked = true;
+      const sysRadio = Array.from(this.systemSubModeRadios || []).find(item => item.value === savedSubMode);
+      if (sysRadio) sysRadio.checked = true;
     }
     const savedCaptionMode = localStorage.getItem('livesub_caption_mode');
     if (savedCaptionMode && this.webCaptionMode) {
@@ -220,6 +237,12 @@ class LiveDubStudio {
     // Source 1: System
     this.btnToggleSystemAudio = document.getElementById('btnToggleSystemAudio');
     this.btnSystemAudioText = document.getElementById('btnSystemAudioText');
+    this.systemCaptureMode = document.getElementById('systemCaptureMode');
+    this.systemSubMode = document.getElementById('systemSubMode');
+    this.systemIntelligenceState = document.getElementById('systemIntelligenceState');
+    this.systemIntelligenceHint = document.getElementById('systemIntelligenceHint');
+    this.systemSubModeRadios = document.querySelectorAll('input[name="systemSubMode"]');
+    this.chkAdaptiveSpeed = document.getElementById('chkAdaptiveSpeed');
 
     // Source 2: Local Video File
     this.localVideoDropZone = document.getElementById('localVideoDropZone');
@@ -322,20 +345,79 @@ class LiveDubStudio {
     }, 2400);
   }
 
-  getSafePlaybackRate(extra = 0) {
+  getSafePlaybackRate(extra = 0, originalDuration = 0, textLength = 0) {
     const selected = parseFloat(this.rateRange && this.rateRange.value) || 1.15;
-    // 1.50x is useful for catching up with a busy dialogue queue. It does not
-    // control phrase boundaries; Silero VAD below is responsible for that.
-    return Math.min(1.50, Math.max(0.8, selected + extra));
+    let rate = Math.min(1.50, Math.max(0.8, selected + extra));
+    if (this.isAdaptiveSpeedEnabled && originalDuration > 0 && textLength > 0) {
+      const estimatedSyllables = Math.max(1, textLength / 3.8);
+      const estimatedSpeechSeconds = estimatedSyllables * 0.22;
+      if (estimatedSpeechSeconds > originalDuration) {
+        const fitRate = estimatedSpeechSeconds / originalDuration;
+        rate = Math.min(1.50, Math.max(rate, fitRate));
+      }
+    }
+    return rate;
   }
 
-  getSafeStreamingPlaybackRate(queueDepth = 0, serverCap = 1.20) {
+  getSafeStreamingPlaybackRate(queueDepth = 0, serverCap = 1.20, originalDuration = 0, textLength = 0) {
     // Completed audio can safely play at 1.50x. Live PCM cannot: consuming it
     // faster than CUDA generates it creates the audible stop/start effect.
     // The backend derives serverCap from this session's measured CUDA RTF.
     const requested = this.getSafePlaybackRate(Math.min(0.10, queueDepth * 0.04));
     const measuredCap = Number.isFinite(serverCap) ? serverCap : 1.0;
-    return Math.min(1.20, measuredCap, requested);
+    let rate = Math.min(1.20, measuredCap, requested);
+
+    if (this.isAdaptiveSpeedEnabled && originalDuration > 0 && textLength > 0) {
+      const estimatedSyllables = Math.max(1, textLength / 3.8);
+      const estimatedSpeechSeconds = estimatedSyllables * 0.22;
+      if (estimatedSpeechSeconds > originalDuration) {
+        const fitRate = estimatedSpeechSeconds / originalDuration;
+        rate = Math.min(measuredCap, Math.max(rate, fitRate));
+      } else if (estimatedSpeechSeconds < originalDuration * 0.70 && queueDepth === 0) {
+        rate = Math.max(0.85, rate * 0.95);
+      }
+    }
+    return Math.min(1.30, measuredCap, rate);
+  }
+
+  setSubMode(mode) {
+    if (!['bilingual', 'vi_only', 'source_only', 'en_only', 'none'].includes(mode)) return;
+    this.currentSubMode = mode;
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.setItem('livesub_sub_mode', mode);
+    } catch (_) {}
+
+    (this.subModeRadios || []).forEach(r => { r.checked = (r.value === mode); });
+    (this.systemSubModeRadios || []).forEach(r => { r.checked = (r.value === mode); });
+
+    this.updateSubModeUI();
+    this.updateAppliedSettings();
+  }
+
+  updateSystemIntelligenceControls() {
+    if (!this.systemCaptureMode) return;
+    const mode = this.getRadioGroupValue(this.systemCaptureMode, 'audio_only');
+    if (this.systemIntelligenceState) {
+      if (mode === 'audio_only') {
+        this.systemIntelligenceState.dataset.state = 'ready';
+        this.systemIntelligenceState.textContent = 'Whisper GPU';
+      } else if (mode === 'hard_sub') {
+        this.systemIntelligenceState.dataset.state = 'ocr';
+        this.systemIntelligenceState.textContent = 'RapidOCR GPU';
+      } else {
+        this.systemIntelligenceState.dataset.state = 'ready';
+        this.systemIntelligenceState.textContent = 'Hybrid Tự Động';
+      }
+    }
+    if (this.systemIntelligenceHint) {
+      if (mode === 'audio_only') {
+        this.systemIntelligenceHint.textContent = 'Faster-Whisper CUDA float16 cùng Silero VAD đang nhận diện âm thanh trực tiếp từ loa / mọi ứng dụng.';
+      } else if (mode === 'hard_sub') {
+        this.systemIntelligenceHint.textContent = 'RapidOCR GPU sẽ quét phụ đề đóng cứng trực tiếp từ khung hình/tab video bạn chia sẻ, không phụ thuộc âm thanh.';
+      } else {
+        this.systemIntelligenceHint.textContent = 'Chế độ thông minh: Tự động phát hiện phụ đề hình ảnh (OCR) kết hợp nhận diện giọng nói Whisper khi không có chữ.';
+      }
+    }
   }
 
   bindEvents() {
@@ -354,6 +436,21 @@ class LiveDubStudio {
     // 2. Source 1: System / Tab Audio
     if (this.btnToggleSystemAudio) {
       this.btnToggleSystemAudio.addEventListener('click', () => this.toggleSystemAudio());
+    }
+    if (this.systemCaptureMode) {
+      this.systemCaptureMode.addEventListener('change', () => {
+        const mode = this.getRadioGroupValue(this.systemCaptureMode, 'audio_only');
+        localStorage.setItem('livesub_system_capture_mode', mode);
+        this.updateSystemIntelligenceControls();
+        this.updateAppliedSettings();
+      });
+    }
+    if (this.systemSubModeRadios) {
+      this.systemSubModeRadios.forEach(radio => {
+        radio.addEventListener('change', (e) => {
+          this.setSubMode(e.target.value);
+        });
+      });
     }
 
     // 3. Source 2: Local Video File
@@ -550,12 +647,18 @@ class LiveDubStudio {
 
     this.subModeRadios.forEach(radio => {
       radio.addEventListener('change', (e) => {
-        this.currentSubMode = e.target.value;
-        localStorage.setItem('livesub_sub_mode', this.currentSubMode);
-        this.updateSubModeUI();
-        this.updateAppliedSettings();
+        this.setSubMode(e.target.value);
       });
     });
+
+    if (this.chkAdaptiveSpeed) {
+      this.chkAdaptiveSpeed.addEventListener('change', (e) => {
+        this.isAdaptiveSpeedEnabled = !!e.target.checked;
+        localStorage.setItem('livesub_adaptive_speed', String(this.isAdaptiveSpeedEnabled));
+        this.updateAppliedSettings();
+        this.showToast(this.isAdaptiveSpeedEnabled ? '⚡ Tốc độ đọc thích ứng theo video: BẬT' : ' Tốc độ đọc cố định: BẬT');
+      });
+    }
 
     if (this.btnToggleBoxTransparent) {
       this.btnToggleBoxTransparent.addEventListener('click', () => {
@@ -751,7 +854,9 @@ class LiveDubStudio {
       }
 
       this.activeSource = 'system';
-      this.isOCRModeActive = this.getRadioGroupValue(this.webCaptionMode) === 'hard_sub';
+      const captureMode = this.getRadioGroupValue(this.systemCaptureMode, 'audio_only');
+      this.isOCRModeActive = (captureMode === 'hard_sub');
+      this.isHybridModeActive = (captureMode === 'auto');
       this.btnSystemAudioText.textContent = 'Dừng Thu Âm Hệ Thống';
       this.btnToggleSystemAudio.classList.remove('btn-primary');
       this.btnToggleSystemAudio.classList.add('btn-danger');
@@ -762,7 +867,7 @@ class LiveDubStudio {
 
       this.showToast(' Đã kết nối âm thanh hệ thống! Hãy phát video để nghe lồng tiếng.');
       await this.setupVADAndRecording(this.mediaStream);
-      if (this.isOCRModeActive) await this.startHardSubtitleOCR(this.mediaStream);
+      if (this.isOCRModeActive || this.isHybridModeActive) await this.startHardSubtitleOCR(this.mediaStream);
     } catch (err) {
       if (err.name !== 'NotAllowedError') {
         alert('Lỗi thu âm hệ thống: ' + err.message);
@@ -1516,13 +1621,13 @@ class LiveDubStudio {
           getStream: async () => vadStream,
           pauseStream: async () => {},
           resumeStream: async () => vadStream,
-          positiveSpeechThreshold: 0.55,
+          positiveSpeechThreshold: 0.50,
           negativeSpeechThreshold: 0.35,
-          // About 450 ms preserves natural pauses without recreating the long
-          // one-second delay that the previous endpointing caused.
-          redemptionMs: 448,
-          preSpeechPadMs: 192,
-          minSpeechMs: 256,
+          // 240 ms preserves natural sentence flow while eliminating the long
+          // lag before Whisper and VieNeu begin processing.
+          redemptionMs: 240,
+          preSpeechPadMs: 160,
+          minSpeechMs: 200,
           submitUserSpeechOnPause: true,
           onSpeechStart: () => {
             this.captureStartedAt = performance.now();
@@ -1531,9 +1636,22 @@ class LiveDubStudio {
           onVADMisfire: () => {
             this.captureStartedAt = 0;
           },
-          onFrameProcessed: () => {},
+          onFrameProcessed: (probabilities) => {
+            // Adaptive continuous speech splitting: In rapid dialogue (YouTube / movies),
+            // actors rarely pause for a full redemption period. Split at natural dips
+            // (>2.8s, speech prob < 0.45) or at hard ceiling (>4.0s) so Whisper and VieNeu
+            // process compact phrases immediately instead of lagging 10 seconds behind.
+            if (this.captureStartedAt && probabilities) {
+              const elapsed = performance.now() - this.captureStartedAt;
+              const isDip = elapsed > 2800 && probabilities.isSpeech < 0.45;
+              const isCeiling = elapsed > 4000;
+              if ((isDip || isCeiling) && this.neuralVAD && this.neuralVAD.frameProcessor) {
+                this.neuralVAD.frameProcessor.redemptionCounter = this.neuralVAD.frameProcessor.redemptionFrames || 999;
+              }
+            }
+          },
           onSpeechEnd: (audio) => {
-            if (!this.isListening || !audio || audio.length < 4096) return;
+            if (!this.isListening || !audio || audio.length < 3200) return;
             const wavBlob = this.encodeWAV16k([audio], 16000);
             wavBlob.livesubCapturedAt = this.captureStartedAt || performance.now();
             wavBlob.livesubFinalizedAt = performance.now();
@@ -1620,16 +1738,12 @@ class LiveDubStudio {
         this.consecutiveQuietBlocks = 0;
       }
 
-      // A 3.2 s hard split used to cut actors in the middle of a sentence.
-      // Allow normal cinematic lines to finish; only protect against a long
-      // unbroken/noisy stream at five seconds.
-      const maxBlocks = Math.round((6.5 * sampleRate) / 4096);
+      // Responsive splitting: 4.0s ceiling, ~256ms quiet blocks.
+      const maxBlocks = Math.round((4.0 * sampleRate) / 4096);
       if (this.pcmBuffers.length >= maxBlocks) {
         triggerSendClause('hard-limit');
       } 
-      // Four blocks at 48 kHz = ~341 ms. This avoids treating a natural pause
-      // inside one sentence as the end of the actor's line.
-      else if (this.pcmBuffers.length >= Math.round((0.65 * sampleRate) / 4096) && this.consecutiveQuietBlocks >= 4 && this.currentChunkMaxRms >= 0.001) {
+      else if (this.pcmBuffers.length >= Math.round((0.45 * sampleRate) / 4096) && this.consecutiveQuietBlocks >= 3 && this.currentChunkMaxRms >= 0.001) {
         triggerSendClause('natural');
       }
     };
@@ -1783,21 +1897,26 @@ class LiveDubStudio {
           this.lastTranscriptContext = `${this.lastTranscriptContext} ${data.original}`.trim().slice(-500);
           const record = this.addHistory(data.original, data.translated, data.detected_lang || 'auto');
 
+          // Display translated subtitle immediately for zero perceived latency,
+          // in tight sync with video speech, while voiceover plays smoothly.
+          this.displaySubtitle(data.original, data.translated);
+          if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = data.translated;
+          if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = data.original;
+
+          const captureDuration = (captureMeta && captureMeta.capturedAt && captureMeta.finalizedAt)
+            ? Math.max(0, (captureMeta.finalizedAt - captureMeta.capturedAt) / 1000)
+            : 0;
+
           if (this.isDubbingEnabled) {
-            // Keep the translated subtitle paired with the exact voice line.
-            // It is displayed by the audio onStart callback below.
             this.enqueueLiveDubbing(
               data.translated,
               record.id,
               data.original,
               captureMeta ? captureMeta.capturedAt : performance.now(),
               captureMeta ? captureMeta.finalizedAt : performance.now(),
-              data.timings || null
+              data.timings || null,
+              captureDuration
             );
-          } else {
-            this.displaySubtitle(data.original, data.translated);
-            if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = data.translated;
-            if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = data.original;
           }
         }
       }
@@ -1814,8 +1933,9 @@ class LiveDubStudio {
     }
   }
 
-  enqueueLiveDubbing(text, historyId, sourceText = '', capturedAt = null, finalizedAt = null, serverTimings = null) {
+  enqueueLiveDubbing(text, historyId, sourceText = '', capturedAt = null, finalizedAt = null, serverTimings = null, originalDuration = 0) {
     if (!text || !this.isDubbingEnabled) return Promise.resolve();
+    const duration = originalDuration || (capturedAt && finalizedAt ? Math.max(0, (finalizedAt - capturedAt) / 1000) : 0);
     this.liveDubbingQueue.push({
       text,
       sourceText,
@@ -1823,10 +1943,31 @@ class LiveDubStudio {
       capturedAt,
       finalizedAt,
       serverTimings,
+      originalDuration: duration,
       generation: this.dubbingGeneration,
       voice: this.getEffectiveVoice()
     });
     return this.drainLiveDubbingQueue();
+  }
+
+  prefetchLiveTts(text, voice) {
+    if (!text || !voice || !voice.startsWith('vieneu')) return;
+    if (!this.liveTtsPrefetch) this.liveTtsPrefetch = new Map();
+    const key = `${voice}:::${text}`;
+    if (this.liveTtsPrefetch.has(key)) return;
+
+    const controller = new AbortController();
+    const promise = fetch('/api/tts-stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice }),
+      signal: controller.signal
+    }).catch(err => {
+      if (this.liveTtsPrefetch) this.liveTtsPrefetch.delete(key);
+      return null;
+    });
+
+    this.liveTtsPrefetch.set(key, { promise, controller });
   }
 
   async drainLiveDubbingQueue() {
@@ -1834,12 +1975,21 @@ class LiveDubStudio {
     this.isProcessingLiveDubbing = true;
     try {
       while (this.liveDubbingQueue.length > 0) {
+        if (this.liveDubbingQueue.length > 3) {
+          this.liveDubbingQueue.splice(0, this.liveDubbingQueue.length - 2);
+        }
+
         const item = this.liveDubbingQueue.shift();
         const isStale = () => (
           !this.isDubbingEnabled
           || item.generation !== this.dubbingGeneration
         );
         if (isStale()) continue;
+
+        if (this.liveDubbingQueue.length > 0) {
+          const nextItem = this.liveDubbingQueue[0];
+          this.prefetchLiveTts(nextItem.text, nextItem.voice);
+        }
         try {
           const revealSubtitle = () => {
             if (item.capturedAt) {
@@ -1856,6 +2006,7 @@ class LiveDubStudio {
             if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = item.text;
             if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = item.sourceText;
           };
+          const originalDuration = item.originalDuration || (item.finalizedAt && item.capturedAt ? Math.max(0, (item.finalizedAt - item.capturedAt) / 1000) : 0);
           if (item.voice.startsWith('vieneu')) {
             await this.playStreamingTts(
               item.text,
@@ -1863,7 +2014,8 @@ class LiveDubStudio {
               true,
               revealSubtitle,
               null,
-              this.liveDubbingQueue.length
+              this.liveDubbingQueue.length,
+              originalDuration
             );
             continue;
           }
@@ -1879,7 +2031,7 @@ class LiveDubStudio {
           if (isStale()) continue;
           const audio = await response.arrayBuffer();
           if (isStale()) continue;
-          await this.playAudioBuffer(audio, true, revealSubtitle);
+          await this.playAudioBuffer(audio, true, revealSubtitle, originalDuration, item.text ? item.text.length : 0);
         } catch (error) {
           console.warn('Live dubbing error:', error);
           // A voice failure must not hide the translated content.
@@ -1961,7 +2113,7 @@ class LiveDubStudio {
     }
   }
 
-  async playAudioBuffer(arrayBuffer, waitForEnd = false, onStart = null) {
+  async playAudioBuffer(arrayBuffer, waitForEnd = false, onStart = null, originalDuration = 0, textLength = 0) {
     this.stopAllAudio();
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -1975,7 +2127,7 @@ class LiveDubStudio {
       const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer.slice(0));
       const sourceNode = this.audioContext.createBufferSource();
       sourceNode.buffer = audioBuffer;
-      sourceNode.playbackRate.value = this.getSafePlaybackRate();
+      sourceNode.playbackRate.value = this.getSafePlaybackRate(0, originalDuration, textLength);
 
       const gainNode = this.audioContext.createGain();
       gainNode.gain.value = (parseInt(this.volumeRange.value, 10) || 100) / 100;
@@ -2004,10 +2156,16 @@ class LiveDubStudio {
 
   // Play raw PCM as each VieNeu chunk arrives. This removes the old wait for
   // the complete WAV (typically several seconds) while preserving queue order.
-  async playStreamingTts(text, voice, waitForEnd = true, onStart = null, token = null, queueDepth = 0) {
+  async playStreamingTts(text, voice, waitForEnd = true, onStart = null, token = null, queueDepth = 0, originalDuration = 0) {
     if (token && !this.isPlaybackCurrent(token)) return;
     this.stopDubbingAudio(false, !token);
     if (token && !this.isPlaybackCurrent(token)) return;
+
+    const prefetchKey = `${voice}:::${text}`;
+    let prefetched = this.liveTtsPrefetch ? this.liveTtsPrefetch.get(prefetchKey) : null;
+    if (prefetched) {
+      this.liveTtsPrefetch.delete(prefetchKey);
+    }
 
     const controller = new AbortController();
     this.streamingAbortController = controller;
@@ -2018,14 +2176,16 @@ class LiveDubStudio {
     const ended = new Promise(resolve => { resolveEnded = resolve; });
 
     try {
-      const response = await fetch('/api/tts-stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voice }),
-        signal: controller.signal
-      });
-      if (!response.ok || !response.body) {
-        throw new Error(`TTS stream HTTP ${response.status}`);
+      const response = prefetched
+        ? (await prefetched.promise)
+        : await fetch('/api/tts-stream', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text, voice }),
+            signal: controller.signal
+          });
+      if (!response || !response.ok || !response.body) {
+        throw new Error(`TTS stream HTTP ${response ? response.status : 'network error'}`);
       }
       if (token && !this.isPlaybackCurrent(token)) return;
 
@@ -2046,7 +2206,7 @@ class LiveDubStudio {
       const reader = response.body.getReader();
       // Never skip or interrupt a line. If complete lines are waiting, gently
       // accelerate the current one so the queue converges instead of drifting.
-      const playbackRate = this.getSafeStreamingPlaybackRate(queueDepth, serverRateCap);
+      const playbackRate = this.getSafeStreamingPlaybackRate(queueDepth, serverRateCap, originalDuration, text ? text.length : 0);
       let nextStart = 0;
       let carry = null;
       let started = false;
@@ -2101,14 +2261,11 @@ class LiveDubStudio {
         const now = this.audioContext.currentTime;
         let startAt;
         if (!started) {
-          // VieNeu is faster than realtime, but CUDA emits uneven chunk bursts.
-          // Keep ~280 ms ahead on the first chunk so browser scheduling jitter
-          // cannot create the audible stop/start effect reported by users.
-          startAt = now + 0.28;
-        } else if (nextStart < now + 0.045) {
+          // Low-latency initial lead (0.09s) for instant playback start
+          startAt = now + 0.09;
+        } else if (nextStart < now + 0.02) {
           this.realtimeMetrics.streamUnderruns++;
-          // Rebuild enough lead once instead of inserting many tiny gaps.
-          startAt = now + 0.16;
+          startAt = now + 0.05;
         } else {
           startAt = nextStart;
         }
@@ -2116,6 +2273,10 @@ class LiveDubStudio {
         nextStart = startAt + audioBuffer.duration / playbackRate;
         if (!started) {
           started = true;
+          if (this.liveDubbingQueue && this.liveDubbingQueue.length > 0) {
+            const nextItem = this.liveDubbingQueue[0];
+            this.prefetchLiveTts(nextItem.text, nextItem.voice);
+          }
           const callbackDelay = Math.max(0, (startAt - this.audioContext.currentTime) * 1000);
           startCallbackTimer = setTimeout(() => {
             startCallbackTimer = null;
@@ -2142,7 +2303,15 @@ class LiveDubStudio {
   }
 
   stopDubbingAudio(invalidatePlayback = true, restoreOriginalVolume = true) {
-    if (invalidatePlayback) this.playbackGeneration++;
+    if (invalidatePlayback) {
+      this.playbackGeneration++;
+      if (this.liveTtsPrefetch) {
+        for (const entry of this.liveTtsPrefetch.values()) {
+          try { entry.controller.abort(); } catch (_) {}
+        }
+        this.liveTtsPrefetch.clear();
+      }
+    }
     if (this.currentActiveAudioSource) {
       try {
         this.currentActiveAudioSource.stop();
@@ -2309,7 +2478,7 @@ class LiveDubStudio {
   }
 
   updateSubModeUI() {
-    const showSource = this.currentSubMode === 'bilingual' || this.currentSubMode === 'source_only';
+    const showSource = this.currentSubMode === 'bilingual' || this.currentSubMode === 'source_only' || this.currentSubMode === 'en_only';
     const showVi = this.currentSubMode === 'bilingual' || this.currentSubMode === 'vi_only';
 
     this.subSourceDisplay.style.display = showSource ? 'block' : 'none';
@@ -2457,7 +2626,7 @@ class LiveDubStudio {
 
       srtContent += `${index + 1}\n`;
       srtContent += `${this.formatSRTTime(startMs)} --> ${this.formatSRTTime(endMs)}\n`;
-      if (this.currentSubMode === 'source_only') {
+      if (this.currentSubMode === 'source_only' || this.currentSubMode === 'en_only') {
         srtContent += `${item.sourceText}\n\n`;
       } else if (this.currentSubMode === 'vi_only') {
         srtContent += `${item.viText}\n\n`;

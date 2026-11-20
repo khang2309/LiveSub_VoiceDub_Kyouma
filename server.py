@@ -877,11 +877,11 @@ async def api_tts_stream(req: TTSRequest):
 
     measured_rtf = _network_tts_state.get("vieneu_rtf")
     # Leave an 8% production margin for normal CUDA scheduling variance. The
-    # browser may still use 1.50x for completed audio, but live PCM must not be
-    # consumed faster than this session's measured generator throughput.
+    # browser may still use 1.50x for completed audio, and can accelerate up to
+    # 1.30x for live PCM to catch up with video speech.
     safe_playback_rate = 1.0
     if measured_rtf:
-        safe_playback_rate = min(1.20, max(0.80, 0.92 / measured_rtf))
+        safe_playback_rate = min(1.30, max(0.80, 0.95 / measured_rtf))
 
     return StreamingResponse(
         measured_stream(),

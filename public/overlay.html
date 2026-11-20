@@ -5,17 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Cửa sổ phụ đề nổi của LiveSub và VoiceDub AI.">
   <title>LiveSub Subtitles</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:ital,wght@0,600;0,700;0,800;0,900;1,700&family=Oswald:wght@600;700&display=swap" rel="stylesheet">
   <style>
     /* Hallmark · shape: app overlay · genre: atmospheric · theme: Spore · redesign: full · scope: app */
     :root {
       --overlay-paper: oklch(8% 0.008 60 / 0.72);
       --overlay-paper-soft: oklch(8% 0.008 60 / 0.35);
       --overlay-paper-strong: oklch(15% 0.012 60 / 0.88);
-      --overlay-ink: oklch(93% 0.022 85);
-      --overlay-ink-muted: oklch(84% 0.022 78);
-      --overlay-accent: oklch(86% 0.06 30);
-      --overlay-shadow: oklch(4% 0.006 60);
-      --overlay-font: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+      --overlay-ink: #FFFFFF;
+      --overlay-ink-muted: rgba(255, 255, 255, 0.82);
+      --overlay-accent: #FFFFFF;
+      --overlay-shadow: #000000;
+      --overlay-font-sub: "Roboto Condensed", "Oswald", "Barlow Condensed", "Montserrat", "Arial Narrow", "Franklin Gothic Medium", sans-serif;
+      --overlay-font: var(--overlay-font-sub);
       --space-3xs: 2px;
       --space-sm: 12px;
     }
@@ -59,28 +63,44 @@
       text-align: center;
     }
     .sub-source {
-      font-size: 12px;
+      font-family: var(--overlay-font-sub);
+      font-size: 13px;
       color: var(--overlay-ink-muted);
-      font-weight: 500;
+      font-weight: 600;
       max-width: 98%;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      margin-bottom: 1px;
-      text-shadow: 0 1px 3px var(--overlay-shadow), 0 0 6px var(--overlay-shadow);
+      margin-bottom: 3px;
+      -webkit-text-stroke: 1px #000000;
+      paint-order: stroke fill;
+      text-shadow: 0 1px 3px #000000;
+      letter-spacing: 0.01em;
     }
     .sub-vi {
-      font-size: 21px;
+      font-family: var(--overlay-font-sub);
+      font-size: 24px;
       font-weight: 800;
-      color: var(--overlay-accent);
-      line-height: 1.2;
+      font-size-adjust: from-font;
+      color: #FFFFFF;
+      line-height: 1.25;
       max-width: 98%;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      -webkit-text-stroke: 1.2px var(--overlay-shadow);
-      text-shadow: 0 2px 6px var(--overlay-shadow), 0 0 12px var(--overlay-shadow);
-      letter-spacing: 0.02em;
+      -webkit-text-stroke: 1.8px #000000;
+      paint-order: stroke fill;
+      text-shadow:
+        -2px -2px 0 #000000,
+         2px -2px 0 #000000,
+        -2px  2px 0 #000000,
+         2px  2px 0 #000000,
+         0px  3px 8px rgba(0, 0, 0, 0.9);
+      background: rgba(15, 23, 42, 0.88);
+      border-radius: 8px;
+      padding: 4px 16px;
+      display: inline-block;
+      letter-spacing: 0.015em;
     }
   </style>
 </head>
@@ -120,7 +140,7 @@
         if (subMode === 'vi_only') {
           floatSource.style.display = 'none';
           floatVi.style.display = 'block';
-        } else if (subMode === 'source_only') {
+        } else if (subMode === 'source_only' || subMode === 'en_only') {
           floatSource.style.display = 'block';
           floatVi.style.display = 'none';
         } else if (subMode === 'none') {

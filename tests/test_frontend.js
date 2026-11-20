@@ -439,3 +439,79 @@ test('OCR subtitle is deduplicated before entering the dubbing queue', () => {
   assert.equal(queued, 1);
   assert.equal(app.lastTranscriptContext, 'Hello world');
 });
+
+test('system capture mode selects OCR vs Whisper for system audio capture', async () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.systemCaptureMode = {
+    querySelector: (sel) => ({ value: 'hard_sub' })
+  };
+  app.isListening = false;
+  app.btnSystemAudioText = { textContent: '' };
+  app.btnToggleSystemAudio = { classList: { remove() {}, add() {} } };
+  app.stopListening = () => {};
+  app.setupVADAndRecording = async () => {};
+  let ocrStarted = false;
+  app.startHardSubtitleOCR = async () => { ocrStarted = true; };
+  app.showToast = () => {};
+
+  const originalMediaDevices = global.navigator.mediaDevices;
+  global.navigator.mediaDevices = {
+    getDisplayMedia: async () => ({
+      getAudioTracks: () => [{}],
+      getVideoTracks: () => [{ onended: null }]
+    })
+  };
+
+  try {
+    await app.toggleSystemAudio();
+    assert.equal(app.activeSource, 'system');
+    assert.equal(app.isOCRModeActive, true);
+    assert.equal(ocrStarted, true);
+  } finally {
+    global.navigator.mediaDevices = originalMediaDevices;
+  }
+});
+
+test('system subMode syncs across controls and supports en_only mode', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  const mainRadios = [{ value: 'bilingual', checked: true }, { value: 'en_only', checked: false }];
+  const sysRadios = [{ value: 'bilingual', checked: true }, { value: 'en_only', checked: false }];
+  app.subModeRadios = mainRadios;
+  app.systemSubModeRadios = sysRadios;
+  app.subSourceDisplay = el();
+  app.subViDisplay = el();
+  app.invideoSubSource = el();
+  app.invideoSubVi = el();
+  app.invideoWebSubSource = el();
+  app.invideoWebSubVi = el();
+  app.broadcastOverlay = () => {};
+  app.updateAppliedSettings = () => {};
+
+  app.setSubMode('en_only');
+
+  assert.equal(app.currentSubMode, 'en_only');
+  assert.equal(mainRadios[1].checked, true);
+  assert.equal(sysRadios[1].checked, true);
+  assert.equal(app.subSourceDisplay.style.display, 'block');
+  assert.equal(app.subViDisplay.style.display, 'none');
+});
+
+test('adaptive speed scales playback rate to match video speech duration', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.rateRange = { value: '1.00' };
+  app.isAdaptiveSpeedEnabled = true;
+
+  // Dialogue with 15 Vietnamese syllables (~3.3s speech) crowded into a 2.0s video slot
+  // Expected fitRate = ~1.65, capped safely to server RTF cap (1.25)
+  const rate = app.getSafeStreamingPlaybackRate(0, 1.25, 2.0, 57);
+  assert.equal(rate, 1.25);
+
+  // When speaker speaks slowly (4.0s slot for 10 characters = ~0.58s speech), rate relaxes
+  const relaxedRate = app.getSafeStreamingPlaybackRate(0, 1.20, 4.0, 10);
+  assert.ok(relaxedRate <= 1.00);
+
+  // When adaptive speed is disabled, rate stays at user setting
+  app.isAdaptiveSpeedEnabled = false;
+  const fixedRate = app.getSafeStreamingPlaybackRate(0, 1.25, 2.0, 57);
+  assert.equal(fixedRate, 1.00);
+});

@@ -6,10 +6,10 @@
   <meta name="description" content="Studio phụ đề và lồng tiếng tiếng Việt theo thời gian thực cho video, âm thanh hệ thống và microphone.">
   <title>LiveSub & VoiceDub AI - Studio Thuyết Minh & Lồng Tiếng Đa Nguồn</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23e89486'/%3E%3Cpath d='M32 13a8 8 0 0 0-8 8v17a8 8 0 0 0 16 0V21a8 8 0 0 0-8-8Zm-16 22v3a16 16 0 0 0 32 0v-3h-5v3a11 11 0 0 1-22 0v-3Z' fill='%23170f0b'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css?v=20261120_39">
+  <link rel="stylesheet" href="style.css?v=20261120_41">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com">
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Young+Serif&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Roboto+Condensed:ital,wght@0,600;0,700;0,800;0,900;1,700&family=Oswald:wght@600;700&family=Young+Serif&display=swap" rel="stylesheet">
   <script src="https://www.youtube.com/iframe_api"></script>
 </head>
 <body>
@@ -117,10 +117,37 @@
         <div id="panelSourceSystem" class="source-panel-block">
           <div class="block-header">
             <span class="badge-tag">Hệ Thống & Tab</span>
-            <span class="block-hint">Bắt mọi âm thanh phát ra từ máy tính Windows</span>
+            <span class="block-hint">Bắt mọi âm thanh phát ra từ máy tính Windows (Netflix, Bilibili, VLC, YouTube, Zoom, Game)</span>
           </div>
 
-          <div class="stream-action-group">
+          <div class="source-intelligence" aria-labelledby="systemIntelligenceTitle">
+            <div class="source-intelligence-heading">
+              <strong id="systemIntelligenceTitle">Nguồn Lời Thoại & Phụ Đề Hệ Thống</strong>
+              <span id="systemIntelligenceState" class="source-state" data-state="ready">Sẵn sàng</span>
+            </div>
+            <div class="source-intelligence-grid">
+              <fieldset id="systemCaptureMode" class="choice-group">
+                <legend>Phương thức nhận dạng</legend>
+                <label class="choice-option"><input type="radio" name="systemCaptureMode" value="audio_only" checked><span><strong>Âm thanh trực tiếp / Whisper GPU</strong><small>Nghe tiếng từ loa / ứng dụng qua Whisper float16 cực nhanh</small></span></label>
+                <label class="choice-option"><input type="radio" name="systemCaptureMode" value="hard_sub"><span><strong>Phụ đề đóng cứng / RapidOCR</strong><small>Quét đọc chữ phụ đề in trên khung hình bằng RapidOCR GPU</small></span></label>
+                <label class="choice-option"><input type="radio" name="systemCaptureMode" value="auto"><span><strong>Tự nhận diện thông minh</strong><small>Kết hợp Whisper GPU + OCR khi phát hiện chữ phụ đề</small></span></label>
+              </fieldset>
+
+              <fieldset id="systemSubMode" class="choice-group">
+                <legend>Kiểu hiển thị phụ đề</legend>
+                <label class="choice-option"><input type="radio" name="systemSubMode" value="vi_only"><span><strong>Có Sub Tiếng Việt</strong><small>Chỉ hiện phụ đề tiếng Việt chuẩn, viền đen sắc nét</small></span></label>
+                <label class="choice-option"><input type="radio" name="systemSubMode" value="bilingual" checked><span><strong>Song ngữ (Gốc + Việt)</strong><small>Dòng 1 tiếng gốc, dòng 2 tiếng Việt</small></span></label>
+                <label class="choice-option"><input type="radio" name="systemSubMode" value="source_only"><span><strong>Sub Tiếng Gốc</strong><small>Chỉ hiện lời thoại tiếng gốc (Anh, Hàn, Nhật, Trung)</small></span></label>
+                <label class="choice-option"><input type="radio" name="systemSubMode" value="en_only"><span><strong>Sub Tiếng Anh</strong><small>Hiện phụ đề tiếng Anh</small></span></label>
+                <label class="choice-option"><input type="radio" name="systemSubMode" value="none"><span><strong>Không có sub</strong><small>Tắt phụ đề trên màn hình, chỉ nghe lồng tiếng AI</small></span></label>
+              </fieldset>
+            </div>
+            <p id="systemIntelligenceHint" class="source-intelligence-hint">
+              Faster-Whisper CUDA float16 cùng Silero VAD đang sẵn sàng bắt âm thanh từ mọi tab trình duyệt và ứng dụng desktop.
+            </p>
+          </div>
+
+          <div class="stream-action-group" style="margin-top: 14px;">
             <button id="btnToggleSystemAudio" class="btn btn-primary btn-large w-full">
               <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <rect width="20" height="15" x="2" y="3" rx="2"/>
@@ -132,7 +159,7 @@
           </div>
           <p class="source-guide-text">
              <em>Lưu ý:</em> Khi hộp thoại trình duyệt hiện ra, chọn <strong>Toàn bộ màn hình</strong> hoặc <strong>Tab</strong> và nhớ <strong>tích chọn “Chia sẻ âm thanh”</strong>.
-             Chữ đã dính vào hình phim (hard-sub) không phải track CC: chọn <strong>Phụ đề đóng cứng / OCR</strong>, rồi chia sẻ đúng tab hoặc màn hình chứa video.
+             Nếu chọn <strong>Phụ đề đóng cứng / OCR</strong>, chia sẻ đúng tab hoặc màn hình đang phát video để OCR quét vùng phụ đề.
           </p>
         </div>
 
@@ -305,7 +332,7 @@
           <div class="form-row-2">
             <div class="form-group">
               <div class="range-header">
-                <label for="rateRange">Tốc độ đọc:</label>
+                <label for="rateRange">Tốc độ đọc cơ bản:</label>
                 <span id="rateValue" class="badge">1.15x</span>
               </div>
               <input type="range" id="rateRange" min="0.8" max="1.50" step="0.05" value="1.15" class="slider-control">
@@ -318,6 +345,16 @@
               </div>
               <input type="range" id="volumeRange" min="0" max="100" step="5" value="100" class="slider-control">
             </div>
+          </div>
+
+          <div class="adaptive-speed-box" style="margin-top: 10px;">
+            <label class="checkbox-option">
+              <input type="checkbox" id="chkAdaptiveSpeed" checked>
+              <span>
+                <strong>Tốc độ đọc thích ứng theo video (Adaptive Pacing)</strong>
+                <small>Tự động co giãn tốc độ theo thời lượng câu thoại video: tăng tốc khi đối thoại dồn dập để khớp cảnh phim, chậm lại khi thoại thong thả.</small>
+              </span>
+            </label>
           </div>
         </div>
 
@@ -346,15 +383,19 @@
             </label>
             <label class="radio-pill">
               <input type="radio" name="subMode" value="vi_only">
-              <span>Chỉ tiếng Việt</span>
+              <span>Có Sub Tiếng Việt</span>
             </label>
             <label class="radio-pill">
               <input type="radio" name="subMode" value="source_only">
-              <span>Chỉ tiếng gốc</span>
+              <span>Sub Tiếng Gốc</span>
+            </label>
+            <label class="radio-pill">
+              <input type="radio" name="subMode" value="en_only">
+              <span>Sub Tiếng Anh</span>
             </label>
             <label class="radio-pill">
               <input type="radio" name="subMode" value="none">
-              <span>Tắt sub (Chỉ nghe)</span>
+              <span>Không có sub (Chỉ nghe)</span>
             </label>
           </div>
         </div>
