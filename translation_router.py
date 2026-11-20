@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import threading
 import time
 
@@ -148,6 +149,24 @@ class TranslationRouter:
                 self._startup_routes[source] = min(candidates)[1]
         return dict(self._startup_routes)
 
+    @staticmethod
+    def preserve_proper_names(original: str, translated: str) -> str:
+        if not original or not translated:
+            return translated
+        names = re.findall(r'\b[A-Z][a-zA-Z0-9_\-\']+\b', original)
+        result = translated
+        skip_words = {
+            "I", "The", "A", "An", "In", "On", "At", "To", "For", "Of", "And",
+            "Or", "But", "Is", "Are", "Was", "Were", "He", "She", "It", "They",
+            "We", "You", "My", "His", "Her", "Their", "Our", "Your"
+        }
+        for name in names:
+            if name in skip_words:
+                continue
+            pattern = re.compile(rf'\b{re.escape(name)}\b', re.IGNORECASE)
+            result = pattern.sub(name, result)
+        return result
+
     def translate(self, text, source_lang="auto", target_lang="vi", previous_context=""):
         source = self.normalize_language(source_lang)
         target = self.normalize_language(target_lang)
@@ -173,6 +192,7 @@ class TranslationRouter:
                         previous_context=previous_context,
                     )
                 if result:
+                    result = self.preserve_proper_names(text, result)
                     self.cache[key] = result
                     self._record(provider, source, started, fallback=position > 0)
                     return result
@@ -202,6 +222,8 @@ class TranslationRouter:
                     result = self.network_service.translate_many(
                         list(texts), source_lang=source, target_lang=target
                     )
+                if result:
+                    result = [self.preserve_proper_names(t, r) for t, r in zip(texts, result)]
                 self._record(provider, source, started, fallback=position > 0)
                 return result
             except Exception as error:

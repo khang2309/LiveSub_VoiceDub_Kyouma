@@ -413,6 +413,10 @@ def clean_speech_text(text: str) -> str:
                 i += 1
         cleaned = " ".join(deduped)
 
+    # Filter video timestamp / UI artifacts
+    cleaned = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', cleaned)
+    cleaned = re.sub(r'(?i)\b(?:truyengoc|báckinh|bickinh|backinh)\b', '', cleaned)
+
     # Clean dots in numbers (e.g. 250.000 -> 250 nghìn)
     cleaned = re.sub(r'(\d+)\.000\.000', r'\1 triệu', cleaned)
     cleaned = re.sub(r'(\d+)\.000', r'\1 nghìn', cleaned)
@@ -801,7 +805,11 @@ async def api_ocr_subtitle(
         raise HTTPException(status_code=503, detail=f"OCR unavailable: {error}")
 
     original = clean_speech_text(result["text"])
-    if not original or len(original) < 2:
+    if (
+        not original
+        or len(original) < 2
+        or re.search(r'(?i)^(?:b[áa]ckinh|bickinh|truyengoc|\d+[:.]\d+)$', original.strip())
+    ):
         return {"empty": True, **result}
     translation_started = time.perf_counter()
     translated = fast_translate_to_vi(

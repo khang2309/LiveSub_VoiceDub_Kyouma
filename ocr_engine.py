@@ -6,6 +6,7 @@ and VieNeu for the RTX 3050 VRAM. Engines are cached per script family.
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 
@@ -102,22 +103,33 @@ class SubtitleOCR:
 
     @staticmethod
     def _select_subtitle_lines(texts, scores, boxes, image_width, image_height):
-        """Reject navigation/comments and keep the most subtitle-like line group."""
+        """Reject YouTube sidebars, navigation/comments and keep dialogue subtitles."""
         candidates = []
         for text, score, box in zip(texts, scores, boxes):
             text = (text or "").strip()
             if not text or score < 0.58 or not any(char.isalnum() for char in text):
                 continue
+            # Filter YouTube metadata timestamps like 59:39 or 59 39
+            if re.search(r'\b\d{1,2}[:.]\d{2}\b|\b59\s*39\b', text):
+                continue
+            # Filter YouTube view counts, relative dates, or channel/thumbnail tags
+            if re.search(r'(?i)\b(?:lượt xem|views?|người đăng ký|subscribers?|trước|ago|truyengoc|báckinh|bickinh|backinh)\b', text):
+                continue
+            # Filter short noise without alphabetic content
+            alpha_only = re.sub(r'[^a-zA-ZÀ-ỹ]', '', text)
+            if len(alpha_only) < 2:
+                continue
+
             xs = [float(point[0]) for point in box]
             ys = [float(point[1]) for point in box]
             height = max(ys) - min(ys)
             center_x = sum(xs) / len(xs)
             center_y = sum(ys) / len(ys)
-            # Browser already crops to the subtitle band. These guards remove
-            # sidebars, controls and tiny comment/navigation text.
-            if not (image_width * 0.08 <= center_x <= image_width * 0.92):
+            # Browser crops to subtitle area. Reject text far in the right column
+            # (where YouTube recommendation thumbnails/sidebar live) or far left.
+            if not (image_width * 0.08 <= center_x <= image_width * 0.82):
                 continue
-            if not (image_height * 0.06 <= center_y <= image_height * 0.90):
+            if not (image_height * 0.05 <= center_y <= image_height * 0.95):
                 continue
             if height < max(12.0, image_height * 0.012):
                 continue
@@ -157,7 +169,7 @@ class SubtitleOCR:
             avg_height = sum(item["height"] for item in group) / len(group)
             chars = min(80, sum(len(item["text"]) for item in group))
             center_x = sum(item["x"] for item in group) / len(group)
-            center_penalty = abs(center_x - image_width / 2) / image_width * 8
+            center_penalty = abs(center_x - image_width / 2) / image_width * 10
             return avg_height + chars * 0.28 + min(3, len(group)) * 5 - center_penalty
 
         best = max(groups, key=group_score)

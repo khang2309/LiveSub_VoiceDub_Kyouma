@@ -1019,18 +1019,20 @@ class LiveDubStudio {
       const height = this.ocrVideo.videoHeight;
       if (!width || !height) return;
 
-      // Capture only the usual subtitle band. Benchmarks on the target RTX
-      // 3050 machine found 960 px to be the best speed/accuracy point for
-      // RapidOCR; larger frames only add CPU latency.
-      const sourceY = Math.floor(height * 0.34);
-      const sourceHeight = Math.max(1, Math.floor(height * 0.63));
+      // Capture the lower dialogue subtitle band, excluding YouTube sidebar recommendations.
+      // Benchmarks on the target RTX 3050 machine found 960 px to be the best speed/accuracy
+      // point for RapidOCR; larger frames only add CPU latency.
+      const sourceX = Math.floor(width * 0.08);
+      const sourceWidth = Math.max(1, Math.floor(width * 0.72));
+      const sourceY = Math.floor(height * 0.68);
+      const sourceHeight = Math.max(1, Math.floor(height * 0.26));
       const scale = Math.min(1, 960 / width);
-      this.ocrCanvas.width = Math.max(1, Math.round(width * scale));
+      this.ocrCanvas.width = Math.max(1, Math.round(sourceWidth * scale));
       this.ocrCanvas.height = Math.max(1, Math.round(sourceHeight * scale));
       const context = this.ocrCanvas.getContext('2d', { alpha: false });
       context.drawImage(
         this.ocrVideo,
-        0, sourceY, width, sourceHeight,
+        sourceX, sourceY, sourceWidth, sourceHeight,
         0, 0, this.ocrCanvas.width, this.ocrCanvas.height
       );
 
@@ -1059,16 +1061,54 @@ class LiveDubStudio {
     this.showToast('OCR đã bật. Để chính xác, hãy chia sẻ riêng tab/video thay vì toàn desktop.');
   }
 
+  ocrSimilarity(s1, s2) {
+    if (!s1 || !s2) return 0;
+    const a = s1.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+    const b = s2.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+    if (a === b) return 1.0;
+    if (!a || !b) return 0;
+    const maxLen = Math.max(a.length, b.length);
+    if (maxLen === 0) return 1.0;
+    const v0 = new Array(b.length + 1);
+    const v1 = new Array(b.length + 1);
+    for (let i = 0; i <= b.length; i++) v0[i] = i;
+    for (let i = 0; i < a.length; i++) {
+      v1[0] = i + 1;
+      for (let j = 0; j < b.length; j++) {
+        const cost = a[i] === b[j] ? 0 : 1;
+        v1[j + 1] = Math.min(v1[j] + 1, v0[j + 1] + 1, v0[j] + cost);
+      }
+      for (let j = 0; j <= b.length; j++) v0[j] = v1[j];
+    }
+    return 1.0 - (v0[b.length] / maxLen);
+  }
+
   handleOCRSubtitle(data) {
-    const normalized = String(data.original || '').replace(/\s+/g, ' ').trim();
-    if (!normalized || normalized.toLocaleLowerCase() === this.lastOCRText.toLocaleLowerCase()) return;
-    this.lastOCRText = normalized;
-    this.lastTranscriptContext = normalized;
-    const record = this.addHistory(normalized, data.translated || normalized, 'ocr');
+    const raw = String(data.original || '').replace(/\s+/g, ' ').trim();
+    if (!raw) return;
+    // Reject UI and thumbnail junk patterns
+    if (/^(?:b[áa]ckinh|bickinh|truyengoc|lượt xem|\d+[:.]\d+)$/i.test(raw)) return;
+
+    const now = performance.now();
+    if (!this.recentOCRHistory) this.recentOCRHistory = [];
+    this.recentOCRHistory = this.recentOCRHistory.filter(item => (now - item.time) < 6500);
+
+    // Suppress if duplicate or highly similar to recent detections within 6.5s
+    if (
+      (this.lastOCRText && this.ocrSimilarity(raw, this.lastOCRText) >= 0.72) ||
+      this.recentOCRHistory.some(item => this.ocrSimilarity(raw, item.text) >= 0.72)
+    ) {
+      return;
+    }
+
+    this.lastOCRText = raw;
+    this.recentOCRHistory.push({ text: raw, time: now });
+    this.lastTranscriptContext = raw;
+    const record = this.addHistory(raw, data.translated || raw, 'ocr');
     if (this.isDubbingEnabled) {
-      this.enqueueLiveDubbing(data.translated || normalized, record.id, normalized, performance.now(), performance.now(), data.timings || null);
+      this.enqueueLiveDubbing(data.translated || raw, record.id, raw, now, now, data.timings || null);
     } else {
-      this.displaySubtitle(normalized, data.translated || normalized);
+      this.displaySubtitle(raw, data.translated || raw);
     }
   }
 
@@ -1942,6 +1982,7 @@ class LiveDubStudio {
       historyId,
       capturedAt,
       finalizedAt,
+      enqueuedAt: performance.now(),
       serverTimings,
       originalDuration: duration,
       generation: this.dubbingGeneration,
@@ -1975,8 +2016,12 @@ class LiveDubStudio {
     this.isProcessingLiveDubbing = true;
     try {
       while (this.liveDubbingQueue.length > 0) {
-        if (this.liveDubbingQueue.length > 3) {
-          this.liveDubbingQueue.splice(0, this.liveDubbingQueue.length - 2);
+        // If congested, keep only the latest items so audio never falls behind video
+        if (this.liveDubbingQueue.length > 2) {
+          const dropped = this.liveDubbingQueue.splice(0, this.liveDubbingQueue.length - 1);
+          for (const d of dropped) {
+            this.displaySubtitle(d.sourceText, d.text);
+          }
         }
 
         const item = this.liveDubbingQueue.shift();
@@ -1985,6 +2030,14 @@ class LiveDubStudio {
           || item.generation !== this.dubbingGeneration
         );
         if (isStale()) continue;
+
+        // Latency-bound eviction: If item queued for > 2200ms and newer speech is pending,
+        // show subtitle but skip audio playback to eliminate 3-second delay!
+        const queuedAgeMs = item.enqueuedAt ? (performance.now() - item.enqueuedAt) : 0;
+        if (queuedAgeMs > 2200 && this.liveDubbingQueue.length > 0) {
+          this.displaySubtitle(item.sourceText, item.text);
+          continue;
+        }
 
         if (this.liveDubbingQueue.length > 0) {
           const nextItem = this.liveDubbingQueue[0];

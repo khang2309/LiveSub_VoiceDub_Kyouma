@@ -307,6 +307,29 @@ class TranslationTests(unittest.TestCase):
             first_routes = dict(routes)
             self.assertEqual(router.benchmark_startup(), first_routes)
 
+    def test_proper_names_preservation(self):
+        original = "You can't hide in the woods forever, Jeff."
+        translated = "Anh không thể trốn trong rừng mãi được, jeff."
+        preserved = TranslationRouter.preserve_proper_names(original, translated)
+        self.assertEqual(preserved, "Anh không thể trốn trong rừng mãi được, Jeff.")
+
+        original_twana = "I think Twana might be over there."
+        translated_twana = "Tôi nghĩ twana có thể ở đằng kia."
+        preserved_twana = TranslationRouter.preserve_proper_names(original_twana, translated_twana)
+        self.assertEqual(preserved_twana, "Tôi nghĩ Twana có thể ở đằng kia.")
+
+    def test_select_subtitle_lines_rejects_timestamps_and_spam(self):
+        texts = ["TRUYENGOC59 39 Dua ddr", "BácKinh", "You can't hide forever, Jeff."]
+        scores = [0.95, 0.92, 0.90]
+        boxes = [
+            [[200, 300], [500, 300], [500, 325], [200, 325]],
+            [[250, 330], [350, 330], [350, 350], [250, 350]],
+            [[150, 360], [600, 360], [600, 390], [150, 390]],
+        ]
+        selected = SubtitleOCR._select_subtitle_lines(texts, scores, boxes, 1000, 600)
+        self.assertEqual(len(selected), 1)
+        self.assertEqual(selected[0][0], "You can't hide forever, Jeff.")
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -515,3 +515,64 @@ test('adaptive speed scales playback rate to match video speech duration', () =>
   const fixedRate = app.getSafeStreamingPlaybackRate(0, 1.25, 2.0, 57);
   assert.equal(fixedRate, 1.00);
 });
+
+test('ocrSimilarity detects fuzzy noise and prevents repetitive spam like BácKinh/BicKinh', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.lastOCRText = '';
+  app.recentOCRHistory = [];
+  app.isDubbingEnabled = true;
+  app.addHistory = () => ({ id: 'ocr-spam' });
+  let queued = 0;
+  app.enqueueLiveDubbing = () => { queued++; };
+
+  // Junk keyword filter immediately discards YouTube thumbnail tags like BácKinh/BicKinh
+  app.handleOCRSubtitle({ original: 'BácKinh', translated: 'Bắc Kinh' });
+  assert.equal(queued, 0);
+
+  app.handleOCRSubtitle({ original: 'BicKinh', translated: 'Bí Kinh' });
+  assert.equal(queued, 0);
+
+  // Legitimate dialogue line
+  app.handleOCRSubtitle({ original: 'You cannot hide forever in the woods', translated: 'Anh không thể trốn trong rừng mãi được' });
+  assert.equal(queued, 1);
+
+  // Noisy OCR fluctuation on next frame (1 letter typo/noise from motion: 'can not' vs 'cannot')
+  app.handleOCRSubtitle({ original: 'You can not hide forever in the woods', translated: 'Anh không thể trốn trong rừng mãi được' });
+  assert.equal(queued, 1);
+
+  // New sentence
+  app.handleOCRSubtitle({ original: "He is by himself in there", translated: "Hắn ở một mình trong đó" });
+  assert.equal(queued, 2);
+});
+
+test('drainLiveDubbingQueue skips stale audio older than 2.2s when backlog occurs', async () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.isDubbingEnabled = true;
+  app.dubbingGeneration = 1;
+  app.isProcessingLiveDubbing = false;
+  app.displaySubtitle = () => {};
+  let playedAudios = 0;
+  app.playAudioBuffer = async () => { playedAudios++; };
+
+  // Item 1 is fresh
+  const now = performance.now();
+  app.liveDubbingQueue = [
+    { text: 'Old line', sourceText: 'Old', enqueuedAt: now - 3000, generation: 1, voice: 'google-vi' },
+    { text: 'Fresh line', sourceText: 'Fresh', enqueuedAt: now - 50, generation: 1, voice: 'google-vi' },
+  ];
+
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({
+    ok: true,
+    arrayBuffer: async () => new ArrayBuffer(10)
+  });
+
+  try {
+    await app.drainLiveDubbingQueue();
+    // Only the fresh line should have played audio, stale line audio was skipped
+    assert.equal(playedAudios, 1);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
