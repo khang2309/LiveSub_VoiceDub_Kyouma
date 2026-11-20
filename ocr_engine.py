@@ -31,6 +31,8 @@ class SubtitleOCR:
         "es": LangRec.LATIN,
         "fr": LangRec.LATIN,
         "de": LangRec.LATIN,
+        "th": LangRec.TH,
+        "thai": LangRec.TH,
         "auto": LangRec.EN,
     }
 
