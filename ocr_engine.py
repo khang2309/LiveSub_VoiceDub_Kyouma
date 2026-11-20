@@ -70,8 +70,20 @@ class SubtitleOCR:
             engine, lock = self._get_engine(language)
             image = Image.open(__import__("io").BytesIO(image_bytes)).convert("RGB")
             array = np.asarray(image)
-            with lock:
+            acquired = lock.acquire(timeout=0.25)
+            if not acquired:
+                return {
+                    "text": "",
+                    "confidence": 0.0,
+                    "latency_ms": 0.0,
+                    "language": self.normalize_language(language),
+                    "engine": "RapidOCR PP-OCRv6 tiny ONNX",
+                    "congested": True,
+                }
+            try:
                 result = engine(array, use_cls=False, text_score=0.58)
+            finally:
+                lock.release()
             texts = list(result.txts if result.txts is not None else ())
             scores = [
                 float(value)
