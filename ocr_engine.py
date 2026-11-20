@@ -24,7 +24,8 @@ class SubtitleOCR:
         "zh": LangRec.CH,
         "ja": LangRec.CH,
         "jp": LangRec.CH,
-        "vi": LangRec.CH,
+        "vi": LangRec.LATIN,
+        "latin": LangRec.LATIN,
         "auto": LangRec.CH,
     }
 
@@ -113,7 +114,13 @@ class SubtitleOCR:
             if re.search(r'\b\d{1,2}[:.]\d{2}\b|\b59\s*39\b', text):
                 continue
             # Filter YouTube view counts, relative dates, or channel/thumbnail tags
-            if re.search(r'(?i)\b(?:lượt xem|views?|người đăng ký|subscribers?|trước|ago|truyengoc|báckinh|bickinh|backinh)\b', text):
+            if re.search(r'(?i)\b(?:lượt xem|views?|người đăng ký|subscribers?|trước|ago|truyengoc|báckinh|bickinh|backinh|anker|soundcore|bình luận|comments?|chia sẻ|share|tải xuống|download|toàn cầu|thông minh toàn cầu|dẫn dắt bởi)\b', text):
+                continue
+            # Filter YouTube "...thêm" expand button
+            if re.search(r'(?i)\bthêm\s*$', text):
+                continue
+            # Subtitle lines are spoken dialogue; reject long descriptions/paragraphs (> 20 words or > 100 chars)
+            if len(text.split()) > 20 or len(text) > 100:
                 continue
             # Filter short noise without alphabetic content
             alpha_only = re.sub(r'[^a-zA-ZÀ-ỹ]', '', text)
@@ -131,7 +138,7 @@ class SubtitleOCR:
                 continue
             if not (image_height * 0.05 <= center_y <= image_height * 0.95):
                 continue
-            if height < max(12.0, image_height * 0.012):
+            if height < max(13.0, image_height * 0.015):
                 continue
             candidates.append(
                 {
@@ -173,6 +180,9 @@ class SubtitleOCR:
             return avg_height + chars * 0.28 + min(3, len(group)) * 5 - center_penalty
 
         best = max(groups, key=group_score)
+        total_words = sum(len(item["text"].split()) for item in best)
+        if total_words > 22 or sum(len(item["text"]) for item in best) > 120:
+            return []
         best = sorted(best[:3], key=lambda item: item["y"])
         return [(item["text"], item["score"]) for item in best]
 

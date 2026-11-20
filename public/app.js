@@ -1102,10 +1102,21 @@ class LiveDubStudio {
       // Capture the lower dialogue subtitle band, excluding YouTube sidebar recommendations.
       // Benchmarks on the target RTX 3050 machine found 960 px to be the best speed/accuracy
       // point for RapidOCR; larger frames only add CPU latency.
+      const isTallPage = (height > width * 0.60);
       const sourceX = Math.floor(width * 0.08);
       const sourceWidth = Math.max(1, Math.floor(width * 0.72));
-      const sourceY = Math.floor(height * 0.68);
-      const sourceHeight = Math.max(1, Math.floor(height * 0.26));
+      let sourceY, sourceHeight;
+      if (isTallPage) {
+        // Shared full browser webpage tab (e.g. YouTube): video is in the upper ~56% of tab width.
+        // Capturing the bottom of the tab hits comments and description below the player!
+        const estimatedVideoHeight = Math.min(height, width * 0.5625);
+        sourceY = Math.floor(estimatedVideoHeight * 0.68);
+        sourceHeight = Math.max(1, Math.floor(estimatedVideoHeight * 0.28));
+      } else {
+        // Shared fullscreen video / 16:9 window
+        sourceY = Math.floor(height * 0.70);
+        sourceHeight = Math.max(1, Math.floor(height * 0.26));
+      }
       const scale = Math.min(1, 960 / width);
       this.ocrCanvas.width = Math.max(1, Math.round(sourceWidth * scale));
       this.ocrCanvas.height = Math.max(1, Math.round(sourceHeight * scale));
@@ -1166,8 +1177,11 @@ class LiveDubStudio {
   handleOCRSubtitle(data) {
     const raw = String(data.original || '').replace(/\s+/g, ' ').trim();
     if (!raw) return;
+    // Reject long paragraph noise (descriptions, articles, comments) - dialogue subtitles are short
+    if (raw.length > 115 || raw.split(/\s+/).length > 20) return;
     // Reject UI and thumbnail junk patterns
     if (/^(?:b[áa]ckinh|bickinh|truyengoc|lượt xem|\d+[:.]\d+)$/i.test(raw)) return;
+    if (/\b(?:lượt xem|views?|người đăng ký|subscribers?|bình luận|comments?|chia sẻ|share|tải xuống|download|anker|soundcore)\b/i.test(raw)) return;
 
     const now = performance.now();
     if (!this.recentOCRHistory) this.recentOCRHistory = [];
@@ -1485,39 +1499,19 @@ class LiveDubStudio {
   }
 
   holdYouTubeForDubbing() {
-    if (this.isHoldingYtForDubbing) return;
+    // 100% smooth playback: NEVER pause the video to avoid stuttering/pause-play cycles.
     this.isHoldingYtForDubbing = true;
-    if (this.smoothVideoPlayback !== false) {
-      // Smooth playback mode: NEVER pause video to prevent video stuttering!
-      return;
-    }
-    const state = this.ytPlayer && this.ytPlayer.getPlayerState
-      ? this.ytPlayer.getPlayerState()
-      : -1;
-    this.ytShouldResumeAfterHold = state === 1;
-    if (this.ytShouldResumeAfterHold && this.ytPlayer && this.ytPlayer.pauseVideo) {
-      this.ytPlayer.pauseVideo();
-    }
+    this.ytShouldResumeAfterHold = false;
   }
 
   releaseYouTubeDubbingHold() {
-    if (!this.isHoldingYtForDubbing) return;
-    const shouldResume = this.ytShouldResumeAfterHold;
     this.isHoldingYtForDubbing = false;
     this.ytShouldResumeAfterHold = false;
-    if (shouldResume && this.ytPlayer && this.ytPlayer.playVideo) {
-      this.ytPlayer.playVideo();
-    }
   }
 
   scheduleYouTubeOverrunHold(playDuration, slotDuration) {
-    if (this.smoothVideoPlayback !== false) return; // Never pause/stutter video during speech
-    if (!(playDuration > slotDuration + 0.08) || !this.ytPlayer) return;
-    if (this.ytOverrunHoldTimer) clearTimeout(this.ytOverrunHoldTimer);
-    this.ytOverrunHoldTimer = setTimeout(() => {
-      this.ytOverrunHoldTimer = null;
-      this.holdYouTubeForDubbing();
-    }, Math.max(0, slotDuration * 1000));
+    // 100% smooth playback: never schedule video pause
+    return;
   }
 
   isPlaybackCurrent(token) {
