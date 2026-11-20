@@ -12,7 +12,9 @@ from livesub_core import (
     TranslationService,
     select_caption_track,
     should_translate_to_vietnamese,
+    build_live_transcribe_options,
 )
+from realtime_gate import RealtimeCaptionArbiter
 from translation_router import TranslationRouter
 from ocr_engine import SubtitleOCR
 
@@ -20,6 +22,10 @@ os.environ["TRANSLATION_MODE"] = "private"
 
 
 class CaptionMergeTests(unittest.TestCase):
+    def test_live_whisper_does_not_reinject_previous_transcript(self):
+        options = build_live_transcribe_options("en")
+        self.assertNotIn("initial_prompt", options)
+
     def test_rolling_caption_prefix_does_not_repeat(self):
         raw = [
             {"start": 0.0, "end": 1.0, "text": "Hello"},
@@ -50,6 +56,24 @@ class CaptionMergeTests(unittest.TestCase):
         self.assertEqual(len(merged), 2)
         self.assertEqual(merged[1]["start"], 12.0)
         self.assertLessEqual(merged[0]["end"], merged[1]["start"])
+
+
+class RealtimeCaptionGateTests(unittest.TestCase):
+    def test_cross_source_duplicate_is_rejected(self):
+        gate = RealtimeCaptionArbiter(window_ms=5000)
+        first = gate.check("session-a", "ocr", "With the arena now smaller.", 1, 1000)
+        duplicate = gate.check("session-a", "asr", "With the arena now smaller", 1, 1400)
+
+        self.assertTrue(first.accepted)
+        self.assertFalse(duplicate.accepted)
+        self.assertEqual(duplicate.reason, "cross_source_duplicate")
+
+    def test_same_caption_after_expiry_is_allowed(self):
+        gate = RealtimeCaptionArbiter(window_ms=1000)
+        gate.check("session-a", "ocr", "Thank you", 1, 1000)
+        later = gate.check("session-a", "asr", "Thank you", 1, 2100)
+
+        self.assertTrue(later.accepted)
 
 
 class OCRRoutingTests(unittest.TestCase):

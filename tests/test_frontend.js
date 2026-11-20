@@ -250,6 +250,7 @@ test('live transcription sends context and does not wait for server-side TTS', a
     app.isDubbingEnabled = true;
     app.lastTranscriptContext = 'previous sentence';
     app.lastProcessedText = '';
+    app.realtimeSessionId = 'session-test';
     app.sourceLangSelect = { value: 'en' };
     app.voiceSelect = { value: 'voice-a' };
     app.setStatus = () => {};
@@ -263,6 +264,8 @@ test('live transcription sends context and does not wait for server-side TTS', a
 
     assert.equal(submitted.get('dubbing'), 'false');
     assert.equal(submitted.get('previous_context'), 'previous sentence');
+    assert.equal(submitted.get('session_id'), 'session-test');
+    assert.equal(submitted.get('sequence'), '1');
     assert.deepEqual(app.queuedDub, ['xin chào', 'history-1']);
     assert.match(app.lastTranscriptContext, /hello$/);
   } finally {
@@ -270,6 +273,29 @@ test('live transcription sends context and does not wait for server-side TTS', a
     global.fetch = originalFetch;
     global.AbortController = originalAbortController;
   }
+});
+
+test('normal VieNeu lines use a bounded realtime PCM prebuffer', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  const policy = app.getLivePcmBufferPolicy('A normal subtitle line');
+
+  assert.ok(policy.initialBytes >= 19200);
+  assert.ok(policy.initialBytes <= 28800);
+  assert.ok(policy.sliceBytes <= 48000);
+});
+
+test('cross-source equivalents enter the live dub queue only once', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.isDubbingEnabled = true;
+  app.dubbingGeneration = 1;
+  app.liveDubbingQueue = [];
+  app.isProcessingLiveDubbing = true;
+  app.voiceSelect = { value: 'voice-a' };
+
+  app.enqueueLiveDubbing('Với đấu trường nhỏ hơn.', 'ocr-1', 'With the arena now smaller.', 1, 2, null, 1, 'ocr');
+  app.enqueueLiveDubbing('Với đấu trường giờ nhỏ hơn.', 'asr-1', 'With the arena now smaller', 1, 2, null, 1, 'asr');
+
+  assert.equal(app.liveDubbingQueue.length, 1);
 });
 
 test('stale live TTS response never plays after the session is invalidated', async () => {

@@ -44,6 +44,37 @@ def normalize_caption_text(text):
     return re.sub(r"\s+", " ", text).strip()
 
 
+def build_live_transcribe_options(source_lang="auto"):
+    """Return independent low-latency Whisper options for a live audio chunk.
+
+    Previous captions deliberately are not used as ``initial_prompt``. In
+    hybrid OCR + ASR mode that prompt can contain the caption visible on screen
+    and make Whisper emit the same sentence again. Translation can still use
+    previous context after recognition has completed.
+    """
+    language = None
+    if source_lang and source_lang != "auto":
+        language = source_lang.split("-")[0]
+    return {
+        "language": language,
+        "beam_size": 1,
+        "best_of": 1,
+        "temperature": 0.0,
+        "condition_on_previous_text": False,
+        "without_timestamps": True,
+        "vad_filter": True,
+        "vad_parameters": {
+            "min_silence_duration_ms": 120,
+            "threshold": 0.25,
+            "speech_pad_ms": 60,
+        },
+        "repetition_penalty": 1.20,
+        "no_repeat_ngram_size": 2,
+        "compression_ratio_threshold": 2.4,
+        "no_speech_threshold": 0.60,
+    }
+
+
 def merge_caption_text(existing, incoming):
     """Merge rolling captions and remove the largest word overlap."""
     existing = normalize_caption_text(existing)

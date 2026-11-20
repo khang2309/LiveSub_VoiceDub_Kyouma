@@ -2111,6 +2111,11 @@ class LiveDubStudio {
     formData.append('dubbing', 'false');
     formData.append('voice', this.getEffectiveVoice());
     formData.append('previous_context', this.lastTranscriptContext || '');
+    if (!this.realtimeSessionId) this.realtimeSessionId = `s-${Date.now()}`;
+    formData.append('session_id', this.realtimeSessionId);
+    if (!this._transcribeSequence) this._transcribeSequence = 0;
+    this._transcribeSequence++;
+    formData.append('sequence', String(this._transcribeSequence));
 
     this.activeAbortController = new AbortController();
 
@@ -2169,8 +2174,19 @@ class LiveDubStudio {
     }
   }
 
-  enqueueLiveDubbing(text, historyId, sourceText = '', capturedAt = null, finalizedAt = null, serverTimings = null, originalDuration = 0) {
+  enqueueLiveDubbing(text, historyId, sourceText = '', capturedAt = null, finalizedAt = null, serverTimings = null, originalDuration = 0, source = 'unknown') {
     if (!text || !this.isDubbingEnabled) return Promise.resolve();
+    // Cross-source dedup: if an equivalent sourceText from a different source
+    // (e.g. OCR vs ASR) is already queued, skip the duplicate.
+    const normSource = String(sourceText || '').replace(/\s+/g, ' ').trim().toLowerCase().replace(/[.!?,;:]+$/, '');
+    if (normSource && this.liveDubbingQueue.length > 0) {
+      for (const queued of this.liveDubbingQueue) {
+        const qNorm = String(queued.sourceText || '').replace(/\s+/g, ' ').trim().toLowerCase().replace(/[.!?,;:]+$/, '');
+        if (qNorm && qNorm === normSource && queued.source !== source) {
+          return Promise.resolve(); // cross-source duplicate
+        }
+      }
+    }
     const duration = originalDuration || (capturedAt && finalizedAt ? Math.max(0, (finalizedAt - capturedAt) / 1000) : 0);
     this.liveDubbingQueue.push({
       text,
@@ -2182,9 +2198,21 @@ class LiveDubStudio {
       serverTimings,
       originalDuration: duration,
       generation: this.dubbingGeneration,
-      voice: this.getEffectiveVoice()
+      voice: this.getEffectiveVoice(),
+      source
     });
     return this.drainLiveDubbingQueue();
+  }
+
+  getLivePcmBufferPolicy(text) {
+    const len = (text || '').length;
+    // Short normal lines (< 130 chars): collect full PCM as one buffer (no slicing)
+    // to eliminate "cà lăm" stuttering. Long texts stream with bounded chunks.
+    if (len >= 130) {
+      return { initialBytes: 144000, sliceBytes: 76800 };
+    }
+    // Normal subtitle: pre-buffer ~250ms of audio (48kHz * 2 bytes * 0.25s = 24000)
+    return { initialBytes: 24000, sliceBytes: 48000 };
   }
 
   prefetchLiveTts(text, voice) {
@@ -2503,9 +2531,10 @@ class LiveDubStudio {
       // Anti-stuttering: For normal subtitles (< 130 chars), collect full PCM and play
       // as ONE contiguous AudioBuffer. This completely eliminates slice gaps, phase clicks,
       // and "cà lăm" stuttering while prefetching upcoming lines in background.
+      const bufferPolicy = this.getLivePcmBufferPolicy(text);
       const isLongText = (text && text.length >= 130);
-      const INITIAL_PREBUFFER_BYTES = isLongText ? 144000 : 999999999;
-      const MIN_SLICE_BYTES = isLongText ? 76800 : 999999999;
+      const INITIAL_PREBUFFER_BYTES = isLongText ? bufferPolicy.initialBytes : 999999999;
+      const MIN_SLICE_BYTES = isLongText ? bufferPolicy.sliceBytes : 999999999;
       let pendingChunks = [];
       let pendingBytesLen = 0;
 

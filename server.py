@@ -38,6 +38,7 @@ if os.path.exists(env_path):
 
 from livesub_core import (
     TranslationService,
+    build_live_transcribe_options,
     merge_caption_segments,
     select_caption_track,
     should_translate_to_vietnamese,
@@ -46,6 +47,10 @@ from local_translation import LocalEnViTranslator, LocalMultilingualTranslator
 from translation_router import TranslationRouter
 from latency_metrics import LatencyWindow
 from ocr_engine import SubtitleOCR
+from realtime_gate import RealtimeCaptionArbiter
+from audio_pcm import encode_pcm16
+
+realtime_caption_gate = RealtimeCaptionArbiter(window_ms=5000, max_entries=32)
 
 # 0. Setup NVIDIA CUDA DLLs for RTX 3050 GPU Acceleration
 site_packages = os.path.join(sys.prefix, "Lib", "site-packages")
@@ -628,19 +633,12 @@ def generate_vieneu_wav(text: str, voice_name: str = "Trúc Ly") -> bytes:
 
 
 def audio_array_to_wav(audio_arr) -> bytes:
-    import numpy as np
-
-    array = np.asarray(audio_arr)
-    if np.issubdtype(array.dtype, np.floating):
-        pcm = (np.clip(array, -1.0, 1.0) * 32767).astype("<i2")
-    else:
-        pcm = array.astype("<i2")
     buf = io.BytesIO()
     with wave.open(buf, "wb") as wav_file:
         wav_file.setnchannels(1)
         wav_file.setsampwidth(2)
         wav_file.setframerate(48000)
-        wav_file.writeframes(pcm.tobytes())
+        wav_file.writeframes(encode_pcm16(audio_arr))
     return buf.getvalue()
 
 async def generate_tts_bytes(text: str, voice: str = "vieneu:Trúc Ly") -> tuple[bytes, str]:
@@ -708,7 +706,6 @@ async def generate_tts_bytes(text: str, voice: str = "vieneu:Trúc Ly") -> tuple
 
 def generate_vieneu_pcm_chunks(text: str, voice_name: str):
     """Yield headerless mono PCM16 chunks at 48 kHz as VieNeu generates them."""
-    import numpy as np
 
     engine = get_vieneu_engine()
     if not engine:
@@ -723,12 +720,7 @@ def generate_vieneu_pcm_chunks(text: str, voice_name: str):
         ):
             if audio_arr is None or len(audio_arr) == 0:
                 continue
-            array = np.asarray(audio_arr)
-            if np.issubdtype(array.dtype, np.floating):
-                pcm = (np.clip(array, -1.0, 1.0) * 32767).astype("<i2")
-            else:
-                pcm = array.astype("<i2")
-            yield pcm.tobytes()
+            yield encode_pcm16(audio_arr)
     except Exception as exc:
         # If client disconnected or stream aborted, ensure tokenizer session does not stay wedged
         try:

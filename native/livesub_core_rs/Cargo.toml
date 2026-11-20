@@ -1,0 +1,14 @@
+[package]
+name = "livesub_core_rs"
+version = "0.1.0"
+edition = "2024"
+description = "Native realtime caption arbitration for LiveSub VoiceDub"
+license = "MIT"
+
+[lib]
+name = "livesub_core_rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.23", features = ["extension-module"] }
+

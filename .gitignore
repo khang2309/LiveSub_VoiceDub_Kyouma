@@ -33,6 +33,8 @@ Thumbs.db
 
 # Design audit artifacts
 .hallmark/
+native/**/target/
+*.pyd
 models/vinai-translate-en2vi-v2-int8/
 models/nllb-200-distilled-600M-int8/
 server.stdout.log
