@@ -1223,7 +1223,7 @@ class LiveDubStudio {
     if (raw.length > 125 || raw.split(/\s+/).length > 25) return;
     // Reject UI, channel names, and thumbnail junk patterns
     if (/^(?:b[áa]ckinh|bickinh|backinh|truyengoc|lượt xem|\d+[:.]\d+|\d{1,4})$/i.test(raw)) return;
-    if (/\b(?:lượt xem|views?|người đăng ký|subscribers?|bình luận|comments?|chia sẻ|share|tải xuống|download|anker|soundcore|phong thần|diễn nghĩa|trường giang|đấu trường sinh tử|sống sót|mrbeast|gta\s*6|gta\s*vi|grand theft auto|kết bạn|ket ban|bản lồng tiếng|đăng ký)\b/i.test(raw)) return;
+    if (/\b(?:animehay|animevietsub|bit\.ly|citumo|rap\s*citu|hdbet|3bet|chơingay|nổ\s*hũ|lượt xem|views?|người đăng ký|subscribers?|bình luận|comments?|chia sẻ|share|tải xuống|download|anker|soundcore|phong thần|diễn nghĩa|trường giang|đấu trường sinh tử|sống sót|mrbeast|gta\s*6|gta\s*vi|grand theft auto|kết bạn|ket ban|bản lồng tiếng|đăng ký)\b/i.test(raw)) return;
 
     // Display subtitle IMMEDIATELY for 0ms on-screen response
     this.displaySubtitle(raw, data.translated || raw);

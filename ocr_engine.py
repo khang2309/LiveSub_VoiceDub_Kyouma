@@ -130,8 +130,8 @@ class SubtitleOCR:
             # Filter YouTube metadata timestamps like 59:39 or 59 39, standalone digits/counters (e.g. 23, 20)
             if re.search(r'^\s*\d{1,4}\s*$|\b\d{1,2}[:.]\d{2}\b|\b59\s*39\b', text):
                 continue
-            # Filter YouTube view counts, channel watermark/title badges, recommended sidebars
-            if re.search(r'(?i)(?:truyengoc|b[áa]ckinh|bickinh|backinh|\b(?:lượt xem|views?|người đăng ký|subscribers?|trước|ago|anker|soundcore|bình luận|comments?|chia sẻ|share|tải xuống|download|toàn cầu|thông minh toàn cầu|dẫn dắt bởi|phong thần|diễn nghĩa|trường giang|đấu trường sinh tử|sống sót|mrbeast|gta\s*6|gta\s*vi|grand theft auto|kết bạn|ket ban|gaming|bản lồng tiếng|đăng ký)\b)', text):
+            # Filter watermarks, fansub credits, websites and ads (e.g. AnimeHay, AnimeVietsub, bit.ly, rap cituMo...)
+            if re.search(r'(?i)(?:animehay|animevietsub|bit\.ly|cituMo|rap\s*citu|hdbet|3bet|chơingay|nổ\s*hũ|truyengoc|b[áa]ckinh|bickinh|backinh|\b(?:lượt xem|views?|người đăng ký|subscribers?|trước|ago|anker|soundcore|bình luận|comments?|chia sẻ|share|tải xuống|download|toàn cầu|thông minh toàn cầu|dẫn dắt bởi|phong thần|diễn nghĩa|trường giang|đấu trường sinh tử|sống sót|mrbeast|gta\s*6|gta\s*vi|grand theft auto|kết bạn|ket ban|gaming|bản lồng tiếng|đăng ký)\b)', text):
                 continue
             # Filter YouTube "...thêm" expand button
             if re.search(r'(?i)\bthêm\s*$', text):
