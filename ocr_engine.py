@@ -161,9 +161,13 @@ class SubtitleOCR:
             # Subtitle lines are spoken dialogue; reject long descriptions/paragraphs (> 25 words or > 120 chars)
             if len(text.split()) > 25 or len(text) > 120:
                 continue
-            # Filter short noise without alphabetic content or 1-4 char uppercase noise
+            # Filter short noise without alphabetic content or 1-4 char noise (e.g. Ta02, JNY, HE, CE)
             alpha_only = re.sub(r'[^a-zA-ZÀ-ỹ\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]', '', text)
-            if len(alpha_only) < 2 or re.fullmatch(r'^[A-Z0-9\s]{1,5}$', text):
+            if len(alpha_only) < 2 or len(text.strip()) <= 4 and re.fullmatch(r'^[A-Za-z0-9\s]+$', text.strip()):
+                continue
+
+            # Detect corrupted Vietnamese Vietsub OCR (e.g. missing diacritics / Danish-German Latin glyphs å, ä, ö, ø, ß)
+            if re.search(r'[åäöøß]|ngv[oò]i|thv[oò]ng|nu[aá]c\s*m[aå]t|lung\s*tr[oò]ng|l[aā]o\s*b[aà]|ky\s*vi[eê]n', text, re.IGNORECASE):
                 continue
 
             xs = [float(point[0]) for point in box]

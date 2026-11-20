@@ -1227,8 +1227,10 @@ class LiveDubStudio {
 
     // Reject long paragraph noise (descriptions, articles, comments) - dialogue subtitles are short
     if (raw.length > 125 || raw.split(/\s+/).length > 25) return;
-    // Reject 1-4 character uppercase/digits noise (e.g. YA, EREE, TL2)
-    if (raw.length <= 4 && /^[A-Z0-9\s]+$/.test(raw)) return;
+    // Reject 1-4 character alphanumeric noise (e.g. YA, EREE, TL2, Ta02, JNY, HE, CE)
+    if (raw.length <= 4 && /^[A-Za-z0-9\s]+$/.test(raw)) return;
+    // Reject corrupted Vietsub hard subtitle OCR reading (e.g. 'å', 'ä', 'ö', 'ø', 'ß', 'ngvòi', 'thvòng')
+    if (/[åäöøß]|ngv[oò]i|thv[oò]ng|nu[aá]c\s*m[aå]t|lung\s*tr[oò]ng|l[aā]o\s*b[aà]|ky\s*vi[eê]n/i.test(raw)) return;
     // Reject UI, channel names, and thumbnail junk patterns
     if (/^(?:b[áa]ckinh|bickinh|backinh|truyengoc|lượt xem|\d+[:.]\d+|\d{1,4})$/i.test(raw)) return;
     if (/\b(?:animehay|animevietsub|bit\.ly|citumo|rap\s*citu|hdbet|3bet|chơingay|nổ\s*hũ|lượt xem|views?|người đăng ký|subscribers?|bình luận|comments?|chia sẻ|share|tải xuống|download|anker|soundcore|phong thần|diễn nghĩa|trường giang|đấu trường sinh tử|sống sót|mrbeast|gta\s*6|gta\s*vi|grand theft auto|kết bạn|ket ban|bản lồng tiếng|đăng ký)\b/i.test(raw)) return;
