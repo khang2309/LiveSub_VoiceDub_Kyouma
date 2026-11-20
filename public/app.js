@@ -1107,11 +1107,12 @@ class LiveDubStudio {
       const sourceWidth = Math.max(1, Math.floor(width * 0.88));
       let sourceY, sourceHeight;
       if (isTallPage) {
-        // Shared full browser webpage tab (e.g. YouTube): video is in the upper ~56% of tab width.
-        // Capturing the bottom of the tab hits comments and description below the player!
-        const estimatedVideoHeight = Math.min(height, width * 0.5625);
-        sourceY = Math.floor(estimatedVideoHeight * 0.65);
-        sourceHeight = Math.max(1, Math.floor(estimatedVideoHeight * 0.32));
+        // Shared browser webpage tab (e.g. YouTube): top bar is ~56px.
+        // Video player sits below top bar with 16:9 aspect ratio.
+        const topBarHeight = Math.min(60, Math.floor(height * 0.06));
+        const estimatedVideoHeight = Math.min(height - topBarHeight, width * 0.5625);
+        sourceY = topBarHeight + Math.floor(estimatedVideoHeight * 0.68);
+        sourceHeight = Math.max(1, Math.floor(estimatedVideoHeight * 0.28));
       } else {
         // Shared fullscreen video / 16:9 window
         sourceY = Math.floor(height * 0.68);
@@ -1183,13 +1184,23 @@ class LiveDubStudio {
     if (/^(?:b[áa]ckinh|bickinh|truyengoc|lượt xem|\d+[:.]\d+)$/i.test(raw)) return;
     if (/\b(?:lượt xem|views?|người đăng ký|subscribers?|bình luận|comments?|chia sẻ|share|tải xuống|download|anker|soundcore)\b/i.test(raw)) return;
 
+    // Display subtitle IMMEDIATELY for 0ms on-screen response
+    this.displaySubtitle(raw, data.translated || raw);
+    if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = data.translated || raw;
+    if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = raw;
+
     // Merge progressive subtitle expansions (e.g. "I can't" -> "I can't believe")
-    // If the new phrase extends the last partial phrase, update to the full thought
+    // Update the last queued dubbing item if it hasn't played yet, avoiding duplicate/choppy fragments!
     if (this.lastOCRText && raw.length > this.lastOCRText.length && raw.toLowerCase().includes(this.lastOCRText.toLowerCase())) {
-      this.displaySubtitle(raw, data.translated || raw);
-      if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = data.translated || raw;
-      if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = raw;
       this.lastOCRText = raw;
+      if (this.isDubbingEnabled && this.liveDubbingQueue && this.liveDubbingQueue.length > 0) {
+        const lastQueued = this.liveDubbingQueue[this.liveDubbingQueue.length - 1];
+        if (lastQueued && raw.toLowerCase().startsWith(String(lastQueued.sourceText || '').toLowerCase())) {
+          lastQueued.text = data.translated || raw;
+          lastQueued.sourceText = raw;
+          return;
+        }
+      }
       if (this.isDubbingEnabled) {
         this.enqueueLiveDubbing(data.translated || raw, null, raw, performance.now(), performance.now(), data.timings || null);
       }
@@ -1814,11 +1825,10 @@ class LiveDubStudio {
           resumeStream: async () => vadStream,
           positiveSpeechThreshold: 0.50,
           negativeSpeechThreshold: 0.35,
-          // 240 ms preserves natural sentence flow while eliminating the long
-          // lag before Whisper and VieNeu begin processing.
-          redemptionMs: 240,
-          preSpeechPadMs: 160,
-          minSpeechMs: 200,
+          // 600 ms redemption preserves full natural sentences without cutting between words
+          redemptionMs: 600,
+          preSpeechPadMs: 200,
+          minSpeechMs: 250,
           submitUserSpeechOnPause: true,
           onSpeechStart: () => {
             this.captureStartedAt = performance.now();
@@ -1828,15 +1838,11 @@ class LiveDubStudio {
             this.captureStartedAt = 0;
           },
           onFrameProcessed: (probabilities) => {
-            // Adaptive continuous speech splitting: In rapid dialogue (YouTube / movies),
-            // actors rarely pause for a full redemption period. Split at natural dips
-            // (>2.8s, speech prob < 0.45) or at hard ceiling (>4.0s) so Whisper and VieNeu
-            // process compact phrases immediately instead of lagging 10 seconds behind.
+            // Only split exceptionally long continuous monologues (> 7.5s) to prevent unbounded buffers
             if (this.captureStartedAt && probabilities) {
               const elapsed = performance.now() - this.captureStartedAt;
-              const isDip = elapsed > 2800 && probabilities.isSpeech < 0.45;
-              const isCeiling = elapsed > 4000;
-              if ((isDip || isCeiling) && this.neuralVAD && this.neuralVAD.frameProcessor) {
+              const isCeiling = elapsed > 7500;
+              if (isCeiling && this.neuralVAD && this.neuralVAD.frameProcessor) {
                 this.neuralVAD.frameProcessor.redemptionCounter = this.neuralVAD.frameProcessor.redemptionFrames || 999;
               }
             }
@@ -1929,12 +1935,12 @@ class LiveDubStudio {
         this.consecutiveQuietBlocks = 0;
       }
 
-      // Responsive splitting: 4.0s ceiling, ~256ms quiet blocks.
-      const maxBlocks = Math.round((4.0 * sampleRate) / 4096);
+      // Responsive splitting: 7.5s ceiling, ~510ms quiet blocks (6 blocks @ 85ms).
+      const maxBlocks = Math.round((7.5 * sampleRate) / 4096);
       if (this.pcmBuffers.length >= maxBlocks) {
         triggerSendClause('hard-limit');
       } 
-      else if (this.pcmBuffers.length >= Math.round((0.45 * sampleRate) / 4096) && this.consecutiveQuietBlocks >= 3 && this.currentChunkMaxRms >= 0.001) {
+      else if (this.pcmBuffers.length >= Math.round((1.0 * sampleRate) / 4096) && this.consecutiveQuietBlocks >= 6 && this.currentChunkMaxRms >= 0.001) {
         triggerSendClause('natural');
       }
     };
@@ -2149,15 +2155,43 @@ class LiveDubStudio {
     if (this.liveTtsPrefetch.has(key)) return;
 
     const controller = new AbortController();
-    const promise = fetch('/api/tts-stream', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voice }),
-      signal: controller.signal
-    }).catch(err => {
-      if (this.liveTtsPrefetch) this.liveTtsPrefetch.delete(key);
-      return null;
-    });
+    const promise = (async () => {
+      try {
+        const res = await fetch('/api/tts-stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, voice }),
+          signal: controller.signal
+        });
+        if (!res.ok || !res.body) return null;
+        const reader = res.body.getReader();
+        const chunks = [];
+        let totalLen = 0;
+        while (true) {
+          const { value, done } = await reader.read();
+          if (value && value.byteLength > 0) {
+            chunks.push(value);
+            totalLen += value.byteLength;
+          }
+          if (done) break;
+        }
+        const merged = new Uint8Array(totalLen);
+        let offset = 0;
+        for (const c of chunks) {
+          merged.set(c, offset);
+          offset += c.byteLength;
+        }
+        return {
+          ok: true,
+          pcmBytes: merged,
+          sampleRate: parseInt(res.headers.get('X-Audio-Sample-Rate') || '48000', 10),
+          serverRateCap: parseFloat(res.headers.get('X-Safe-Playback-Rate') || '1.0')
+        };
+      } catch (err) {
+        if (this.liveTtsPrefetch) this.liveTtsPrefetch.delete(key);
+        return null;
+      }
+    })();
 
     this.liveTtsPrefetch.set(key, { promise, controller });
   }
@@ -2167,9 +2201,9 @@ class LiveDubStudio {
     this.isProcessingLiveDubbing = true;
     try {
       while (this.liveDubbingQueue.length > 0) {
-        // If congested (> 2), keep only the latest items so audio stays locked to the video!
-        if (this.liveDubbingQueue.length > 2) {
-          const dropped = this.liveDubbingQueue.splice(0, this.liveDubbingQueue.length - 1);
+        // Backlog management: Do not drop dialogue unless queue is severely backed up (> 6 items)
+        if (this.liveDubbingQueue.length > 6) {
+          const dropped = this.liveDubbingQueue.splice(0, this.liveDubbingQueue.length - 3);
           for (const d of dropped) {
             this.displaySubtitle(d.sourceText, d.text);
           }
@@ -2182,10 +2216,9 @@ class LiveDubStudio {
         );
         if (isStale()) continue;
 
-        // Latency-bound eviction: If item queued for > 2200ms and newer speech is pending,
-        // show subtitle but skip audio playback to eliminate delay
+        // Only evict truly ancient items (e.g. user scrubbed or jumped > 12s ahead in video)
         const queuedAgeMs = item.enqueuedAt ? (performance.now() - item.enqueuedAt) : 0;
-        if (queuedAgeMs > 2200 && this.liveDubbingQueue.length > 0 && this.liveDubbingQueue.some(q => (performance.now() - q.enqueuedAt) < 1500)) {
+        if (queuedAgeMs > 12000 && this.liveDubbingQueue.length > 0) {
           this.displaySubtitle(item.sourceText, item.text);
           continue;
         }
@@ -2383,15 +2416,25 @@ class LiveDubStudio {
     const ended = new Promise(resolve => { resolveEnded = resolve; });
 
     try {
-      const response = prefetched
-        ? (await prefetched.promise)
-        : await fetch('/api/tts-stream', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text, voice }),
-            signal: controller.signal
-          });
-      if (!response || !response.ok || !response.body) {
+      let prefetchedData = null;
+      let response = null;
+      if (prefetched) {
+        const resolved = await prefetched.promise;
+        if (resolved && resolved.pcmBytes) {
+          prefetchedData = resolved;
+        } else if (resolved && resolved.ok) {
+          response = resolved;
+        }
+      }
+      if (!prefetchedData && !response) {
+        response = await fetch('/api/tts-stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, voice }),
+          signal: controller.signal
+        });
+      }
+      if (!prefetchedData && (!response || !response.ok)) {
         throw new Error(`TTS stream HTTP ${response ? response.status : 'network error'}`);
       }
       if (token && !this.isPlaybackCurrent(token)) return;
@@ -2405,26 +2448,25 @@ class LiveDubStudio {
         await this.audioContext.resume().catch(() => {});
       }
 
-      const sampleRate = parseInt(response.headers.get('X-Audio-Sample-Rate') || '48000', 10);
-      const serverRateCap = parseFloat(response.headers.get('X-Safe-Playback-Rate') || '1.0');
+      const sampleRate = prefetchedData ? prefetchedData.sampleRate : parseInt(response.headers.get('X-Audio-Sample-Rate') || '48000', 10);
+      const serverRateCap = prefetchedData ? prefetchedData.serverRateCap : parseFloat(response.headers.get('X-Safe-Playback-Rate') || '1.0');
       const gainNode = this.audioContext.createGain();
       gainNode.gain.value = (parseInt(this.volumeRange.value, 10) || 100) / 100;
       gainNode.connect(this.audioContext.destination);
       this.currentGainNode = gainNode;
       this.dubbingIndicator.classList.add('active');
 
-      const reader = response.body.getReader();
-      // Never skip or interrupt a line. If complete lines are waiting, gently
-      // accelerate the current one so the queue converges instead of drifting.
       const playbackRate = this.getSafeStreamingPlaybackRate(queueDepth, serverRateCap, originalDuration, text ? text.length : 0);
       let nextStart = 0;
       let carry = null;
       let started = false;
 
-      // Accumulate PCM chunks to prevent microscopic slice underruns and eliminate robotic choppiness.
-      // Slices of ~0.18s (17,280 bytes) ensure smooth playback, with ~0.24s initial prebuffer.
-      const MIN_SLICE_BYTES = 17280;
-      const INITIAL_PREBUFFER_BYTES = 23040;
+      // Anti-stuttering: For normal subtitles (< 130 chars), collect full PCM and play
+      // as ONE contiguous AudioBuffer. This completely eliminates slice gaps, phase clicks,
+      // and "cà lăm" stuttering while prefetching upcoming lines in background.
+      const isLongText = (text && text.length >= 130);
+      const INITIAL_PREBUFFER_BYTES = isLongText ? 144000 : 999999999;
+      const MIN_SLICE_BYTES = isLongText ? 76800 : 999999999;
       let pendingChunks = [];
       let pendingBytesLen = 0;
 
@@ -2470,8 +2512,7 @@ class LiveDubStudio {
         let startAt;
         if (!started) {
           started = true;
-          // Initial lead (0.08s) ensures audio starts smoothly
-          startAt = now + 0.08;
+          startAt = now + 0.05;
           if (this.liveDubbingQueue && this.liveDubbingQueue.length > 0) {
             const nextItem = this.liveDubbingQueue[0];
             this.prefetchLiveTts(nextItem.text, nextItem.voice);
@@ -2485,59 +2526,62 @@ class LiveDubStudio {
             }
           }, callbackDelay);
         } else {
-          // Seamless scheduling: connects sample-accurately at nextStart.
-          // In case of clock drift, schedule immediately with 5ms lead (NO 50ms silence penalty!).
           startAt = (nextStart >= now + 0.005) ? nextStart : (now + 0.005);
         }
         sourceNode.start(startAt);
         nextStart = startAt + audioBuffer.duration / playbackRate;
       };
 
-      while (true) {
-        const { value, done } = await reader.read();
-        if (token && !this.isPlaybackCurrent(token)) {
-          controller.abort();
-          return;
-        }
+      if (prefetchedData && prefetchedData.pcmBytes) {
+        scheduleSlice(prefetchedData.pcmBytes);
+      } else if (response && response.body) {
+        const reader = response.body.getReader();
+        while (true) {
+          const { value, done } = await reader.read();
+          if (token && !this.isPlaybackCurrent(token)) {
+            controller.abort();
+            return;
+          }
 
-        if (value && value.byteLength > 0) {
-          let bytes = value;
-          if (carry !== null) {
-            const joined = new Uint8Array(value.byteLength + 1);
-            joined[0] = carry;
-            joined.set(value, 1);
-            bytes = joined;
-            carry = null;
-          }
-          if (bytes.byteLength % 2) {
-            carry = bytes[bytes.byteLength - 1];
-            bytes = bytes.subarray(0, bytes.byteLength - 1);
-          }
-          if (bytes.byteLength > 0) {
-            pendingChunks.push(bytes);
-            pendingBytesLen += bytes.byteLength;
-          }
-        }
-
-        const threshold = started ? MIN_SLICE_BYTES : INITIAL_PREBUFFER_BYTES;
-        if (pendingBytesLen >= threshold || (done && pendingBytesLen > 0)) {
-          let sliceBytes;
-          if (pendingChunks.length === 1) {
-            sliceBytes = pendingChunks[0];
-          } else {
-            sliceBytes = new Uint8Array(pendingBytesLen);
-            let offset = 0;
-            for (const chunk of pendingChunks) {
-              sliceBytes.set(chunk, offset);
-              offset += chunk.byteLength;
+          if (value && value.byteLength > 0) {
+            let bytes = value;
+            if (carry !== null) {
+              const joined = new Uint8Array(value.byteLength + 1);
+              joined[0] = carry;
+              joined.set(value, 1);
+              bytes = joined;
+              carry = null;
+            }
+            if (bytes.byteLength % 2) {
+              carry = bytes[bytes.byteLength - 1];
+              bytes = bytes.subarray(0, bytes.byteLength - 1);
+            }
+            if (bytes.byteLength > 0) {
+              pendingChunks.push(bytes);
+              pendingBytesLen += bytes.byteLength;
             }
           }
-          pendingChunks = [];
-          pendingBytesLen = 0;
-          scheduleSlice(sliceBytes);
-        }
 
-        if (done) break;
+          const threshold = started ? MIN_SLICE_BYTES : INITIAL_PREBUFFER_BYTES;
+          if (pendingBytesLen >= threshold || (done && pendingBytesLen > 0)) {
+            let sliceBytes;
+            if (pendingChunks.length === 1) {
+              sliceBytes = pendingChunks[0];
+            } else {
+              sliceBytes = new Uint8Array(pendingBytesLen);
+              let offset = 0;
+              for (const chunk of pendingChunks) {
+                sliceBytes.set(chunk, offset);
+                offset += chunk.byteLength;
+              }
+            }
+            pendingChunks = [];
+            pendingBytesLen = 0;
+            scheduleSlice(sliceBytes);
+          }
+
+          if (done) break;
+        }
       }
       readingDone = true;
       setSafetyTimeout(1.5);

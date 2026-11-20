@@ -545,7 +545,7 @@ test('ocrSimilarity detects fuzzy noise and prevents repetitive spam like BácKi
   assert.equal(queued, 2);
 });
 
-test('drainLiveDubbingQueue skips stale audio older than 2.2s when backlog occurs', async () => {
+test('drainLiveDubbingQueue skips ancient audio older than 12s when user scrubs ahead', async () => {
   const app = Object.create(LiveDubStudio.prototype);
   app.isDubbingEnabled = true;
   app.dubbingGeneration = 1;
@@ -554,10 +554,10 @@ test('drainLiveDubbingQueue skips stale audio older than 2.2s when backlog occur
   let playedAudios = 0;
   app.playAudioBuffer = async () => { playedAudios++; };
 
-  // Item 1 is fresh
+  // Item 1 is ancient (> 12s ago, e.g. user scrubbed or jumped 30s ahead)
   const now = performance.now();
   app.liveDubbingQueue = [
-    { text: 'Old line', sourceText: 'Old', enqueuedAt: now - 3000, generation: 1, voice: 'google-vi' },
+    { text: 'Old line', sourceText: 'Old', enqueuedAt: now - 15000, generation: 1, voice: 'google-vi' },
     { text: 'Fresh line', sourceText: 'Fresh', enqueuedAt: now - 50, generation: 1, voice: 'google-vi' },
   ];
 
@@ -569,7 +569,7 @@ test('drainLiveDubbingQueue skips stale audio older than 2.2s when backlog occur
 
   try {
     await app.drainLiveDubbingQueue();
-    // Only the fresh line should have played audio, stale line audio was skipped
+    // Only the fresh line should have played audio, ancient line audio was skipped
     assert.equal(playedAudios, 1);
   } finally {
     global.fetch = originalFetch;
@@ -644,34 +644,39 @@ test('toggleWebVideoFullscreen requests fullscreen on webVideoContainer', () => 
 });
 
 test('openFloatingOverlay prioritizes documentPictureInPicture when available', async () => {
-  const app = Object.create(LiveDubStudio.prototype);
-  app.ensureAudioUnlocked = () => {};
-  app.subSourceDisplay = el();
-  app.subViDisplay = el();
-  app.showToast = () => {};
-  app.escapeHtml = (s) => s;
+  const originalWindow = global.window;
+  try {
+    const app = Object.create(LiveDubStudio.prototype);
+    app.ensureAudioUnlocked = () => {};
+    app.subSourceDisplay = el();
+    app.subViDisplay = el();
+    app.showToast = () => {};
+    app.escapeHtml = (s) => s;
 
-  let pipRequested = false;
-  const mockPipDoc = {
-    head: { appendChild() {} },
-    body: { innerHTML: '' }
-  };
-  global.window = {
-    documentPictureInPicture: {
-      requestWindow: async () => {
-        pipRequested = true;
-        return {
-          document: mockPipDoc,
-          addEventListener() {},
-          closed: false
-        };
+    let pipRequested = false;
+    const mockPipDoc = {
+      head: { appendChild() {} },
+      body: { innerHTML: '' }
+    };
+    global.window = {
+      documentPictureInPicture: {
+        requestWindow: async () => {
+          pipRequested = true;
+          return {
+            document: mockPipDoc,
+            addEventListener() {},
+            closed: false
+          };
+        }
       }
-    }
-  };
+    };
 
-  await app.openFloatingOverlay();
-  assert.equal(pipRequested, true);
-  assert.ok(app.pipWindow);
+    await app.openFloatingOverlay();
+    assert.equal(pipRequested, true);
+    assert.ok(app.pipWindow);
+  } finally {
+    global.window = originalWindow;
+  }
 });
 
 
