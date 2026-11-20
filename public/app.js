@@ -244,6 +244,7 @@ class LiveDubStudio {
     // Source 1: System
     this.btnToggleSystemAudio = document.getElementById('btnToggleSystemAudio');
     this.btnSystemAudioText = document.getElementById('btnSystemAudioText');
+    this.oneTouchDetectionPill = document.getElementById('oneTouchDetectionPill');
     this.systemCaptureMode = document.getElementById('systemCaptureMode');
     this.systemSubMode = document.getElementById('systemSubMode');
     this.systemIntelligenceState = document.getElementById('systemIntelligenceState');
@@ -939,7 +940,7 @@ class LiveDubStudio {
       }
 
       this.activeSource = 'system';
-      const captureMode = this.getRadioGroupValue(this.systemCaptureMode, 'audio_only');
+      const captureMode = this.getRadioGroupValue(this.systemCaptureMode, 'auto');
       this.isOCRModeActive = (captureMode === 'hard_sub');
       this.isHybridModeActive = (captureMode === 'auto');
       this.btnSystemAudioText.textContent = 'Dừng Xem & Lồng Tiếng';
@@ -952,7 +953,11 @@ class LiveDubStudio {
 
       this.showToast(' Đã kết nối âm thanh hệ thống! Hãy phát video để nghe lồng tiếng.');
       await this.setupVADAndRecording(this.mediaStream);
-      if (this.isOCRModeActive || this.isHybridModeActive) await this.startHardSubtitleOCR(this.mediaStream);
+      if (this.isOCRModeActive) {
+        await this.startHardSubtitleOCR(this.mediaStream);
+      } else if (this.isHybridModeActive) {
+        await this.runInitialSubtitleProbe(this.mediaStream);
+      }
     } catch (err) {
       if (err.name !== 'NotAllowedError') {
         alert('Lỗi thu âm hệ thống: ' + err.message);
@@ -1079,6 +1084,101 @@ class LiveDubStudio {
     if (selectedSpeech && selectedSpeech !== 'auto') return selectedSpeech;
     const selectedCaption = this.getRadioGroupValue(this.webCaptionLanguage, 'auto');
     return ['original', 'auto'].includes(selectedCaption) ? 'auto' : selectedCaption;
+  }
+
+  async runInitialSubtitleProbe(stream) {
+    const videoTrack = stream && stream.getVideoTracks ? stream.getVideoTracks()[0] : null;
+    if (!videoTrack) {
+      this.isOCRModeActive = false;
+      this.showToast('🎙️ Không có hình ảnh chia sẻ -> Whisper GPU đang nghe âm thanh trực tiếp.');
+      return;
+    }
+
+    try {
+      this.showToast('🔍 Đang kiểm tra 1 lần đầu để tự xác định Vietsub / Phụ đề tiếng gốc / Whisper...');
+      const probeVideo = document.createElement('video');
+      probeVideo.muted = true;
+      probeVideo.playsInline = true;
+      probeVideo.srcObject = new MediaStream([videoTrack]);
+      await probeVideo.play().catch(() => {});
+      await new Promise(r => setTimeout(r, 900));
+
+      const width = probeVideo.videoWidth;
+      const height = probeVideo.videoHeight;
+      if (!width || !height) {
+        probeVideo.pause();
+        probeVideo.srcObject = null;
+        this.isOCRModeActive = false;
+        return;
+      }
+
+      const isTallPage = (height > width * 0.60);
+      const sourceX = 0;
+      const sourceWidth = width;
+      let sourceY, sourceHeight;
+      if (isTallPage) {
+        const topBarHeight = Math.min(60, Math.floor(height * 0.05));
+        const estimatedVideoHeight = Math.min(height - topBarHeight, width * 0.5625);
+        sourceY = topBarHeight + Math.floor(estimatedVideoHeight * 0.70);
+        sourceHeight = Math.max(1, Math.floor(estimatedVideoHeight * 0.22));
+      } else {
+        sourceY = Math.floor(height * 0.70);
+        sourceHeight = Math.max(1, Math.floor(height * 0.23));
+      }
+      const scale = Math.min(1, 960 / width);
+      const probeCanvas = document.createElement('canvas');
+      probeCanvas.width = Math.max(1, Math.round(sourceWidth * scale));
+      probeCanvas.height = Math.max(1, Math.round(sourceHeight * scale));
+      const ctx = probeCanvas.getContext('2d', { alpha: false });
+      ctx.drawImage(probeVideo, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, probeCanvas.width, probeCanvas.height);
+
+      probeVideo.pause();
+      probeVideo.srcObject = null;
+
+      const blob = await new Promise(r => probeCanvas.toBlob(r, 'image/jpeg', 0.80));
+      if (!blob) return;
+
+      const form = new FormData();
+      form.append('image', blob, 'probe-frame.jpg');
+      form.append('source_lang', this.resolveOCRLanguage());
+      const res = await fetch('/api/ocr-subtitle', { method: 'POST', body: form });
+      if (!res.ok) throw new Error(`Probe HTTP ${res.status}`);
+      const data = await res.json();
+
+      const raw = String(data.original || '').trim();
+      const hasViMarkers = /[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớờỡợùúủũụưừứửữựỳýỷỹỵđ]/i.test(raw) ||
+        /\b(?:không|được|người|chúng|tôi|bạn|của|trong|một|cho|với|như|đã|sẽ|đang)\b/i.test(raw);
+
+      if (raw && hasViMarkers) {
+        // Video already has Vietsub!
+        this.isOCRModeActive = false;
+        this.isDubbingEnabled = false;
+        this.updateMasterDubUI();
+        this.showToast('✨ Video đã có sẵn Vietsub! Đã tắt thuyết minh để bạn xem phụ đề gốc tự nhiên.');
+        if (this.oneTouchDetectionPill) {
+          this.oneTouchDetectionPill.innerHTML = '✨ <strong>Đã nhận diện:</strong> Video có sẵn Vietsub — Đã tắt thuyết minh để xem tự nhiên.';
+        }
+      } else if (raw && raw.length >= 2) {
+        // Video has foreign hard subtitles!
+        this.isOCRModeActive = true;
+        this.showToast('📷 Đã phát hiện phụ đề tiếng gốc trong video! Đang đọc OCR & lồng tiếng VieNeu-TTS.');
+        if (this.oneTouchDetectionPill) {
+          this.oneTouchDetectionPill.innerHTML = '📷 <strong>Đã nhận diện:</strong> Phụ đề chữ trong video -> Đang đọc OCR & Lồng tiếng VieNeu';
+        }
+        await this.startHardSubtitleOCR(stream);
+      } else {
+        // No hard subtitles detected in frame -> use direct audio Whisper GPU
+        this.isOCRModeActive = false;
+        this.showToast('🎙️ Video không có phụ đề -> Whisper GPU CUDA đang nghe trực tiếp âm thanh & thuyết minh!');
+        if (this.oneTouchDetectionPill) {
+          this.oneTouchDetectionPill.innerHTML = '🎙️ <strong>Đã nhận diện:</strong> Không có sub -> Whisper GPU đang nghe trực tiếp âm thanh & thuyết minh';
+        }
+      }
+    } catch (err) {
+      console.warn('Initial subtitle probe failed, defaulting to Whisper:', err);
+      this.isOCRModeActive = false;
+      this.showToast('🎙️ Chế độ mặc định: Whisper GPU đang nghe trực tiếp âm thanh video.');
+    }
   }
 
   async startHardSubtitleOCR(stream) {
@@ -2540,13 +2640,11 @@ class LiveDubStudio {
       let carry = null;
       let started = false;
 
-      // Anti-stuttering: For normal subtitles (< 130 chars), collect full PCM and play
-      // as ONE contiguous AudioBuffer. This completely eliminates slice gaps, phase clicks,
-      // and "cà lăm" stuttering while prefetching upcoming lines in background.
+      // Realtime Streaming: Pre-buffer ~250ms of audio (bufferPolicy.initialBytes)
+      // to eliminate stuttering while starting playback within ~250ms of GPU synthesis.
       const bufferPolicy = this.getLivePcmBufferPolicy(text);
-      const isLongText = (text && text.length >= 130);
-      const INITIAL_PREBUFFER_BYTES = isLongText ? bufferPolicy.initialBytes : 999999999;
-      const MIN_SLICE_BYTES = isLongText ? bufferPolicy.sliceBytes : 999999999;
+      const INITIAL_PREBUFFER_BYTES = bufferPolicy.initialBytes;
+      const MIN_SLICE_BYTES = bufferPolicy.sliceBytes;
       let pendingChunks = [];
       let pendingBytesLen = 0;
 

@@ -1099,7 +1099,6 @@ async def api_transcribe(
             best_of=1,
             temperature=0.0,
             condition_on_previous_text=False,
-            initial_prompt=(previous_context or "")[-300:] or None,
             without_timestamps=True,
             vad_filter=True,
             vad_parameters=dict(

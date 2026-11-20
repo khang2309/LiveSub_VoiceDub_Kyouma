@@ -198,7 +198,7 @@ class TranslationRouter:
                     return result
             except Exception as error:
                 if provider == "network":
-                    self._network_cooldown_until = time.time() + 60
+                    self._network_cooldown_until = time.time() + 2
                 errors.append(error)
                 self._record(provider, source, started, error=error, fallback=position > 0)
         raise RuntimeError("; ".join(str(error) for error in errors) or "No translation provider")
@@ -228,7 +228,7 @@ class TranslationRouter:
                 return result
             except Exception as error:
                 if provider == "network":
-                    self._network_cooldown_until = time.time() + 60
+                    self._network_cooldown_until = time.time() + 2
                 errors.append(error)
                 self._record(provider, source, started, error=error, fallback=position > 0)
         raise RuntimeError("; ".join(str(error) for error in errors) or "No translation provider")

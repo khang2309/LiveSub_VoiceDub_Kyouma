@@ -231,9 +231,15 @@ def _google_translate_fetch(text, source_lang, target_lang):
     # live requests. The lock makes requests.Session safe across the caption
     # prefetch workers without opening a fresh TLS connection per sentence.
     with _HTTP_SESSION_LOCK:
-        response = _HTTP_SESSION.get(url, timeout=(0.35, 0.75))
-        response.raise_for_status()
-        data = response.json()
+        try:
+            response = _HTTP_SESSION.get(url, timeout=(1.5, 3.5))
+            response.raise_for_status()
+            data = response.json()
+        except Exception:
+            # Quick single retry with fresh timeout
+            response = _HTTP_SESSION.get(url, timeout=(2.0, 4.0))
+            response.raise_for_status()
+            data = response.json()
     return "".join(part[0] for part in data[0] if part and part[0]).strip()
 
 
