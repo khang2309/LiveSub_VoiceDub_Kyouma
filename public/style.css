@@ -182,10 +182,126 @@ body {
   gap: var(--space-sm);
 }
 
+.runtime-config {
+  border: 1px solid var(--color-accent-border);
+  border-radius: 14px;
+  background: var(--bg-card);
+  padding: var(--space-sm) var(--space-md);
+  box-shadow: 0 10px 30px var(--color-shadow);
+}
+
+.runtime-config-head,
+.runtime-config-body {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.runtime-config-head {
+  justify-content: space-between;
+  margin-bottom: var(--space-sm);
+}
+
+.runtime-config-head > div {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.runtime-kicker {
+  color: var(--color-accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.runtime-config-head strong {
+  color: var(--text-main);
+  font-size: 0.86rem;
+  text-wrap: balance;
+}
+
+.apply-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: 30px;
+  padding: 4px var(--space-sm);
+  border: 1px solid var(--color-rule-strong);
+  border-radius: 9999px;
+  color: var(--color-success);
+  background: var(--color-success-soft);
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.apply-state[data-state="checking"] { color: var(--color-accent); background: var(--color-accent-soft); }
+.apply-state[data-state="error"] { color: var(--color-error); background: var(--color-error-soft); }
+
+.apply-state-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.runtime-config-body {
+  align-items: stretch;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(118px, 1fr)) minmax(190px, 1.35fr) auto;
+}
+
+.runtime-chip {
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: var(--color-rule-soft);
+}
+
+.runtime-chip span,
+.runtime-chip strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-chip span {
+  color: var(--text-dim);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.runtime-chip strong {
+  color: var(--text-main);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.btn-confirm-settings {
+  min-height: 44px;
+  align-self: stretch;
+  color: var(--color-accent-ink);
+  background: var(--color-accent);
+  box-shadow: 0 8px 20px var(--color-accent-soft);
+}
+
+.btn-confirm-settings:hover { transform: translateY(-1px); }
+.btn-confirm-settings:active { transform: scale(0.97); }
+
 @media (max-width: 900px) {
   .source-nav-bar {
     grid-template-columns: 1fr 1fr;
   }
+  .runtime-config-body { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .btn-confirm-settings { grid-column: 2 / 4; }
 }
 
 .source-tab {
@@ -647,6 +763,10 @@ select:focus-visible {
   .source-intelligence-grid, .form-row-2, #webCaptionLanguage { grid-template-columns: minmax(0, 1fr); }
   #webCaptionLanguage legend { grid-column: auto; }
   .source-intelligence-heading { align-items: center; }
+  .runtime-config-head { align-items: flex-start; flex-direction: column; }
+  .runtime-config-head > div { align-items: flex-start; flex-direction: column; gap: 2px; }
+  .runtime-config-body { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .runtime-engine-chip, .btn-confirm-settings { grid-column: 1 / -1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -742,6 +862,7 @@ select:focus-visible {
   border: none;
   text-decoration: none;
   white-space: nowrap;
+  min-height: 40px;
 }
 
 .btn-link {
@@ -1043,8 +1164,14 @@ select:focus-visible {
   color: var(--color-accent-2);
   font-weight: 800;
   line-height: 1.3;
-  -webkit-text-stroke: 1.2px var(--color-black-video);
-  text-shadow: 0 2px 8px var(--color-black-video), 0 0 16px var(--color-overlay);
+  -webkit-text-stroke: 0;
+  text-shadow:
+    -1px -1px 0 var(--color-black-video),
+    1px -1px 0 var(--color-black-video),
+    -1px 1px 0 var(--color-black-video),
+    1px 1px 0 var(--color-black-video),
+    0 2px 8px var(--color-black-video),
+    0 0 16px var(--color-overlay);
   letter-spacing: 0.02em;
 }
 

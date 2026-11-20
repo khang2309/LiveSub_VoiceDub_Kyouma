@@ -1,11 +1,62 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 
 const LiveDubStudio = require('../public/app.js');
 
 function el() {
   return { style: {}, textContent: '', classList: { add() {}, remove() {} } };
 }
+
+test('auto voice resolves to the single startup-selected provider', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.voiceSelect = { value: 'auto-fast' };
+  app.autoVoiceProvider = 'vieneu:Thái Sơn';
+  assert.equal(app.getEffectiveVoice(), 'vieneu:Thái Sơn');
+  app.voiceSelect.value = 'google-vi';
+  assert.equal(app.getEffectiveVoice(), 'google-vi');
+});
+
+test('OCR capture is capped at the benchmarked 960 pixel width', () => {
+  const source = fs.readFileSync(require.resolve('../public/app.js'), 'utf8');
+  assert.match(source, /Math\.min\(1, 960 \/ width\)/);
+});
+
+test('confirm settings verifies the running backend and exposes applied state', async () => {
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      asr: { status: 'ready' },
+      tts: { status: 'ready', auto_provider: { selected: 'vieneu:Thái Sơn', vieneu_ttfa_ms: 94 } }
+    })
+  });
+  try {
+    const app = Object.create(LiveDubStudio.prototype);
+    app.activeSource = 'system';
+    app.currentSubMode = 'bilingual';
+    app.autoVoiceProvider = 'vieneu:Thái Sơn';
+    app.voiceSelect = { value: 'auto-fast', selectedOptions: [{ text: 'Tự động nhanh nhất' }] };
+    app.sourceLangSelect = { selectedOptions: [{ text: 'Tự động nhận diện' }] };
+    app.rateRange = { value: '1.15' };
+    app.settingsApplyState = { dataset: {}, innerHTML: '' };
+    app.runtimeSourceValue = el();
+    app.runtimeLanguageValue = el();
+    app.runtimeSubtitleValue = el();
+    app.runtimeVoiceValue = el();
+    app.runtimeEngineValue = el();
+    app.showToast = () => {};
+
+    await app.confirmRuntimeSettings();
+
+    assert.equal(app.settingsApplyState.dataset.state, 'applied');
+    assert.match(app.settingsApplyState.innerHTML, /Đã xác nhận đang chạy/);
+    assert.match(app.runtimeEngineValue.textContent, /Whisper CUDA/);
+    assert.match(app.runtimeEngineValue.textContent, /TTFA 94ms/);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
 
 test('changing voice is silent and invalidates stale cache generation', () => {
   const app = Object.create(LiveDubStudio.prototype);
@@ -24,6 +75,23 @@ test('changing voice is silent and invalidates stale cache generation', () => {
 
   assert.equal(app.voiceGeneration, 3);
   assert.equal(app.audioPreCache.size, 0);
+});
+
+test('voice playback rate is capped to avoid choppy speech', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.rateRange = { value: '1.50' };
+  assert.equal(app.getSafePlaybackRate(), 1.50);
+  assert.equal(app.getSafePlaybackRate(0.2), 1.50);
+});
+
+test('live VieNeu PCM is capped below GPU generation throughput', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.rateRange = { value: '1.50' };
+  assert.equal(app.getSafeStreamingPlaybackRate(0), 1.20);
+  assert.equal(app.getSafeStreamingPlaybackRate(8), 1.20);
+  assert.equal(app.getSafeStreamingPlaybackRate(8, 1.04), 1.04);
+  app.rateRange.value = '1.00';
+  assert.equal(app.getSafeStreamingPlaybackRate(0), 1.00);
 });
 
 test('subtitle mode updates cinema, local and web overlays immediately', () => {
@@ -70,6 +138,19 @@ test('speech chunks queued while transcription is busy are not dropped', async (
   const second = app.enqueueSpeechPhrase('two');
   await Promise.all([first, second]);
   assert.deepEqual(seen, ['one', 'two']);
+});
+
+test('speech queue never discards an old phrase when temporarily overloaded', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.speechQueue = [];
+  app.maxSpeechQueueSize = 2;
+  app.liveSpeechSequence = 0;
+  app.isProcessingSpeechQueue = true;
+  app.showToast = () => {};
+  app.enqueueSpeechPhrase({ size: 1200 });
+  app.enqueueSpeechPhrase({ size: 1200 });
+  app.enqueueSpeechPhrase({ size: 1200 });
+  assert.equal(app.speechQueue.length, 3);
 });
 
 test('stale playback token is rejected after segment/session advances', () => {
@@ -332,4 +413,29 @@ test('audio-only caption mode disables every caption-language option', () => {
   app.updateSourceIntelligenceControls();
 
   assert.equal(languageOptions.every(option => option.disabled), true);
+});
+
+test('explicit language selection is reused by OCR on every frame', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.sourceLangSelect = { value: 'ko-KR' };
+  app.webCaptionLanguage = { value: 'auto' };
+  assert.equal(app.resolveOCRLanguage(), 'ko-KR');
+
+  app.sourceLangSelect.value = 'auto';
+  app.webCaptionLanguage.value = 'ja';
+  assert.equal(app.resolveOCRLanguage(), 'ja');
+});
+
+test('OCR subtitle is deduplicated before entering the dubbing queue', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.lastOCRText = '';
+  app.lastTranscriptContext = '';
+  app.isDubbingEnabled = true;
+  app.addHistory = () => ({ id: 'ocr-1' });
+  let queued = 0;
+  app.enqueueLiveDubbing = () => { queued++; };
+  app.handleOCRSubtitle({ original: 'Hello world', translated: 'Xin chào' });
+  app.handleOCRSubtitle({ original: '  hello   world ', translated: 'Xin chào' });
+  assert.equal(queued, 1);
+  assert.equal(app.lastTranscriptContext, 'Hello world');
 });

@@ -1,4 +1,7 @@
 # Environments
+.env
+.env.*
+!.env.example
 .venv/
 venv/
 env/
@@ -27,3 +30,12 @@ models/piper/*.onnx
 .idea/
 .DS_Store
 Thumbs.db
+
+# Design audit artifacts
+.hallmark/
+models/vinai-translate-en2vi-v2-int8/
+models/nllb-200-distilled-600M-int8/
+server.stdout.log
+server.stderr.log
+server_runtime.stdout.log
+server_runtime.stderr.log

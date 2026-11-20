@@ -9,6 +9,9 @@ import json
 import re
 import urllib.parse
 import urllib.request
+import threading
+import time
+import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
@@ -16,6 +19,18 @@ INVISIBLE_CHARS_RE = re.compile(r"[\u200b\u200e\u200f\ufeff]+")
 CURRENT_MARKER = "[[[CURRENT]]]"
 _TRANSLATED_MARKER_RE = re.compile(r"\[\[\[[^\]\r\n]+\]\]\]")
 _BATCH_CAPTION_MARKER_RE = re.compile(r"\[\[\[(\d{6})\]\]\]")
+_GEMINI_CIRCUIT_LOCK = threading.Lock()
+_GEMINI_CIRCUIT = {
+    "cooldown_until": 0.0,
+    "last_error": None,
+    "failures": 0,
+}
+_HTTP_SESSION = requests.Session()
+_HTTP_SESSION.trust_env = False
+_HTTP_SESSION.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+})
+_HTTP_SESSION_LOCK = threading.Lock()
 
 
 def should_translate_to_vietnamese(source_lang):
@@ -181,11 +196,13 @@ def _google_translate_fetch(text, source_lang, target_lang):
         "q": text,
     }
     url = "https://translate.googleapis.com/translate_a/single?" + urllib.parse.urlencode(params)
-    request = urllib.request.Request(
-        url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-    )
-    with urllib.request.urlopen(request, timeout=3.5) as response:
-        data = json.loads(response.read().decode("utf-8"))
+    # One warmed keep-alive connection is shared by startup benchmarking and
+    # live requests. The lock makes requests.Session safe across the caption
+    # prefetch workers without opening a fresh TLS connection per sentence.
+    with _HTTP_SESSION_LOCK:
+        response = _HTTP_SESSION.get(url, timeout=(0.35, 0.75))
+        response.raise_for_status()
+        data = response.json()
     return "".join(part[0] for part in data[0] if part and part[0]).strip()
 
 
@@ -207,7 +224,141 @@ def _azure_translate_fetch(text, source_lang="auto", target_lang="vi", key=None,
     return data[0]["translations"][0]["text"].strip()
 
 
+def _google_cloud_translate_fetch(text, source_lang="auto", target_lang="vi", key=None):
+    if not key:
+        return None
+    url = "https://translation.googleapis.com/language/translate/v2?" + urllib.parse.urlencode({"key": key})
+    payload = {"q": text, "target": target_lang, "format": "text"}
+    if source_lang and source_lang != "auto":
+        payload["source"] = source_lang
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=2.5) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    return data["data"]["translations"][0]["translatedText"].strip()
+
+
+def _deepl_translate_fetch(text, source_lang="auto", target_lang="vi", key=None):
+    if not key:
+        return None
+    endpoint = os.environ.get("DEEPL_API_URL", "https://api-free.deepl.com/v2/translate")
+    body = {"text": [text], "target_lang": target_lang.upper()}
+    if source_lang and source_lang != "auto":
+        body["source_lang"] = source_lang.upper()
+    req = urllib.request.Request(
+        endpoint,
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Authorization": f"DeepL-Auth-Key {key}", "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=2.5) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    return data["translations"][0]["text"].strip()
+
+
+def _gemini_translate_fetch(text, source_lang="auto", target_lang="vi", key=None):
+    """Context-aware batch translation with a quota/error circuit breaker."""
+    if not key:
+        return None
+    with _GEMINI_CIRCUIT_LOCK:
+        if time.time() < _GEMINI_CIRCUIT["cooldown_until"]:
+            raise RuntimeError("Gemini translation is cooling down after a quota/provider error")
+
+    primary_model = os.environ.get("GEMINI_TRANSLATION_MODEL", "gemini-3.1-flash-lite")
+    fallback_models = os.environ.get(
+        "GEMINI_TRANSLATION_FALLBACK_MODELS",
+        "gemini-flash-lite-latest,gemini-2.5-flash-lite",
+    ).split(",")
+    models = []
+    for candidate in [primary_model, *fallback_models]:
+        candidate = candidate.strip()
+        if candidate and candidate not in models:
+            models.append(candidate)
+    prompt = (
+        f"Translate from {source_lang or 'auto'} to natural spoken {target_lang or 'vi'} "
+        "for movie dubbing. Preserve meaning, tone, names, numbers, line order, "
+        "and every [[[000000]]] marker exactly. Return only the translated text.\n"
+        f"{text}"
+    )
+    body = json.dumps({
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0, "maxOutputTokens": 2048},
+    }).encode("utf-8")
+    last_error = None
+    last_status = None
+    for model in models:
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{urllib.parse.quote(model, safe='-_.')}:generateContent"
+        )
+        request = urllib.request.Request(
+            url,
+            data=body,
+            headers={"x-goog-api-key": key, "Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=10.0) as response:
+                data = json.loads(response.read().decode("utf-8"))
+            result = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            if result:
+                with _GEMINI_CIRCUIT_LOCK:
+                    _GEMINI_CIRCUIT.update(cooldown_until=0.0, last_error=None)
+                return result
+        except Exception as error:
+            last_error = error
+            last_status = getattr(error, "code", None)
+            # An invalid key affects every model; quota, model and transient
+            # failures may be model-specific, so try the next configured model.
+            if last_status in {401, 403}:
+                break
+
+    error = last_error or RuntimeError("Gemini returned no translation")
+    # Provider failures must never stall every following subtitle. NMT/local
+    # fallbacks are used during the circuit-breaker cooldown.
+    cooldown = 3600 if last_status in {401, 403} else 300
+    with _GEMINI_CIRCUIT_LOCK:
+        _GEMINI_CIRCUIT["cooldown_until"] = time.time() + cooldown
+        _GEMINI_CIRCUIT["last_error"] = (
+            f"HTTP {last_status}: {error}" if last_status else str(error)
+        )
+        _GEMINI_CIRCUIT["failures"] += 1
+    raise error
+
+
 def _hybrid_translate_fetch(text, source_lang, target_lang):
+    # Gemini is substantially more context-aware but measured at 1-3 seconds
+    # per request on the free tier. Use it only for prefetched caption batches,
+    # never for live per-sentence audio where it would add visible delay.
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    gemini_mode = os.environ.get("GEMINI_TRANSLATION_MODE", "prefetch").lower()
+    is_caption_batch = bool(_BATCH_CAPTION_MARKER_RE.search(text or ""))
+    if gemini_key and (gemini_mode == "all" or (gemini_mode == "prefetch" and is_caption_batch)):
+        try:
+            result = _gemini_translate_fetch(text, source_lang, target_lang, key=gemini_key)
+            if result:
+                return result
+        except Exception:
+            # Quota/token/timeout errors immediately fall through to NMT. The
+            # circuit breaker prevents repeated Gemini attempts for a while.
+            pass
+
+    # Explicit official APIs win when configured. They are measurable and have
+    # stable quotas/terms; each failure falls through without losing a line.
+    official = [
+        (_deepl_translate_fetch, os.environ.get("DEEPL_API_KEY")),
+        (_google_cloud_translate_fetch, os.environ.get("GOOGLE_TRANSLATE_API_KEY")),
+    ]
+    for fetcher, key in official:
+        if not key:
+            continue
+        try:
+            result = fetcher(text, source_lang, target_lang, key=key)
+            if result:
+                return result
+        except Exception:
+            pass
     azure_key = os.environ.get("AZURE_TRANSLATOR_KEY") or os.environ.get("AZURE_TRANSLATION_KEY")
     if azure_key:
         try:
@@ -222,6 +373,8 @@ def _hybrid_translate_fetch(text, source_lang, target_lang):
                 return res
         except Exception:
             pass
+    # Zero-key fast path. A short timeout lets the router fall back to local
+    # inference instead of waiting through a network stall.
     return _google_translate_fetch(text, source_lang, target_lang)
 
 
@@ -295,6 +448,16 @@ class TranslationService:
             return cleaned
         if not cleaned:
             return []
+
+        if (
+            os.environ.get("GEMINI_API_KEY")
+            and os.environ.get("GEMINI_TRANSLATION_MODE", "prefetch").lower() == "prefetch"
+        ):
+            # Larger, low-concurrency requests preserve context without
+            # burning the free quota on hundreds of tiny subtitle fragments.
+            max_batch_items = max(max_batch_items, 24)
+            max_batch_chars = max(max_batch_chars, 4000)
+            max_workers = min(max_workers, 2)
 
         batches = []
         current = []

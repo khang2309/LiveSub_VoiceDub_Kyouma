@@ -1,12 +1,22 @@
+import os
+import json
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 from livesub_core import (
+    _GEMINI_CIRCUIT,
+    _gemini_translate_fetch,
+    _hybrid_translate_fetch,
     merge_caption_segments,
     TranslationService,
     select_caption_track,
     should_translate_to_vietnamese,
 )
+from translation_router import TranslationRouter
+from ocr_engine import SubtitleOCR
+
+os.environ["TRANSLATION_MODE"] = "private"
 
 
 class CaptionMergeTests(unittest.TestCase):
@@ -42,6 +52,31 @@ class CaptionMergeTests(unittest.TestCase):
         self.assertLessEqual(merged[0]["end"], merged[1]["start"])
 
 
+class OCRRoutingTests(unittest.TestCase):
+    def test_korean_uses_dedicated_recognizer(self):
+        engine = SubtitleOCR()
+        self.assertEqual(engine._family("ko-KR").value, "korean")
+
+    def test_english_japanese_chinese_share_multilingual_model(self):
+        engine = SubtitleOCR()
+        families = {engine._family(lang).value for lang in ("en", "ja", "zh", "auto")}
+        self.assertEqual(families, {"ch"})
+
+    def test_subtitle_geometry_rejects_sidebar_and_keeps_two_line_caption(self):
+        texts = ["Juan plus one of the strong people", "is manageable.", "ALICE"]
+        scores = [0.99, 0.99, 0.99]
+        boxes = [
+            [[100, 300], [600, 300], [600, 323], [100, 323]],
+            [[220, 328], [480, 328], [480, 355], [220, 355]],
+            [[780, 310], [900, 310], [900, 345], [780, 345]],
+        ]
+        selected = SubtitleOCR._select_subtitle_lines(texts, scores, boxes, 1000, 600)
+        self.assertEqual(
+            " ".join(text for text, _ in selected),
+            "Juan plus one of the strong people is manageable.",
+        )
+
+
 class CaptionTrackSelectionTests(unittest.TestCase):
     def test_explicit_english_does_not_silently_use_vietnamese(self):
         track, language, source = select_caption_track(
@@ -63,6 +98,52 @@ class CaptionTrackSelectionTests(unittest.TestCase):
 
 
 class TranslationTests(unittest.TestCase):
+    def test_gemini_switches_model_before_provider_fallback(self):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+            def read(self):
+                return json.dumps({
+                    "candidates": [{
+                        "content": {"parts": [{"text": "Xin chào"}]}
+                    }]
+                }).encode("utf-8")
+
+        quota_error = urllib.error.HTTPError(
+            "https://example.invalid", 429, "quota", {}, None
+        )
+        _GEMINI_CIRCUIT.update(cooldown_until=0.0, last_error=None, failures=0)
+        with patch.dict(os.environ, {
+            "GEMINI_TRANSLATION_MODEL": "primary-model",
+            "GEMINI_TRANSLATION_FALLBACK_MODELS": "fallback-model",
+        }), patch(
+            "livesub_core.urllib.request.urlopen",
+            side_effect=[quota_error, FakeResponse()],
+        ) as mocked:
+            translated = _gemini_translate_fetch(
+                "Hello", "en", "vi", key="test-key"
+            )
+        self.assertEqual(translated, "Xin chào")
+        self.assertEqual(mocked.call_count, 2)
+        self.assertIn("fallback-model", mocked.call_args_list[1].args[0].full_url)
+
+    def test_gemini_quota_error_falls_back_without_losing_caption_batch(self):
+        payload = "[[[000000]]]\nHello there"
+        with patch.dict(os.environ, {
+            "GEMINI_API_KEY": "test-key",
+            "GEMINI_TRANSLATION_MODE": "prefetch",
+        }), patch("livesub_core._gemini_translate_fetch", side_effect=RuntimeError("429 quota")), patch(
+            "livesub_core._google_translate_fetch", return_value="[[[000000]]]\nXin chào"
+        ):
+            self.assertEqual(
+                _hybrid_translate_fetch(payload, "en", "vi"),
+                "[[[000000]]]\nXin chào",
+            )
+
     def test_vietnamese_dub_text_skips_redundant_network_translation(self):
         self.assertFalse(should_translate_to_vietnamese("vi"))
         self.assertFalse(should_translate_to_vietnamese("vi-VN"))
@@ -147,6 +228,84 @@ class TranslationTests(unittest.TestCase):
         for sample in ["안녕하세요", "こんにちは", "你好", "Hello world"]:
             self.assertTrue(any(c.isalnum() for c in sample))
         self.assertFalse(any(c.isalnum() for c in "...   !!!"))
+
+    def test_router_uses_vinai_for_english_and_nllb_for_asian_languages(self):
+        class English:
+            available = True
+            def translate(self, text): return "vinai:" + text
+            def snapshot(self): return {}
+
+        class Multilingual:
+            available = True
+            def supports(self, language): return language in {"ko", "ja", "zh", "zh-cn"}
+            def translate(self, text, source, target): return f"nllb:{source}:{text}"
+            def snapshot(self): return {}
+
+        class Network:
+            def translate(self, text, **kwargs): return "network:" + text
+
+        router = TranslationRouter(English(), Multilingual(), Network())
+        self.assertEqual(router.translate("hello", "en"), "vinai:hello")
+        self.assertEqual(router.translate("안녕", "ko"), "nllb:ko:안녕")
+        self.assertEqual(router.translate("こんにちは", "ja"), "nllb:ja:こんにちは")
+        self.assertEqual(router.translate("你好", "zh-CN"), "nllb:zh-cn:你好")
+
+    def test_router_falls_back_to_network_without_dropping_text(self):
+        class English:
+            available = False
+            def snapshot(self): return {}
+
+        class Multilingual:
+            available = True
+            def supports(self, language): return True
+            def translate(self, text, source, target): raise RuntimeError("local failed")
+            def snapshot(self): return {}
+
+        class Network:
+            def translate(self, text, **kwargs): return "fallback:" + text
+
+        router = TranslationRouter(English(), Multilingual(), Network())
+        self.assertEqual(router.translate("bonjour", "fr"), "fallback:bonjour")
+        self.assertEqual(router.snapshot()["metrics"]["fallbacks"], 1)
+
+    def test_fastest_mode_uses_network_then_local(self):
+        class English:
+            available = True
+            def translate(self, text): return "local:" + text
+            def snapshot(self): return {}
+
+        class Multilingual:
+            available = False
+            def supports(self, language): return False
+            def snapshot(self): return {}
+
+        class Network:
+            def translate(self, text, **kwargs): return "network:" + text
+
+        with patch.dict(os.environ, {"TRANSLATION_MODE": "fastest"}):
+            router = TranslationRouter(English(), Multilingual(), Network())
+            self.assertEqual(router.translate("hello", "en"), "network:hello")
+
+    def test_startup_benchmark_fixes_route_for_the_session(self):
+        class English:
+            available = True
+            def translate(self, text): return "local:" + text
+            def snapshot(self): return {}
+
+        class Multilingual:
+            available = False
+            def supports(self, language): return False
+            def snapshot(self): return {}
+
+        class Network:
+            def translate(self, text, **kwargs): return "network:" + text
+
+        with patch.dict(os.environ, {"TRANSLATION_MODE": "fastest"}):
+            router = TranslationRouter(English(), Multilingual(), Network())
+            routes = router.benchmark_startup()
+            self.assertIn(routes.get("en"), {"network", "vinai"})
+            first_routes = dict(routes)
+            self.assertEqual(router.benchmark_startup(), first_routes)
 
 
 if __name__ == '__main__':

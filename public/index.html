@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Studio phụ đề và lồng tiếng tiếng Việt theo thời gian thực cho video, âm thanh hệ thống và microphone.">
   <title>LiveSub & VoiceDub AI - Studio Thuyết Minh & Lồng Tiếng Đa Nguồn</title>
-  <link rel="stylesheet" href="style.css?v=20261119_31">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23e89486'/%3E%3Cpath d='M32 13a8 8 0 0 0-8 8v17a8 8 0 0 0 16 0V21a8 8 0 0 0-8-8Zm-16 22v3a16 16 0 0 0 32 0v-3h-5v3a11 11 0 0 1-22 0v-3Z' fill='%23170f0b'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css?v=20261120_39">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com">
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Young+Serif&display=swap" rel="stylesheet">
@@ -87,6 +88,26 @@
       </button>
     </nav>
 
+    <section class="runtime-config" aria-labelledby="runtimeConfigTitle">
+      <div class="runtime-config-head">
+        <div>
+          <span class="runtime-kicker">Cấu hình đang chạy</span>
+          <strong id="runtimeConfigTitle">Nguồn → nhận dạng → dịch → giọng Việt</strong>
+        </div>
+        <span id="settingsApplyState" class="apply-state" data-state="applied" role="status" aria-live="polite">
+          <span class="apply-state-dot"></span>Đã áp dụng realtime
+        </span>
+      </div>
+      <div class="runtime-config-body">
+        <div class="runtime-chip"><span>Nguồn</span><strong id="runtimeSourceValue">Hệ thống / Tab</strong></div>
+        <div class="runtime-chip"><span>Ngôn ngữ</span><strong id="runtimeLanguageValue">Tự động một lần</strong></div>
+        <div class="runtime-chip"><span>Phụ đề</span><strong id="runtimeSubtitleValue">Song ngữ</strong></div>
+        <div class="runtime-chip"><span>Giọng đang dùng</span><strong id="runtimeVoiceValue">VieNeu Local</strong></div>
+        <div class="runtime-chip runtime-engine-chip"><span>Backend</span><strong id="runtimeEngineValue">Đang kiểm tra…</strong></div>
+        <button id="btnConfirmSettings" class="btn btn-confirm-settings" type="button">Xác nhận cấu hình</button>
+      </div>
+    </section>
+
     <!-- Main Workspace Grid -->
     <main class="main-content">
       <!-- Left Column: Controls & Settings -->
@@ -111,6 +132,7 @@
           </div>
           <p class="source-guide-text">
              <em>Lưu ý:</em> Khi hộp thoại trình duyệt hiện ra, chọn <strong>Toàn bộ màn hình</strong> hoặc <strong>Tab</strong> và nhớ <strong>tích chọn “Chia sẻ âm thanh”</strong>.
+             Chữ đã dính vào hình phim (hard-sub) không phải track CC: chọn <strong>Phụ đề đóng cứng / OCR</strong>, rồi chia sẻ đúng tab hoặc màn hình chứa video.
           </p>
         </div>
 
@@ -172,6 +194,7 @@
                 <legend>Nguồn lời thoại</legend>
                 <label class="choice-option"><input type="radio" name="webCaptionMode" value="auto"><span><strong>Tự nhận diện</strong><small>Ưu tiên phụ đề, thiếu thì hướng dẫn dùng Whisper</small></span></label>
                 <label class="choice-option"><input type="radio" name="webCaptionMode" value="has_captions" checked><span><strong>Có phụ đề / CC</strong><small>Dùng đúng track phụ đề của video</small></span></label>
+                <label class="choice-option"><input type="radio" name="webCaptionMode" value="hard_sub"><span><strong>Phụ đề đóng cứng / OCR</strong><small>Đọc chữ đã dính trong khung hình</small></span></label>
                 <label class="choice-option"><input type="radio" name="webCaptionMode" value="audio_only"><span><strong>Chỉ có tiếng</strong><small>Nghe trực tiếp bằng Whisper</small></span></label>
               </fieldset>
               <fieldset id="webCaptionLanguage" class="choice-group">
@@ -180,6 +203,9 @@
                 <label class="choice-option"><input type="radio" name="webCaptionLanguage" value="original" checked><span><strong>Tiếng gốc</strong><small>Ưu tiên CC thủ công của video</small></span></label>
                 <label class="choice-option"><input type="radio" name="webCaptionLanguage" value="en"><span><strong>Tiếng Anh</strong><small>Chỉ nhận track English</small></span></label>
                 <label class="choice-option"><input type="radio" name="webCaptionLanguage" value="vi"><span><strong>Tiếng Việt</strong><small>Chỉ nhận track Việt</small></span></label>
+                <label class="choice-option"><input type="radio" name="webCaptionLanguage" value="zh"><span><strong>Tiếng Trung</strong><small>CC/OCR chữ Trung</small></span></label>
+                <label class="choice-option"><input type="radio" name="webCaptionLanguage" value="ja"><span><strong>Tiếng Nhật</strong><small>CC/OCR chữ Nhật</small></span></label>
+                <label class="choice-option"><input type="radio" name="webCaptionLanguage" value="ko"><span><strong>Tiếng Hàn</strong><small>CC/OCR chữ Hàn</small></span></label>
               </fieldset>
             </div>
             <p id="sourceIntelligenceHint" class="source-intelligence-hint">
@@ -258,7 +284,8 @@
             </button>
           </div>
           <select id="voiceSelect" class="form-control select-highlight">
-            <option value="vieneu:Trúc Ly" selected> VieNeu-TTS: Trúc Ly (Nữ, Bắc, Tự nhiên, truyền cảm)</option>
+            <option value="auto-fast" selected> Tự động nhanh nhất (đo VieNeu / Google / Microsoft khi mở server)</option>
+            <option value="vieneu:Trúc Ly"> VieNeu-TTS: Trúc Ly (Nữ, Bắc, Tự nhiên, truyền cảm)</option>
             <option value="vieneu:Thiện Minh"> VieNeu-TTS: Thiện Minh (Nam, Bắc, Kể chuyện, phim ảnh)</option>
             <option value="vieneu:Thùy Dung"> VieNeu-TTS: Thùy Dung (Nữ, Nam, Tin tức, phát thanh)</option>
             <option value="vieneu:Thái Sơn"> VieNeu-TTS: Thái Sơn (Nam, Nam, Kể chuyện)</option>
@@ -267,7 +294,7 @@
             <option value="vieneu:Adam bựa"> VieNeu-TTS: Adam (Nam, Bắc, Hài hước, tự nhiên)</option>
             <option value="vi-VN-HoaiMyNeural"> Hoài My (Microsoft AI - Nữ nhẹ nhàng, truyền cảm)</option>
             <option value="vi-VN-NamMinhNeural"> Nam Minh (Microsoft AI - Nam trầm ấm, phát thanh viên)</option>
-            <option value="google-vi"> Google Voice Tiếng Việt (0.15s siêu tốc)</option>
+            <option value="google-vi"> Google Voice Tiếng Việt (mạng miễn phí)</option>
             <option value="piper-vi"> Piper Neural (Chạy Offline 100% trên máy)</option>
           </select>
         </div>
@@ -281,7 +308,7 @@
                 <label for="rateRange">Tốc độ đọc:</label>
                 <span id="rateValue" class="badge">1.15x</span>
               </div>
-              <input type="range" id="rateRange" min="0.8" max="1.5" step="0.05" value="1.15" class="slider-control">
+              <input type="range" id="rateRange" min="0.8" max="1.50" step="0.05" value="1.15" class="slider-control">
             </div>
 
             <div class="form-group">
@@ -467,6 +494,8 @@
     <audio id="dubbingAudio" preload="auto"></audio>
   </div>
 
-  <script src="app.js?v=20261119_35"></script>
+  <script src="/vendor/ort/ort.min.js?v=1.31.1"></script>
+  <script src="/vendor/vad/bundle.min.js?v=0.0.31"></script>
+  <script src="app.js?v=20261120_38"></script>
 </body>
 </html>

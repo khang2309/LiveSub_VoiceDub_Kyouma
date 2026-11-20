@@ -10,6 +10,8 @@ import urllib.request
 import urllib.parse
 import asyncio
 import time
+import struct
+import math
 from typing import Optional
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import Response, FileResponse, StreamingResponse
@@ -39,7 +41,10 @@ from livesub_core import (
     select_caption_track,
     should_translate_to_vietnamese,
 )
-from local_translation import LocalEnViTranslator
+from local_translation import LocalEnViTranslator, LocalMultilingualTranslator
+from translation_router import TranslationRouter
+from latency_metrics import LatencyWindow
+from ocr_engine import SubtitleOCR
 
 # 0. Setup NVIDIA CUDA DLLs for RTX 3050 GPU Acceleration
 site_packages = os.path.join(sys.prefix, "Lib", "site-packages")
@@ -88,6 +93,57 @@ except Exception as ge:
     whisper_model = WhisperModel("base", device="cpu", compute_type="int8", cpu_threads=8)
     whisper_runtime = {"provider": "faster-whisper", "model": "base", "device": "cpu", "compute_type": "int8"}
     print("✅ Đã sẵn sàng trên CPU (int8, 8 luồng)!")
+
+_whisper_warm_task = None
+_whisper_warm_state = {"status": "idle", "error": None}
+
+
+async def warm_whisper_engine():
+    if _whisper_warm_state["status"] in {"warming", "ready"}:
+        return
+    _whisper_warm_state.update(status="warming", error=None)
+
+    def run_warmup():
+        path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                path = tmp.name
+            # Low-amplitude tone forces encoder/decoder CUDA kernels to run;
+            # plain silence may be removed before inference by VAD.
+            with wave.open(path, "wb") as wav_file:
+                wav_file.setnchannels(1)
+                wav_file.setsampwidth(2)
+                wav_file.setframerate(16000)
+                frames = bytearray()
+                for index in range(8000):
+                    sample = int(180 * math.sin(2 * math.pi * 220 * index / 16000))
+                    frames.extend(struct.pack("<h", sample))
+                wav_file.writeframes(frames)
+            segments, _ = whisper_model.transcribe(
+                path,
+                language="en",
+                beam_size=1,
+                vad_filter=False,
+                without_timestamps=True,
+            )
+            list(segments)
+        finally:
+            if path and os.path.exists(path):
+                os.remove(path)
+
+    try:
+        await asyncio.to_thread(run_warmup)
+        _whisper_warm_state["status"] = "ready"
+    except Exception as error:
+        _whisper_warm_state.update(status="error", error=str(error))
+
+
+def schedule_whisper_warmup():
+    global _whisper_warm_task
+    if _whisper_warm_state["status"] in {"warming", "ready"}:
+        return
+    if _whisper_warm_task is None or _whisper_warm_task.done():
+        _whisper_warm_task = asyncio.create_task(warm_whisper_engine())
 
 # 2. Load Piper Local Neural Model (offline option with auto-download if missing)
 piper_model_path = os.path.join(os.path.dirname(__file__), "models", "piper", "vi_VN-vais1000-medium.onnx")
@@ -151,6 +207,16 @@ def get_vieneu_engine():
     return _vieneu_engine if _vieneu_engine is not False else None
 
 
+def resolve_vieneu_voice(engine, requested: str) -> str:
+    voices = getattr(engine, "_preset_voices", {}) or {}
+    if requested in voices:
+        return requested
+    for fallback in ("Thái Sơn", "Trúc Ly"):
+        if fallback in voices:
+            return fallback
+    return next(iter(voices), requested)
+
+
 async def warm_vieneu_engine():
     """Load VieNeu and capture its first CUDA graph without blocking the page."""
     if _vieneu_warm_state["status"] in {"warming", "ready"}:
@@ -175,7 +241,39 @@ async def warm_vieneu_engine():
                 pass
 
         await asyncio.to_thread(warm_streaming_path)
+
+        def benchmark_streaming_path():
+            began = time.perf_counter()
+            first_chunk_ms = None
+            byte_count = 0
+            for chunk in generate_vieneu_pcm_chunks(
+                "Đây là phép đo tốc độ giọng đọc trực tiếp trên máy.",
+                "Thái Sơn",
+            ):
+                if first_chunk_ms is None:
+                    first_chunk_ms = (time.perf_counter() - began) * 1000
+                byte_count += len(chunk)
+            total_seconds = time.perf_counter() - began
+            audio_seconds = byte_count / (48000 * 2) if byte_count else 0
+            return (
+                round(first_chunk_ms or total_seconds * 1000, 1),
+                round(total_seconds / audio_seconds, 3) if audio_seconds else None,
+            )
+
+        # Other startup workers (Whisper, OCR and translators) may briefly
+        # contend for CPU/GPU resources. A single sample can therefore mark a
+        # realtime-capable local voice as slow. Keep the best of three warm
+        # runs; this route is then fixed for the whole session.
+        local_samples = []
+        for _ in range(3):
+            local_samples.append(await asyncio.to_thread(benchmark_streaming_path))
+        local_ttfa_ms = min(sample[0] for sample in local_samples)
+        valid_rtfs = [sample[1] for sample in local_samples if sample[1] is not None]
+        local_rtf = min(valid_rtfs) if valid_rtfs else None
+        _network_tts_state["vieneu_ttfa_ms"] = local_ttfa_ms
+        _network_tts_state["vieneu_rtf"] = local_rtf
         _vieneu_warm_state["status"] = "ready"
+        select_auto_tts_provider()
         print(
             "VieNeu warm-up ready "
             f"(backend={_vieneu_warm_state['backend']}, device={_vieneu_warm_state['device']})"
@@ -203,6 +301,21 @@ local_translation = LocalEnViTranslator(
         "vinai-translate-en2vi-v2-int8",
     )
 )
+multilingual_translation = LocalMultilingualTranslator(
+    os.path.join(
+        os.path.dirname(__file__),
+        "models",
+        "nllb-200-distilled-600M-int8",
+    )
+)
+translation_router = TranslationRouter(
+    local_translation,
+    multilingual_translation,
+    translation_service,
+    cache=translation_cache,
+)
+subtitle_ocr = SubtitleOCR()
+_ocr_warm_task = None
 _translation_warm_task = None
 _stream_metrics = {
     "requests": 0,
@@ -210,20 +323,45 @@ _stream_metrics = {
     "last_total_ms": None,
     "last_error": None,
 }
+_asr_latency = LatencyWindow()
+_transcribe_total_latency = LatencyWindow()
+_tts_first_chunk_latency = LatencyWindow()
 
 
 async def warm_local_translation():
-    if local_translation.status in {"loading", "ready"}:
-        return
-    await asyncio.to_thread(local_translation.load)
+    await asyncio.gather(
+        asyncio.to_thread(local_translation.load),
+        asyncio.to_thread(multilingual_translation.load),
+    )
+    # Compare providers once after every local model is warm. Subsequent lines
+    # use the fixed route and never pay for a fresh provider probe.
+    await asyncio.to_thread(translation_router.benchmark_startup)
 
 
 def schedule_translation_warmup():
     global _translation_warm_task
-    if local_translation.status in {"loading", "ready", "missing"}:
+    if (
+        local_translation.status in {"loading", "ready"}
+        and multilingual_translation.status in {"loading", "ready"}
+    ):
         return
     if _translation_warm_task is None or _translation_warm_task.done():
         _translation_warm_task = asyncio.create_task(warm_local_translation())
+
+
+async def warm_ocr_engine():
+    try:
+        await asyncio.to_thread(subtitle_ocr.warmup)
+    except Exception as error:
+        print(f"OCR warm-up error: {error}")
+
+
+def schedule_ocr_warmup():
+    global _ocr_warm_task
+    if subtitle_ocr.status in {"loading", "ready"}:
+        return
+    if _ocr_warm_task is None or _ocr_warm_task.done():
+        _ocr_warm_task = asyncio.create_task(warm_ocr_engine())
 
 # Anti-Hallucination & Repetition Interceptor
 def is_hallucination_or_loop(text: str) -> bool:
@@ -298,29 +436,8 @@ def fast_translate_to_vi(
     if source == target or target != "vi":
         return cleaned
 
-    # The local specialist is both faster and deterministic for English. With
-    # auto language, only choose it for plain Latin text without Vietnamese
-    # diacritics; other languages retain the multilingual network fallback.
-    vietnamese_marks = re.search(r"[ăâđêôơưĂÂĐÊÔƠƯáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]", cleaned)
-    likely_english = source == "en" or (
-        source == "auto"
-        and not vietnamese_marks
-        and len(re.findall(r"[A-Za-z]+", cleaned)) >= 2
-    )
-    if likely_english and local_translation.available:
-        cache_key = ("local-en", "vi", "", cleaned.casefold(), "vinai-v2")
-        if cache_key in translation_cache:
-            return translation_cache[cache_key]
-        try:
-            translated = local_translation.translate(cleaned)
-            if translated:
-                translation_cache[cache_key] = translated
-                return translated
-        except Exception as error:
-            print(f"Local VinAI translation failed, using fallback: {error}")
-
     try:
-        return translation_service.translate(
+        return translation_router.translate(
             cleaned,
             source_lang=source,
             target_lang=target,
@@ -336,18 +453,9 @@ def translate_many_to_vi(texts: list[str], source_lang: str = "auto") -> list[st
     source = (source_lang or "auto").split("-")[0].lower()
     if source == "vi":
         return cleaned
-    if source == "en" and local_translation.available:
-        try:
-            return local_translation.translate_many(cleaned)
-        except Exception as error:
-            print(f"Local VinAI batch translation failed, using fallback: {error}")
-    return translation_service.translate_many(
-        cleaned,
-        source_lang=source,
-        target_lang="vi",
-    )
+    return translation_router.translate_many(cleaned, source, "vi")
 
-# Google Voice Vietnamese (0.15s Latency, 100% Reliable Natural Voice)
+# Google Voice Vietnamese (free network fallback; latency is measured at runtime)
 def synthesize_google_vi(text: str) -> bytes:
     try:
         url = 'https://translate.google.com/translate_tts?ie=UTF-8&tl=vi&client=tw-ob&q=' + urllib.parse.quote(text)
@@ -372,6 +480,100 @@ async def synthesize_edge_tts(text: str, voice: str) -> bytes:
     except Exception as e:
         print(f"Edge TTS ({voice}) error: {e}")
     return b""
+
+
+_network_tts_state = {
+    "status": "idle",
+    "selected": "google-vi",
+    "google_ms": None,
+    "edge_ms": None,
+    "vieneu_ttfa_ms": None,
+    "vieneu_rtf": None,
+    "last_ms": None,
+    "switches": 0,
+    "error": None,
+}
+_network_tts_warm_task = None
+
+
+def select_auto_tts_provider():
+    """Choose once from startup benchmarks; never probe again per sentence."""
+    google_ms = _network_tts_state.get("google_ms")
+    edge_ms = _network_tts_state.get("edge_ms")
+    local_ttfa = _network_tts_state.get("vieneu_ttfa_ms")
+    local_rtf = _network_tts_state.get("vieneu_rtf")
+
+    # Streaming local speech wins when it can keep generating faster than
+    # playback. TTFA is the relevant latency because audio starts immediately.
+    if local_ttfa is not None and local_rtf is not None and local_rtf < 0.95:
+        network_complete = min(
+            [value for value in (google_ms, edge_ms) if value is not None],
+            default=float("inf"),
+        )
+        if local_ttfa <= network_complete + 100:
+            _network_tts_state["selected"] = "vieneu:Thái Sơn"
+            return
+
+    candidates = []
+    if google_ms is not None:
+        candidates.append((google_ms, "google-vi"))
+    if edge_ms is not None:
+        candidates.append((edge_ms, "vi-VN-HoaiMyNeural"))
+    if not candidates:
+        return
+    fastest_ms, fastest_name = min(candidates)
+    if edge_ms is not None and (google_ms is None or edge_ms <= google_ms + 300):
+        _network_tts_state["selected"] = "vi-VN-HoaiMyNeural"
+    else:
+        _network_tts_state["selected"] = fastest_name
+
+
+async def warm_and_benchmark_network_tts():
+    """Hide provider cold-start and choose the fastest usable free voice."""
+    if _network_tts_state["status"] in {"warming", "ready"}:
+        return
+    _network_tts_state.update(status="warming", error=None)
+    sample = "Xin chào, hệ thống đang khởi động."
+
+    async def measure_google():
+        # First call establishes DNS/TLS and is intentionally not scored.
+        await asyncio.to_thread(synthesize_google_vi, "Xin chào.")
+        started = time.perf_counter()
+        data = await asyncio.to_thread(synthesize_google_vi, sample)
+        return data, round((time.perf_counter() - started) * 1000, 1)
+
+    async def measure_edge():
+        await synthesize_edge_tts("Xin chào.", "vi-VN-HoaiMyNeural")
+        started = time.perf_counter()
+        data = await synthesize_edge_tts(sample, "vi-VN-HoaiMyNeural")
+        return data, round((time.perf_counter() - started) * 1000, 1)
+
+    try:
+        (google_data, google_ms), (edge_data, edge_ms) = await asyncio.gather(
+            measure_google(), measure_edge()
+        )
+        _network_tts_state["google_ms"] = google_ms if google_data else None
+        _network_tts_state["edge_ms"] = edge_ms if edge_data else None
+        candidates = []
+        if google_data:
+            candidates.append((google_ms, "google-vi"))
+        if edge_data:
+            candidates.append((edge_ms, "vi-VN-HoaiMyNeural"))
+        if candidates:
+            select_auto_tts_provider()
+            _network_tts_state["status"] = "ready"
+        else:
+            raise RuntimeError("No network TTS provider responded")
+    except Exception as error:
+        _network_tts_state.update(status="error", error=str(error))
+
+
+def schedule_network_tts_warmup():
+    global _network_tts_warm_task
+    if _network_tts_state["status"] in {"warming", "ready"}:
+        return
+    if _network_tts_warm_task is None or _network_tts_warm_task.done():
+        _network_tts_warm_task = asyncio.create_task(warm_and_benchmark_network_tts())
 
 # Piper Local Offline WAV
 def generate_piper_wav(text: str) -> bytes:
@@ -400,6 +602,7 @@ def generate_vieneu_wav(text: str, voice_name: str = "Trúc Ly") -> bytes:
     if not engine:
         return b""
     try:
+        voice_name = resolve_vieneu_voice(engine, voice_name)
         audio_arr = engine.infer(text, voice=voice_name)
         if audio_arr is None or len(audio_arr) == 0:
             return b""
@@ -437,6 +640,11 @@ async def generate_tts_bytes(text: str, voice: str = "vieneu:Trúc Ly") -> tuple
     audio_bytes = b""
     mime_type = "audio/mpeg"
 
+    auto_requested = voice == "auto-fast"
+    auto_started = time.perf_counter() if auto_requested else None
+    if auto_requested:
+        voice = _network_tts_state.get("selected") or "google-vi"
+
     # Voice Option 0: VieNeu-TTS (pnnbao97/VieNeu-TTS)
     if voice.startswith("vieneu:") or voice == "vieneu":
         voice_id = voice.split(":", 1)[1] if ":" in voice else "Trúc Ly"
@@ -460,7 +668,7 @@ async def generate_tts_bytes(text: str, voice: str = "vieneu:Trúc Ly") -> tuple
         audio_bytes = generate_piper_wav(cleaned)
         mime_type = "audio/wav"
 
-    # Voice Option 3: Google Voice Tiếng Việt (Default, 0.15s, siêu tốc)
+    # Voice Option 3: Google Voice Tiếng Việt (free network fallback)
     else:
         audio_bytes = await asyncio.to_thread(synthesize_google_vi, cleaned)
 
@@ -468,6 +676,13 @@ async def generate_tts_bytes(text: str, voice: str = "vieneu:Trúc Ly") -> tuple
     if not audio_bytes:
         audio_bytes = await asyncio.to_thread(synthesize_google_vi, cleaned)
         mime_type = "audio/mpeg"
+
+    if auto_requested:
+        elapsed_ms = round((time.perf_counter() - auto_started) * 1000, 1)
+        _network_tts_state["last_ms"] = elapsed_ms
+        # Provider selection is deliberately fixed for this server session.
+        # Recording real latency does not issue a second probe or reroute the
+        # next sentence behind the user's back.
 
     if audio_bytes:
         audio_cache[cache_key] = (audio_bytes, mime_type)
@@ -483,6 +698,7 @@ def generate_vieneu_pcm_chunks(text: str, voice_name: str):
     engine = get_vieneu_engine()
     if not engine:
         raise RuntimeError("VieNeu engine is unavailable")
+    voice_name = resolve_vieneu_voice(engine, voice_name)
     for audio_arr in engine.infer_stream(
         text,
         voice=voice_name,
@@ -566,6 +782,47 @@ async def api_translate(req: TranslateRequest):
         "to": req.to_lang
     }
 
+
+@app.post("/api/ocr-subtitle")
+async def api_ocr_subtitle(
+    image: UploadFile = File(...),
+    source_lang: Optional[str] = Form("auto"),
+    previous_context: Optional[str] = Form(""),
+):
+    """Read burned-in subtitle text from a browser-cropped video frame."""
+    contents = await image.read()
+    if len(contents) < 300:
+        raise HTTPException(status_code=400, detail="Image too small")
+    try:
+        result = await asyncio.to_thread(
+            subtitle_ocr.recognize, contents, source_lang or "auto"
+        )
+    except Exception as error:
+        raise HTTPException(status_code=503, detail=f"OCR unavailable: {error}")
+
+    original = clean_speech_text(result["text"])
+    if not original or len(original) < 2:
+        return {"empty": True, **result}
+    translation_started = time.perf_counter()
+    translated = fast_translate_to_vi(
+        original,
+        source_lang=source_lang or "auto",
+        target_lang="vi",
+        previous_context=previous_context or "",
+    )
+    return {
+        "empty": False,
+        "original": original,
+        "translated": translated or original,
+        "translation_provider": translation_router.snapshot()["metrics"]["last_provider"],
+        "timings": {
+            "ocr_ms": result["latency_ms"],
+            "translation_ms": round((time.perf_counter() - translation_started) * 1000, 1),
+        },
+        "confidence": result["confidence"],
+        "ocr_engine": result["engine"],
+    }
+
 @app.post("/api/tts")
 async def api_tts(req: TTSRequest):
     if not req.text.strip():
@@ -586,9 +843,15 @@ async def api_tts_stream(req: TTSRequest):
     if not voice.startswith("vieneu"):
         raise HTTPException(status_code=400, detail="Streaming is available for VieNeu voices")
     voice_name = voice.split(":", 1)[1] if ":" in voice else "Trúc Ly"
+    # Do not let the first user sentence compete with CUDA graph/model warm-up.
+    # Paying this one-time wait is preferable to streaming a broken, stuttering
+    # first line. Later requests enter immediately.
+    if _vieneu_warm_task is not None and not _vieneu_warm_task.done():
+        await _vieneu_warm_task
     engine = await asyncio.to_thread(get_vieneu_engine)
     if engine is None:
         raise HTTPException(status_code=503, detail="VieNeu engine is unavailable")
+    voice_name = resolve_vieneu_voice(engine, voice_name)
 
     def measured_stream():
         began = time.perf_counter()
@@ -601,6 +864,7 @@ async def api_tts_stream(req: TTSRequest):
                     _stream_metrics["last_first_chunk_ms"] = round(
                         (time.perf_counter() - began) * 1000, 1
                     )
+                    _tts_first_chunk_latency.add(_stream_metrics["last_first_chunk_ms"])
                     first = False
                 yield chunk
             _stream_metrics["last_total_ms"] = round(
@@ -611,6 +875,14 @@ async def api_tts_stream(req: TTSRequest):
             print(f"VieNeu streaming error: {error}")
             raise
 
+    measured_rtf = _network_tts_state.get("vieneu_rtf")
+    # Leave an 8% production margin for normal CUDA scheduling variance. The
+    # browser may still use 1.50x for completed audio, but live PCM must not be
+    # consumed faster than this session's measured generator throughput.
+    safe_playback_rate = 1.0
+    if measured_rtf:
+        safe_playback_rate = min(1.20, max(0.80, 0.92 / measured_rtf))
+
     return StreamingResponse(
         measured_stream(),
         media_type="application/octet-stream",
@@ -618,6 +890,7 @@ async def api_tts_stream(req: TTSRequest):
             "X-Audio-Format": "pcm_s16le",
             "X-Audio-Sample-Rate": "48000",
             "X-Audio-Channels": "1",
+            "X-Safe-Playback-Rate": f"{safe_playback_rate:.3f}",
             "X-Accel-Buffering": "no",
         },
     )
@@ -630,6 +903,8 @@ async def api_tts_batch(req: TTSBatchRequest):
     if not texts or any(not text for text in texts):
         raise HTTPException(status_code=400, detail="1-8 non-empty texts required")
     voice = req.voice or "vieneu:Trúc Ly"
+    if voice == "auto-fast":
+        voice = _network_tts_state.get("selected") or "vieneu:Thái Sơn"
     if not voice.startswith("vieneu"):
         results = []
         for text in texts:
@@ -644,6 +919,7 @@ async def api_tts_batch(req: TTSBatchRequest):
     engine = await asyncio.to_thread(get_vieneu_engine)
     if engine is None:
         raise HTTPException(status_code=503, detail="VieNeu engine is unavailable")
+    voice_name = resolve_vieneu_voice(engine, voice_name)
 
     arrays = await asyncio.to_thread(
         engine.infer_batch,
@@ -672,6 +948,7 @@ async def api_transcribe(
     voice: Optional[str] = Form("google-vi"),
     previous_context: Optional[str] = Form("")
 ):
+    request_started = time.perf_counter()
     contents = await audio.read()
     if len(contents) < 500:
         return {"empty": True, "reason": "audio too small"}
@@ -687,6 +964,7 @@ async def api_transcribe(
         if source_lang and source_lang != "auto":
             lang_code = source_lang.split("-")[0]
 
+        asr_started = time.perf_counter()
         segments, info = whisper_model.transcribe(
             tmp_path,
             language=lang_code,
@@ -715,6 +993,8 @@ async def api_transcribe(
                 texts.append(t)
 
         raw_text = " ".join(texts).strip()
+        asr_ms = round((time.perf_counter() - asr_started) * 1000, 1)
+        _asr_latency.add(asr_ms)
 
         # Hard Anti-Hallucination & Repetition Guard
         if not raw_text or is_hallucination_or_loop(raw_text):
@@ -733,6 +1013,7 @@ async def api_transcribe(
             if not source_lang or source_lang == "auto"
             else source_lang
         )
+        translation_started = time.perf_counter()
         translated_text = fast_translate_to_vi(
             full_text,
             source_lang=effective_source_lang or "auto",
@@ -741,6 +1022,7 @@ async def api_transcribe(
         )
         if not translated_text:
             translated_text = full_text
+        translation_ms = round((time.perf_counter() - translation_started) * 1000, 1)
 
         audio_b64 = None
         mime_type = "audio/mpeg"
@@ -751,11 +1033,19 @@ async def api_transcribe(
 
         print(f"🎙️ [AUDIO-DUB] ({voice}) {full_text} -> [VI] {translated_text}")
 
+        server_total_ms = round((time.perf_counter() - request_started) * 1000, 1)
+        _transcribe_total_latency.add(server_total_ms)
         return {
             "empty": False,
             "original": full_text,
             "translated": translated_text,
             "detected_lang": info.language or "auto",
+            "translation_provider": translation_router.snapshot()["metrics"]["last_provider"],
+            "timings": {
+                "asr_ms": asr_ms,
+                "translation_ms": translation_ms,
+                "server_total_ms": server_total_ms,
+            },
             "audio_base64": audio_b64,
             "audio_mime": mime_type
         }
@@ -890,8 +1180,11 @@ async def api_youtube_subtitles(req: YouTubeSubtitleRequest):
 
 @app.get("/")
 async def get_index():
+    schedule_whisper_warmup()
     schedule_vieneu_warmup()
     schedule_translation_warmup()
+    schedule_ocr_warmup()
+    schedule_network_tts_warmup()
     index_path = os.path.join(os.path.dirname(__file__), "public", "index.html")
     return FileResponse(index_path, headers={
         "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
@@ -902,15 +1195,33 @@ async def get_index():
 
 @app.get("/api/tts-status")
 async def get_tts_status():
-    return {**_vieneu_warm_state, "streaming": dict(_stream_metrics)}
+    return {
+        **_vieneu_warm_state,
+        "auto_provider": dict(_network_tts_state),
+        "streaming": dict(_stream_metrics),
+    }
 
 
 @app.get("/api/pipeline-status")
 async def get_pipeline_status():
     return {
-        "asr": {**whisper_runtime, "role": "final transcript"},
-        "translation": local_translation.snapshot(),
-        "tts": {**_vieneu_warm_state, "streaming": dict(_stream_metrics)},
+        "asr": {
+            **whisper_runtime,
+            **_whisper_warm_state,
+            "role": "final transcript",
+            "latency": _asr_latency.snapshot(),
+        },
+        "translation": translation_router.snapshot(),
+        "tts": {
+            **_vieneu_warm_state,
+            "auto_provider": dict(_network_tts_state),
+            "streaming": {
+                **dict(_stream_metrics),
+                "first_chunk_latency": _tts_first_chunk_latency.snapshot(),
+            },
+        },
+        "transcribe_endpoint": _transcribe_total_latency.snapshot(),
+        "ocr": subtitle_ocr.snapshot(),
     }
 
 # Overlay route
