@@ -180,7 +180,7 @@ body {
 /* Universal Source Navigation Bar */
 .source-nav-bar {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: var(--space-sm);
 }
 
@@ -296,7 +296,7 @@ body {
 
 @media (max-width: 900px) {
   .source-nav-bar {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
   }
   .runtime-config-body { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .btn-confirm-settings { grid-column: 2 / 4; }
@@ -800,7 +800,7 @@ select:focus-visible {
   .app-header, .header-actions { align-items: stretch; }
   .app-header, .header-actions { flex-direction: column; }
   .source-nav-bar {
-    grid-template-columns: repeat(4, minmax(260px, 1fr));
+    grid-template-columns: repeat(3, minmax(240px, 1fr));
     overflow-x: auto;
     scroll-snap-type: x mandatory;
     scrollbar-width: thin;

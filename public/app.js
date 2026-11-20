@@ -1115,14 +1115,16 @@ class LiveDubStudio {
       if (isTallPage) {
         // Shared browser webpage tab (e.g. YouTube): top bar is ~56px.
         // Video player sits below top bar with 16:9 aspect ratio.
+        // Keep scan zone strictly inside the video dialogue subtitle band (72% to 92% of video player)
+        // avoiding video titles/channel bars below the player.
         const topBarHeight = Math.min(60, Math.floor(height * 0.05));
         const estimatedVideoHeight = Math.min(height - topBarHeight, width * 0.5625);
-        sourceY = topBarHeight + Math.floor(estimatedVideoHeight * 0.74);
-        sourceHeight = Math.max(1, Math.floor(estimatedVideoHeight * 0.22));
+        sourceY = topBarHeight + Math.floor(estimatedVideoHeight * 0.72);
+        sourceHeight = Math.max(1, Math.floor(estimatedVideoHeight * 0.20));
       } else {
-        // Shared fullscreen video / 16:9 window
-        sourceY = Math.floor(height * 0.74);
-        sourceHeight = Math.max(1, Math.floor(height * 0.23));
+        // Shared fullscreen video / 16:9 window: focus strictly on lower dialogue band
+        sourceY = Math.floor(height * 0.72);
+        sourceHeight = Math.max(1, Math.floor(height * 0.21));
       }
       const scale = Math.min(1, 960 / width);
       this.ocrCanvas.width = Math.max(1, Math.round(sourceWidth * scale));
@@ -1221,7 +1223,7 @@ class LiveDubStudio {
     if (raw.length > 125 || raw.split(/\s+/).length > 25) return;
     // Reject UI, channel names, and thumbnail junk patterns
     if (/^(?:b[áa]ckinh|bickinh|backinh|truyengoc|lượt xem|\d+[:.]\d+|\d{1,4})$/i.test(raw)) return;
-    if (/\b(?:lượt xem|views?|người đăng ký|subscribers?|bình luận|comments?|chia sẻ|share|tải xuống|download|anker|soundcore|phong thần|diễn nghĩa|trường giang|đấu trường sinh tử)\b/i.test(raw)) return;
+    if (/\b(?:lượt xem|views?|người đăng ký|subscribers?|bình luận|comments?|chia sẻ|share|tải xuống|download|anker|soundcore|phong thần|diễn nghĩa|trường giang|đấu trường sinh tử|sống sót|mrbeast|gta\s*6|gta\s*vi|grand theft auto|kết bạn|ket ban|bản lồng tiếng|đăng ký)\b/i.test(raw)) return;
 
     // Display subtitle IMMEDIATELY for 0ms on-screen response
     this.displaySubtitle(raw, data.translated || raw);
@@ -2991,6 +2993,13 @@ class LiveDubStudio {
 
     const record = { id, timestamp: timeStr, sourceText, viText, lang, audioBlobUrl: null };
     this.history.push(record);
+    // Bounded history: keep latest 150 items to prevent unbounded memory growth
+    if (this.history.length > 150) {
+      this.history.shift();
+      if (this.historyList.lastElementChild && this.historyList.lastElementChild !== this.historyEmpty) {
+        this.historyList.removeChild(this.historyList.lastElementChild);
+      }
+    }
     this.historyCount.textContent = this.history.length;
     this.historyEmpty.style.display = 'none';
 
