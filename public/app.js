@@ -1217,10 +1217,18 @@ class LiveDubStudio {
   }
 
   handleOCRSubtitle(data) {
-    const raw = String(data.original || '').replace(/\s+/g, ' ').trim();
+    let raw = String(data.original || '').replace(/\s+/g, ' ').trim();
     if (!raw) return;
+
+    // Strip video titles, channel watermark tags and web fansub junk leaking into subtitle
+    const junkTailRegex = /(?:^|\s+)(?:t[oöô]i\s*s[oóọ]ng\s*s[oóọ]t|mrbeast|gta\s*(?:6|vi|v\b)|grand\s*theft\s*auto|t[oó][\s\w]*k[eé]t\s*b[aạ]n|b[aả]n\s*l[oồ]ng\s*ti[eê]ng|t[eé]c[eèé]|tecd|tacd|tiac[eèé]|teck|tetcd|cie|clerk\s*baskets|baskets\s*threaten|threaten\s*o\s*clerk|animehay|animevietsub|bit\.ly|citumo|rap\s*citu|hdbet|3bet|ch[oơ]ingay|n[oổ]\s*h[uũ]|b[áa]ckinh|bickinh|backinh|truyengoc).*$/i;
+    raw = raw.replace(junkTailRegex, '').trim().replace(/^[,.\-:;]+|[,.\-:;]+$/g, '').trim();
+    if (!raw) return;
+
     // Reject long paragraph noise (descriptions, articles, comments) - dialogue subtitles are short
     if (raw.length > 125 || raw.split(/\s+/).length > 25) return;
+    // Reject 1-4 character uppercase/digits noise (e.g. YA, EREE, TL2)
+    if (raw.length <= 4 && /^[A-Z0-9\s]+$/.test(raw)) return;
     // Reject UI, channel names, and thumbnail junk patterns
     if (/^(?:b[áa]ckinh|bickinh|backinh|truyengoc|lượt xem|\d+[:.]\d+|\d{1,4})$/i.test(raw)) return;
     if (/\b(?:animehay|animevietsub|bit\.ly|citumo|rap\s*citu|hdbet|3bet|chơingay|nổ\s*hũ|lượt xem|views?|người đăng ký|subscribers?|bình luận|comments?|chia sẻ|share|tải xuống|download|anker|soundcore|phong thần|diễn nghĩa|trường giang|đấu trường sinh tử|sống sót|mrbeast|gta\s*6|gta\s*vi|grand theft auto|kết bạn|ket ban|bản lồng tiếng|đăng ký)\b/i.test(raw)) return;

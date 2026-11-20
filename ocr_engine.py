@@ -123,6 +123,21 @@ class SubtitleOCR:
     def _select_subtitle_lines(texts, scores, boxes, image_width, image_height):
         """Reject YouTube sidebars, navigation/comments and keep dialogue subtitles."""
         candidates = []
+        junk_tail_regex = re.compile(
+            r'(?i)(?:^|\s+)(?:'
+            r't[oöô]i\s*s[oóọ]ng\s*s[oóọ]t|'
+            r'mrbeast|'
+            r'gta\s*(?:6|vi|v\b)|'
+            r'grand\s*theft\s*auto|'
+            r't[oó][\s\w]*k[eé]t\s*b[aạ]n|'
+            r'b[aả]n\s*l[oồ]ng\s*ti[eê]ng|'
+            r't[eé]c[eèé]|tecd|tacd|tiac[eèé]|teck|tetcd|cie|'
+            r'clerk\s*baskets|baskets\s*threaten|threaten\s*o\s*clerk|'
+            r'animehay|animevietsub|bit\.ly|citumo|rap\s*citu|hdbet|3bet|ch[oơ]ingay|n[oổ]\s*h[uũ]|'
+            r'b[áa]ckinh|bickinh|backinh|truyengoc'
+            r').*$'
+        )
+
         for text, score, box in zip(texts, scores, boxes):
             text = (text or "").strip()
             if not text or score < 0.58 or not any(char.isalnum() for char in text):
@@ -130,6 +145,13 @@ class SubtitleOCR:
             # Filter YouTube metadata timestamps like 59:39 or 59 39, standalone digits/counters (e.g. 23, 20)
             if re.search(r'^\s*\d{1,4}\s*$|\b\d{1,2}[:.]\d{2}\b|\b59\s*39\b', text):
                 continue
+
+            # Strip watermarks, ads, and video title badges from tail or full string
+            cleaned_text = junk_tail_regex.sub('', text).strip()
+            if not cleaned_text:
+                continue
+            text = cleaned_text
+
             # Filter watermarks, fansub credits, websites and ads (e.g. AnimeHay, AnimeVietsub, bit.ly, rap cituMo...)
             if re.search(r'(?i)(?:animehay|animevietsub|bit\.ly|cituMo|rap\s*citu|hdbet|3bet|chơingay|nổ\s*hũ|truyengoc|b[áa]ckinh|bickinh|backinh|\b(?:lượt xem|views?|người đăng ký|subscribers?|trước|ago|anker|soundcore|bình luận|comments?|chia sẻ|share|tải xuống|download|toàn cầu|thông minh toàn cầu|dẫn dắt bởi|phong thần|diễn nghĩa|trường giang|đấu trường sinh tử|sống sót|mrbeast|gta\s*6|gta\s*vi|grand theft auto|kết bạn|ket ban|gaming|bản lồng tiếng|đăng ký)\b)', text):
                 continue
@@ -139,9 +161,9 @@ class SubtitleOCR:
             # Subtitle lines are spoken dialogue; reject long descriptions/paragraphs (> 25 words or > 120 chars)
             if len(text.split()) > 25 or len(text) > 120:
                 continue
-            # Filter short noise without alphabetic content
+            # Filter short noise without alphabetic content or 1-4 char uppercase noise
             alpha_only = re.sub(r'[^a-zA-ZÀ-ỹ\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]', '', text)
-            if len(alpha_only) < 2:
+            if len(alpha_only) < 2 or re.fullmatch(r'^[A-Z0-9\s]{1,5}$', text):
                 continue
 
             xs = [float(point[0]) for point in box]
