@@ -576,3 +576,35 @@ test('drainLiveDubbingQueue skips stale audio older than 2.2s when backlog occur
   }
 });
 
+test('smoothVideoPlayback prevents video pause during dubbing hold to eliminate stuttering', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.smoothVideoPlayback = true;
+  app.isHoldingYtForDubbing = false;
+  let pauseCalled = false;
+  app.ytPlayer = {
+    getPlayerState: () => 1,
+    pauseVideo: () => { pauseCalled = true; }
+  };
+
+  app.holdYouTubeForDubbing();
+  assert.equal(app.isHoldingYtForDubbing, true);
+  assert.equal(pauseCalled, false, 'YouTube pauseVideo must not be called in smooth playback mode');
+});
+
+test('webCaptionMode hard_sub prompts for Tab capture and does not block on CC fetching', async () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.webUrlInput = el();
+  app.buildYouTubeSubtitleRequest = () => ({ caption_mode: 'hard_sub', caption_language: 'auto' });
+  app.webVideoContainer = el();
+  app.webVideoContainer.scrollIntoView = () => {};
+  app.webSyncNotice = el();
+  app.setSourceIntelligenceState = () => {};
+  let playerInited = false;
+  app.initOrUpdateYouTubePlayer = () => { playerInited = true; };
+
+  await app.loadWebVideo('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+  assert.equal(playerInited, true);
+  assert.match(app.webSyncNotice.innerHTML, /Bắt Âm Thanh Tab/);
+});
+
+

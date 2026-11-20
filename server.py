@@ -1073,6 +1073,9 @@ class YouTubeSubtitleRequest(BaseModel):
     caption_mode: Optional[str] = "auto"
     caption_language: Optional[str] = "auto"
 
+_youtube_subtitles_cache = {}
+
+
 @app.post("/api/youtube-subtitles")
 async def api_youtube_subtitles(req: YouTubeSubtitleRequest):
     import yt_dlp
@@ -1085,12 +1088,29 @@ async def api_youtube_subtitles(req: YouTubeSubtitleRequest):
             "mode": "audio_only",
             "error": "Đã chọn video chỉ có tiếng. Hãy bật thu âm Tab để Whisper nhận dạng trực tiếp."
         }
+    if req.caption_mode == "hard_sub":
+        return {
+            "success": False,
+            "mode": "hard_sub",
+            "error": "Chế độ phụ đề đóng cứng / OCR cần chia sẻ tab video. Bấm 'Bắt Âm Thanh Tab' để bắt đầu quét hình ảnh."
+        }
+
+    cache_key = (url, req.caption_language or "auto", req.target_lang or "vi")
+    if cache_key in _youtube_subtitles_cache:
+        cached = _youtube_subtitles_cache[cache_key]
+        return {
+            **cached,
+            "has_more_translations": any(not s.get("translated") for s in cached.get("segments", [])),
+        }
 
     def extract_subs():
         ydl_opts = {
             'skip_download': True,
             'quiet': True,
             'no_warnings': True,
+            'extract_flat': False,
+            'youtube_include_dash_manifest': False,
+            'youtube_include_hls_manifest': False,
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -1152,32 +1172,58 @@ async def api_youtube_subtitles(req: YouTubeSubtitleRequest):
             # Normalize rolling captions ("Hello" -> "Hello world") before
             # sentence merging so repeated prefixes are never spoken twice.
             merged = merge_caption_segments(raw_segments)
-
-            # Translate the real video CC in bounded parallel batches. The old
-            # per-caption loop could make a long video wait hundreds of network
-            # round trips before the player appeared.
             originals = [m['text'] for m in merged]
-            translations = originals if is_already_vi else translate_many_to_vi(
-                originals, source_lang=source_caption_lang
+
+            # Fast initial response: translate the first 25 segments immediately (<1s)
+            # so the video player and dubbing start at once without waiting for 1,000+ lines.
+            first_batch_size = 25
+            first_originals = originals[:first_batch_size]
+            first_translations = first_originals if is_already_vi else translate_many_to_vi(
+                first_originals, source_lang=source_caption_lang
             )
-            segments = [
-                {
+            segments = []
+            for i, m in enumerate(merged):
+                if i < len(first_translations):
+                    trans = first_translations[i] or m['text']
+                else:
+                    trans = m['text'] if is_already_vi else ""
+                segments.append({
                     "start": m['start'],
                     "end": m['end'],
-                    "original": original,
-                    "translated": translated or original,
-                }
-                for m, original, translated in zip(merged, originals, translations)
-            ]
+                    "original": m['text'],
+                    "translated": trans,
+                })
 
-            return {
+            result = {
                 "success": True,
                 "title": info.get('title', 'YouTube Video'),
                 "duration": info.get('duration', 0),
                 "caption_language": source_caption_lang,
                 "caption_source": caption_source,
-                "segments": segments
+                "segments": segments,
+                "has_more_translations": len(merged) > first_batch_size and not is_already_vi,
             }
+            _youtube_subtitles_cache[cache_key] = result
+
+            # Translate remaining segments asynchronously in background batches of 40
+            if len(merged) > first_batch_size and not is_already_vi:
+                def _bg_translate():
+                    for start_i in range(first_batch_size, len(merged), 40):
+                        end_i = min(len(merged), start_i + 40)
+                        batch = originals[start_i:end_i]
+                        try:
+                            batch_trans = translate_many_to_vi(batch, source_lang=source_caption_lang)
+                            for offset, tr in enumerate(batch_trans):
+                                segments[start_i + offset]["translated"] = tr or segments[start_i + offset]["original"]
+                        except Exception as err:
+                            print(f"Background translation error: {err}")
+                            for offset in range(len(batch)):
+                                if not segments[start_i + offset]["translated"]:
+                                    segments[start_i + offset]["translated"] = segments[start_i + offset]["original"]
+
+                threading.Thread(target=_bg_translate, daemon=True).start()
+
+            return result
 
     try:
         res = await asyncio.to_thread(extract_subs)
@@ -1185,6 +1231,26 @@ async def api_youtube_subtitles(req: YouTubeSubtitleRequest):
     except Exception as e:
         print(f"Error extracting youtube subtitles: {e}")
         return {"success": False, "error": str(e)}
+
+
+@app.get("/api/youtube-subtitles-sync")
+async def api_youtube_subtitles_sync(url: str, from_idx: int = 0):
+    url = (url or "").strip()
+    if not url.startswith("http") and url:
+        url = f"https://www.youtube.com/watch?v={url}"
+    for (c_url, _, _), cached in _youtube_subtitles_cache.items():
+        if c_url == url or (c_url and url in c_url):
+            segs = cached.get("segments", [])
+            slice_segs = segs[from_idx : from_idx + 60]
+            is_done = all(bool(s.get("translated")) for s in segs)
+            return {
+                "success": True,
+                "from_idx": from_idx,
+                "segments": slice_segs,
+                "done": is_done,
+                "total": len(segs)
+            }
+    return {"success": False, "error": "Not found"}
 
 @app.get("/")
 async def get_index():

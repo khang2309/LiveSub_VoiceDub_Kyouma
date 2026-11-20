@@ -69,6 +69,7 @@ class LiveDubStudio {
     this.isHoldingYtForDubbing = false;
     this.ytShouldResumeAfterHold = false;
     this.ytOverrunHoldTimer = null;
+    this.smoothVideoPlayback = true;
 
     // Realtime requests are serialized instead of dropped while Whisper is busy.
     this.speechQueue = [];
@@ -1163,6 +1164,14 @@ class LiveDubStudio {
       this.initOrUpdateYouTubePlayer(videoId);
       return;
     }
+    if (subtitleRequest.caption_mode === 'hard_sub') {
+      this.webSyncNotice.innerHTML = ' <strong>Chế độ phụ đề đóng cứng / OCR:</strong> Đang phát video. Hãy bấm nút <strong>“Bắt Âm Thanh Tab”</strong> bên trên và chọn <em>Chia sẻ tab này</em> để OCR quét phụ đề trên khung hình.';
+      this.setSourceIntelligenceState('ocr', 'Quét OCR khung hình', 'Đang đọc chữ dính trên hình. Bấm nút Bắt Âm Thanh Tab để bật OCR.');
+      this.ytSegments = [];
+      this.currentYtSegmentIdx = -1;
+      this.initOrUpdateYouTubePlayer(videoId);
+      return;
+    }
     this.webSyncNotice.innerHTML = '⏳ Đang kiểm tra track phụ đề và chuẩn bị bản dịch...';
     this.setSourceIntelligenceState('loading', 'Đang dò CC', 'Đang đọc danh sách track phụ đề của video...');
 
@@ -1192,6 +1201,9 @@ class LiveDubStudio {
         this.prefetchUpcomingAudio(0);
         this.subViDisplay.textContent = '▶️ Hãy bấm nút Play trên video để bắt đầu xem & nghe lồng tiếng!';
         this.subSourceDisplay.textContent = `Đã đồng bộ ${data.segments.length} câu thoại`;
+        if (data.has_more_translations) {
+          this.syncRemainingYouTubeSubtitles(val, videoId, loadGeneration);
+        }
       } else {
         this.webSyncNotice.innerHTML = `ℹ️ ${data.error || 'Video không có phụ đề sẵn'}. Hãy bấm nút <strong>" Bắt Âm Thanh Tab"</strong> để Whisper GPU nghe và dịch trực tiếp!`;
         this.setSourceIntelligenceState('error', 'Không có track phù hợp', 'Chọn “Tự động” để thử track khác, hoặc chọn “Video chỉ có tiếng” và dùng Whisper.');
@@ -1207,6 +1219,35 @@ class LiveDubStudio {
     if (loadGeneration === this.youtubeLoadGeneration) {
       this.initOrUpdateYouTubePlayer(videoId);
     }
+  }
+
+  syncRemainingYouTubeSubtitles(url, videoId, loadGeneration) {
+    if (this.ytSyncRemainingTimer) clearTimeout(this.ytSyncRemainingTimer);
+    const poll = async () => {
+      if (loadGeneration !== this.youtubeLoadGeneration) return;
+      const firstUntranslated = this.ytSegments.findIndex(s => !s.translated);
+      if (firstUntranslated === -1) return;
+      try {
+        const res = await fetch(`/api/youtube-subtitles-sync?url=${encodeURIComponent(url)}&from_idx=${firstUntranslated}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (loadGeneration !== this.youtubeLoadGeneration) return;
+        if (data.success && Array.isArray(data.segments)) {
+          for (let i = 0; i < data.segments.length; i++) {
+            const targetIdx = data.from_idx + i;
+            if (this.ytSegments[targetIdx] && data.segments[i].translated) {
+              this.ytSegments[targetIdx].translated = data.segments[i].translated;
+            }
+          }
+          if (!data.done && this.ytSegments.some(s => !s.translated)) {
+            this.ytSyncRemainingTimer = setTimeout(poll, 2200);
+          }
+        }
+      } catch (err) {
+        console.warn('Background subtitles sync error:', err);
+      }
+    };
+    this.ytSyncRemainingTimer = setTimeout(poll, 1500);
   }
 
   initOrUpdateYouTubePlayer(videoId) {
@@ -1367,6 +1408,10 @@ class LiveDubStudio {
   holdYouTubeForDubbing() {
     if (this.isHoldingYtForDubbing) return;
     this.isHoldingYtForDubbing = true;
+    if (this.smoothVideoPlayback !== false) {
+      // Smooth playback mode: NEVER pause video to prevent video stuttering!
+      return;
+    }
     const state = this.ytPlayer && this.ytPlayer.getPlayerState
       ? this.ytPlayer.getPlayerState()
       : -1;
@@ -1387,6 +1432,7 @@ class LiveDubStudio {
   }
 
   scheduleYouTubeOverrunHold(playDuration, slotDuration) {
+    if (this.smoothVideoPlayback !== false) return; // Never pause/stutter video during speech
     if (!(playDuration > slotDuration + 0.08) || !this.ytPlayer) return;
     if (this.ytOverrunHoldTimer) clearTimeout(this.ytOverrunHoldTimer);
     this.ytOverrunHoldTimer = setTimeout(() => {
@@ -1421,10 +1467,24 @@ class LiveDubStudio {
       this.audioPreCache.delete(segIdx);
     }
 
-    // Fallback: hold the picture at the cue instead of letting a late network
-    // response speak over a later character or dropping this line entirely.
     const seg = this.ytSegments[segIdx];
-    if (!seg || !seg.translated) return;
+    if (!seg) return;
+
+    // Fast fallback translation if segment isn't translated yet
+    if (!seg.translated && seg.original) {
+      try {
+        const transRes = await fetch('/api/translate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: seg.original, from_lang: 'auto', to_lang: 'vi' })
+        });
+        if (transRes.ok) {
+          const transData = await transRes.json();
+          if (transData.translated) seg.translated = transData.translated;
+        }
+      } catch (_) {}
+    }
+    if (!seg.translated) return;
 
     this.holdYouTubeForDubbing();
 
