@@ -99,7 +99,7 @@ class LiveDubStudio {
     this.updateMasterDubUI();
     this.updateSourceIntelligenceControls();
     this.updateAppliedSettings();
-    setTimeout(() => this.confirmRuntimeSettings(), 12000);
+    setTimeout(() => this.confirmRuntimeSettings(), 3000);
   }
 
   async resolveAutoVoiceProvider() {
@@ -164,12 +164,18 @@ class LiveDubStudio {
       const response = await fetch('/api/pipeline-status', { cache: 'no-store' });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const status = await response.json();
-      const ttsReady = status.tts && status.tts.status === 'ready';
-      const asrReady = status.asr && status.asr.status === 'ready';
+      const ttsReady = status.tts && (status.tts.status === 'ready' || status.tts.backend === 'vieneu' || status.tts.backend === 'VieNeu-TTS' || status.tts.device === 'cuda');
+      const asrReady = status.asr && (status.asr.status === 'ready' || status.asr.status === 'idle');
       const auto = status.tts && status.tts.auto_provider ? status.tts.auto_provider : {};
       const ttfa = auto.vieneu_ttfa_ms ? ` · TTFA ${Math.round(auto.vieneu_ttfa_ms)}ms` : '';
       if (this.runtimeEngineValue) {
         this.runtimeEngineValue.textContent = `${asrReady ? 'Whisper CUDA' : 'ASR đang nạp'} · ${ttsReady ? 'VieNeu CUDA' : 'TTS đang nạp'}${ttfa}`;
+      }
+      if (!ttsReady && status.tts && status.tts.status === 'warming') {
+        if (!this._ttsPollCount) this._ttsPollCount = 0;
+        if (this._ttsPollCount++ < 12) {
+          setTimeout(() => this.confirmRuntimeSettings(), 2500);
+        }
       }
       this.autoVoiceProvider = auto.selected || this.autoVoiceProvider;
       this.updateAppliedSettings();
@@ -1099,24 +1105,24 @@ class LiveDubStudio {
       const height = this.ocrVideo.videoHeight;
       if (!width || !height) return;
 
-      // Capture the lower dialogue subtitle band, excluding YouTube sidebar recommendations.
+      // Capture the lower dialogue subtitle band across full video width.
       // Benchmarks on the target RTX 3050 machine found 960 px to be the best speed/accuracy
       // point for RapidOCR; larger frames only add CPU latency.
       const isTallPage = (height > width * 0.60);
-      const sourceX = Math.floor(width * 0.04);
-      const sourceWidth = Math.max(1, Math.floor(width * 0.88));
+      const sourceX = 0;
+      const sourceWidth = width;
       let sourceY, sourceHeight;
       if (isTallPage) {
         // Shared browser webpage tab (e.g. YouTube): top bar is ~56px.
         // Video player sits below top bar with 16:9 aspect ratio.
-        const topBarHeight = Math.min(60, Math.floor(height * 0.06));
+        const topBarHeight = Math.min(60, Math.floor(height * 0.05));
         const estimatedVideoHeight = Math.min(height - topBarHeight, width * 0.5625);
-        sourceY = topBarHeight + Math.floor(estimatedVideoHeight * 0.68);
-        sourceHeight = Math.max(1, Math.floor(estimatedVideoHeight * 0.28));
+        sourceY = topBarHeight + Math.floor(estimatedVideoHeight * 0.74);
+        sourceHeight = Math.max(1, Math.floor(estimatedVideoHeight * 0.22));
       } else {
         // Shared fullscreen video / 16:9 window
-        sourceY = Math.floor(height * 0.68);
-        sourceHeight = Math.max(1, Math.floor(height * 0.28));
+        sourceY = Math.floor(height * 0.74);
+        sourceHeight = Math.max(1, Math.floor(height * 0.23));
       }
       const scale = Math.min(1, 960 / width);
       this.ocrCanvas.width = Math.max(1, Math.round(sourceWidth * scale));
@@ -1162,7 +1168,17 @@ class LiveDubStudio {
         const response = await fetch('/api/ocr-subtitle', { method: 'POST', body: form });
         if (!response.ok) throw new Error(`OCR HTTP ${response.status}`);
         const data = await response.json();
-        if (!data.empty && data.original) this.handleOCRSubtitle(data);
+        if (!data.empty && data.original) {
+          this.ocrConsecutiveEmpty = 0;
+          this.handleOCRSubtitle(data);
+        } else {
+          this.ocrConsecutiveEmpty = (this.ocrConsecutiveEmpty || 0) + 1;
+          if (this.ocrConsecutiveEmpty >= 3 && this.currentSubMode !== 'none') {
+            this.displaySubtitle('', '');
+            if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = '';
+            if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = '';
+          }
+        }
       } catch (error) {
         console.warn('Hard subtitle OCR failed', error);
       } finally {
@@ -1202,10 +1218,10 @@ class LiveDubStudio {
     const raw = String(data.original || '').replace(/\s+/g, ' ').trim();
     if (!raw) return;
     // Reject long paragraph noise (descriptions, articles, comments) - dialogue subtitles are short
-    if (raw.length > 115 || raw.split(/\s+/).length > 20) return;
-    // Reject UI and thumbnail junk patterns
-    if (/^(?:b[áa]ckinh|bickinh|truyengoc|lượt xem|\d+[:.]\d+)$/i.test(raw)) return;
-    if (/\b(?:lượt xem|views?|người đăng ký|subscribers?|bình luận|comments?|chia sẻ|share|tải xuống|download|anker|soundcore)\b/i.test(raw)) return;
+    if (raw.length > 125 || raw.split(/\s+/).length > 25) return;
+    // Reject UI, channel names, and thumbnail junk patterns
+    if (/^(?:b[áa]ckinh|bickinh|backinh|truyengoc|lượt xem|\d+[:.]\d+|\d{1,4})$/i.test(raw)) return;
+    if (/\b(?:lượt xem|views?|người đăng ký|subscribers?|bình luận|comments?|chia sẻ|share|tải xuống|download|anker|soundcore|phong thần|diễn nghĩa|trường giang|đấu trường sinh tử)\b/i.test(raw)) return;
 
     // Display subtitle IMMEDIATELY for 0ms on-screen response
     this.displaySubtitle(raw, data.translated || raw);

@@ -20,13 +20,18 @@ class SubtitleOCR:
     _LANG_MAP = {
         "ko": LangRec.KOREAN,
         "kr": LangRec.KOREAN,
-        "en": LangRec.CH,
+        "en": LangRec.EN,
+        "eng": LangRec.EN,
         "zh": LangRec.CH,
-        "ja": LangRec.CH,
-        "jp": LangRec.CH,
+        "cmn": LangRec.CH,
+        "ja": LangRec.JAPAN,
+        "jp": LangRec.JAPAN,
         "vi": LangRec.LATIN,
         "latin": LangRec.LATIN,
-        "auto": LangRec.CH,
+        "es": LangRec.LATIN,
+        "fr": LangRec.LATIN,
+        "de": LangRec.LATIN,
+        "auto": LangRec.EN,
     }
 
     def __init__(self):
@@ -122,20 +127,20 @@ class SubtitleOCR:
             text = (text or "").strip()
             if not text or score < 0.58 or not any(char.isalnum() for char in text):
                 continue
-            # Filter YouTube metadata timestamps like 59:39 or 59 39
-            if re.search(r'\b\d{1,2}[:.]\d{2}\b|\b59\s*39\b', text):
+            # Filter YouTube metadata timestamps like 59:39 or 59 39, standalone digits/counters (e.g. 23, 20)
+            if re.search(r'^\s*\d{1,4}\s*$|\b\d{1,2}[:.]\d{2}\b|\b59\s*39\b', text):
                 continue
             # Filter YouTube view counts, watermark spam or relative dates
-            if re.search(r'(?i)(?:truyengoc|b[áa]ckinh|bickinh|backinh|\b(?:lượt xem|views?|người đăng ký|subscribers?|trước|ago|anker|soundcore|bình luận|comments?|chia sẻ|share|tải xuống|download|toàn cầu|thông minh toàn cầu|dẫn dắt bởi)\b)', text):
+            if re.search(r'(?i)(?:truyengoc|b[áa]ckinh|bickinh|backinh|\b(?:lượt xem|views?|người đăng ký|subscribers?|trước|ago|anker|soundcore|bình luận|comments?|chia sẻ|share|tải xuống|download|toàn cầu|thông minh toàn cầu|dẫn dắt bởi|phong thần|diễn nghĩa|trường giang|đấu trường sinh tử)\b)', text):
                 continue
             # Filter YouTube "...thêm" expand button
             if re.search(r'(?i)\bthêm\s*$', text):
                 continue
-            # Subtitle lines are spoken dialogue; reject long descriptions/paragraphs (> 20 words or > 100 chars)
-            if len(text.split()) > 20 or len(text) > 100:
+            # Subtitle lines are spoken dialogue; reject long descriptions/paragraphs (> 25 words or > 120 chars)
+            if len(text.split()) > 25 or len(text) > 120:
                 continue
             # Filter short noise without alphabetic content
-            alpha_only = re.sub(r'[^a-zA-ZÀ-ỹ]', '', text)
+            alpha_only = re.sub(r'[^a-zA-ZÀ-ỹ\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]', '', text)
             if len(alpha_only) < 2:
                 continue
 
@@ -145,11 +150,11 @@ class SubtitleOCR:
             center_x = sum(xs) / len(xs)
             center_y = sum(ys) / len(ys)
             # Browser crops to subtitle area. Reject text outside valid frame bounds.
-            if not (image_width * 0.03 <= center_x <= image_width * 0.97):
+            if not (image_width * 0.01 <= center_x <= image_width * 0.99):
                 continue
-            if not (image_height * 0.05 <= center_y <= image_height * 0.95):
+            if not (image_height * 0.03 <= center_y <= image_height * 0.97):
                 continue
-            if height < max(13.0, image_height * 0.015):
+            if height < max(12.0, image_height * 0.015):
                 continue
             candidates.append(
                 {
@@ -164,7 +169,7 @@ class SubtitleOCR:
             return []
 
         max_height = max(item["height"] for item in candidates)
-        candidates = [item for item in candidates if item["height"] >= max_height * 0.62]
+        candidates = [item for item in candidates if item["height"] >= max_height * 0.55]
         candidates.sort(key=lambda item: item["y"])
 
         groups = []
@@ -174,8 +179,8 @@ class SubtitleOCR:
                 previous = group[-1]
                 group_x = sum(member["x"] for member in group) / len(group)
                 if (
-                    item["y"] - previous["y"] <= max(item["height"], previous["height"]) * 1.85
-                    and abs(item["x"] - group_x) <= image_width * 0.35
+                    item["y"] - previous["y"] <= max(item["height"], previous["height"]) * 2.2
+                    and abs(item["x"] - group_x) <= image_width * 0.45
                 ):
                     matches.append(group)
             if matches:

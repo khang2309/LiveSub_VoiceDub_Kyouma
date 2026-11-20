@@ -57,10 +57,12 @@ class OCRRoutingTests(unittest.TestCase):
         engine = SubtitleOCR()
         self.assertEqual(engine._family("ko-KR").value, "korean")
 
-    def test_english_japanese_chinese_share_multilingual_model(self):
+    def test_dedicated_language_recognizers(self):
         engine = SubtitleOCR()
-        families = {engine._family(lang).value for lang in ("en", "ja", "zh", "auto")}
-        self.assertEqual(families, {"ch"})
+        self.assertEqual(engine._family("en").value, "en")
+        self.assertEqual(engine._family("ja").value, "japan")
+        self.assertEqual(engine._family("zh").value, "ch")
+        self.assertEqual(engine._family("ko").value, "korean")
 
     def test_subtitle_geometry_rejects_sidebar_and_keeps_two_line_caption(self):
         texts = ["Juan plus one of the strong people", "is manageable.", "ALICE"]
