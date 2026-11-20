@@ -942,7 +942,7 @@ class LiveDubStudio {
       const captureMode = this.getRadioGroupValue(this.systemCaptureMode, 'audio_only');
       this.isOCRModeActive = (captureMode === 'hard_sub');
       this.isHybridModeActive = (captureMode === 'auto');
-      this.btnSystemAudioText.textContent = 'Dừng Thu Âm Hệ Thống';
+      this.btnSystemAudioText.textContent = 'Dừng Xem & Lồng Tiếng';
       this.btnToggleSystemAudio.classList.remove('btn-primary');
       this.btnToggleSystemAudio.classList.add('btn-danger');
 
@@ -2744,7 +2744,7 @@ class LiveDubStudio {
     this.audioMeterFill.style.width = '0%';
     this.meterPercentText.textContent = '0%';
 
-    this.btnSystemAudioText.textContent = 'Bắt Đầu Thu Âm Hệ Thống / Tab';
+    this.btnSystemAudioText.textContent = 'Bắt Đầu Xem & Lồng Tiếng (Tab / Cửa Sổ)';
     this.btnToggleSystemAudio.classList.remove('btn-danger');
     this.btnToggleSystemAudio.classList.add('btn-primary');
 

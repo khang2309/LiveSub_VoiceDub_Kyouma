@@ -27,8 +27,8 @@
           </svg>
         </div>
         <div>
-          <h1>LiveSub & VoiceDub AI</h1>
-          <p class="subtitle">Studio Thuyết Minh & Phụ Đề Realtime Đa Nguồn (GPU NVIDIA RTX 3050)</p>
+          <h1>LiveSub Studio</h1>
+          <p class="subtitle">Thuyết Minh & Phụ Đề Realtime (NVIDIA RTX 3050)</p>
         </div>
       </div>
 
@@ -40,15 +40,12 @@
         <button id="btnTestSpeaker" class="btn btn-secondary" title="Kiểm tra hệ thống âm thanh & loa của trình duyệt">
           Thử loa
         </button>
-        <a id="btnBookmarkletLink" href="javascript:(function(){if(window._lsActive){alert('LiveSub đang chạy trên trang này!');return;}window._lsActive=true;let lastT='',curA=null,origVol=null;function showSub(t){let c=document.getElementById('livesub-sub');if(!c){c=document.createElement('div');c.id='livesub-sub';c.style.cssText='position:absolute;bottom:65px;left:0;width:100%;text-align:center;z-index:99999999;pointer-events:none;';(document.querySelector('.html5-video-player')||document.body).appendChild(c);}c.innerHTML='<span style=\x22display:inline-block;background:rgba(0,0,0,0.5);color:#facc15;font-size:26px;font-weight:800;padding:4px 16px;border-radius:8px;-webkit-text-stroke:1.2px #000;text-shadow:0 2px 8px #000;max-width:85%;line-height:1.35;\x22>'+t+'</span>';}const obs=new MutationObserver(()=>{const el=document.querySelector('.ytp-caption-segment')||document.querySelector('.caption-window');if(el){const t=el.textContent.trim();if(t&&t!==lastT){lastT=t;fetch('http://localhost:3000/api/dub-subtitle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,voice:'vi-VN-HoaiMyNeural'})}).then(r=>r.json()).then(d=>{if(d.translated)showSub(d.translated);if(d.audio_base64){const v=document.querySelector('video');if(v){if(origVol===null)origVol=v.volume;v.volume=Math.min(origVol,0.1);}if(curA)curA.pause();curA=new Audio('data:'+(d.audio_mime||'audio/mpeg')+';base64,'+d.audio_base64);curA.playbackRate=1.15;curA.onended=()=>{const vid=document.querySelector('video');if(vid&&origVol!==null)vid.volume=origVol;};curA.play();}}).catch(console.error);}}});const v=document.querySelector('video');if(v){v.addEventListener('pause',()=>{if(curA)curA.pause();});v.addEventListener('seeking',()=>{if(curA)curA.pause();const c=document.getElementById('livesub-sub');if(c)c.innerHTML='';});}obs.observe(document.querySelector('.ytp-caption-window-container')||document.body,{childList:true,subtree:true,characterData:true});alert(' Đã bật LiveSub trong video! Phụ đề hiển thị 100% trong suốt ở đáy video và tự động lồng tiếng giọng Hoài My!');})();" class="btn btn-link" title="Kéo nút này vào thanh Dấu Trang để hiện Sub trong suốt 100% trên YouTube/Web">
-          Sub trong suốt trên web
-        </a>
-        <button id="btnFloatingWindow" class="btn btn-secondary" title="Mở thanh phụ đề nổi mỏng ở đáy màn hình">
-          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button id="btnFloatingWindow" class="btn btn-primary" title="Mở thanh phụ đề nổi Always-on-Top">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect width="20" height="12" x="2" y="6" rx="2"/>
             <line x1="6" y1="12" x2="18" y2="12"/>
           </svg>
-          Thanh phụ đề nổi
+          <span>Ghim Phụ Đề (PiP)</span>
         </button>
       </div>
     </header>
@@ -104,7 +101,7 @@
         <div class="runtime-chip"><span>Phụ đề</span><strong id="runtimeSubtitleValue">Song ngữ</strong></div>
         <div class="runtime-chip"><span>Giọng đang dùng</span><strong id="runtimeVoiceValue">VieNeu Local</strong></div>
         <div class="runtime-chip runtime-engine-chip"><span>Backend</span><strong id="runtimeEngineValue">Đang kiểm tra…</strong></div>
-        <button id="btnConfirmSettings" class="btn btn-confirm-settings" type="button">Xác nhận cấu hình</button>
+        <button id="btnConfirmSettings" class="btn btn-confirm-settings" type="button" title="Đồng bộ trạng thái backend">Đồng bộ</button>
       </div>
     </section>
 
@@ -117,49 +114,46 @@
         <div id="panelSourceSystem" class="source-panel-block">
           <div class="block-header">
             <span class="badge-tag">Hệ Thống & Tab</span>
-            <span class="block-hint">Bắt mọi âm thanh phát ra từ máy tính Windows (Netflix, Bilibili, VLC, YouTube, Zoom, Game)</span>
+            <span class="block-hint">Bắt âm thanh từ tab trình duyệt hoặc ứng dụng (YouTube, Netflix, Anime, VLC, Zoom)</span>
           </div>
 
           <div class="source-intelligence" aria-labelledby="systemIntelligenceTitle">
             <div class="source-intelligence-heading">
-              <strong id="systemIntelligenceTitle">Nguồn Lời Thoại & Phụ Đề Hệ Thống</strong>
+              <strong id="systemIntelligenceTitle">Phương thức nhận diện</strong>
               <span id="systemIntelligenceState" class="source-state" data-state="ready">Sẵn sàng</span>
             </div>
             <div class="source-intelligence-grid">
               <fieldset id="systemCaptureMode" class="choice-group">
                 <legend>Phương thức nhận dạng</legend>
-                <label class="choice-option"><input type="radio" name="systemCaptureMode" value="audio_only" checked><span><strong>Âm thanh trực tiếp / Whisper GPU</strong><small>Nghe tiếng từ loa / ứng dụng qua Whisper float16 cực nhanh</small></span></label>
-                <label class="choice-option"><input type="radio" name="systemCaptureMode" value="hard_sub"><span><strong>Phụ đề đóng cứng / RapidOCR</strong><small>Quét đọc chữ phụ đề in trên khung hình bằng RapidOCR GPU</small></span></label>
-                <label class="choice-option"><input type="radio" name="systemCaptureMode" value="auto"><span><strong>Tự nhận diện thông minh</strong><small>Kết hợp Whisper GPU + OCR khi phát hiện chữ phụ đề</small></span></label>
+                <label class="choice-option"><input type="radio" name="systemCaptureMode" value="audio_only" checked><span><strong>🎙️ Nghe tiếng trực tiếp (Whisper GPU)</strong><small>Khuyên dùng cho YouTube, Phim, Livestream có giọng nói rõ — cực nhanh ~0.3s</small></span></label>
+                <label class="choice-option"><input type="radio" name="systemCaptureMode" value="hard_sub"><span><strong>📷 Đọc chữ trên video (RapidOCR)</strong><small>Dành cho Anime, phim nước ngoài có phụ đề chữ in dính trên khung hình</small></span></label>
+                <label class="choice-option"><input type="radio" name="systemCaptureMode" value="auto"><span><strong>⚡ Tự nhận diện thông minh</strong><small>Tự động kết hợp nhận diện giọng nói và đọc chữ</small></span></label>
               </fieldset>
 
               <fieldset id="systemSubMode" class="choice-group">
                 <legend>Kiểu hiển thị phụ đề</legend>
-                <label class="choice-option"><input type="radio" name="systemSubMode" value="vi_only"><span><strong>Có Sub Tiếng Việt</strong><small>Chỉ hiện phụ đề tiếng Việt chuẩn, viền đen sắc nét</small></span></label>
                 <label class="choice-option"><input type="radio" name="systemSubMode" value="bilingual" checked><span><strong>Song ngữ (Gốc + Việt)</strong><small>Dòng 1 tiếng gốc, dòng 2 tiếng Việt</small></span></label>
-                <label class="choice-option"><input type="radio" name="systemSubMode" value="source_only"><span><strong>Sub Tiếng Gốc</strong><small>Chỉ hiện lời thoại tiếng gốc (Anh, Hàn, Nhật, Trung)</small></span></label>
+                <label class="choice-option"><input type="radio" name="systemSubMode" value="vi_only"><span><strong>Chỉ Sub Tiếng Việt</strong><small>Phụ đề tiếng Việt chuẩn, viền đen sắc nét</small></span></label>
+                <label class="choice-option"><input type="radio" name="systemSubMode" value="source_only"><span><strong>Chỉ Sub Tiếng Gốc</strong><small>Lời thoại tiếng gốc (Anh, Nhật, Hàn, Trung)</small></span></label>
                 <label class="choice-option"><input type="radio" name="systemSubMode" value="en_only"><span><strong>Sub Tiếng Anh</strong><small>Hiện phụ đề tiếng Anh</small></span></label>
-                <label class="choice-option"><input type="radio" name="systemSubMode" value="none"><span><strong>Không có sub</strong><small>Tắt phụ đề trên màn hình, chỉ nghe lồng tiếng AI</small></span></label>
+                <label class="choice-option"><input type="radio" name="systemSubMode" value="none"><span><strong>Tắt phụ đề (Chỉ nghe)</strong><small>Chỉ nghe giọng lồng tiếng AI</small></span></label>
               </fieldset>
             </div>
             <p id="systemIntelligenceHint" class="source-intelligence-hint">
-              Faster-Whisper CUDA float16 cùng Silero VAD đang sẵn sàng bắt âm thanh từ mọi tab trình duyệt và ứng dụng desktop.
+              Faster-Whisper CUDA float16 cùng Silero VAD đang sẵn sàng bắt âm thanh trực tiếp từ loa / tab trình duyệt.
             </p>
           </div>
 
           <div class="stream-action-group" style="margin-top: 14px;">
             <button id="btnToggleSystemAudio" class="btn btn-primary btn-large w-full">
               <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect width="20" height="15" x="2" y="3" rx="2"/>
-                <line x1="8" y1="21" x2="16" y2="21"/>
-                <line x1="12" y1="17" x2="12" y2="21"/>
+                <polygon points="5 3 19 12 5 21 5 3"/>
               </svg>
-              <span id="btnSystemAudioText">Bắt Đầu Thu Âm Hệ Thống / Tab</span>
+              <span id="btnSystemAudioText">Bắt Đầu Xem & Lồng Tiếng (Tab / Cửa Sổ)</span>
             </button>
           </div>
           <p class="source-guide-text">
-             <em>Lưu ý:</em> Khi hộp thoại trình duyệt hiện ra, chọn <strong>Toàn bộ màn hình</strong> hoặc <strong>Tab</strong> và nhớ <strong>tích chọn “Chia sẻ âm thanh”</strong>.<br>
-             💡 <strong>Khuyên dùng cho YouTube / Netflix / Phim:</strong> Chọn <strong>“Âm thanh trực tiếp / Whisper GPU”</strong> để nghe và lồng tiếng trực tiếp từ tiếng nói video cực chuẩn trong &lt;0.3s (không bị vướng chữ giao diện web). Chỉ chọn OCR khi video là phim anime/nước ngoài có sub chữ dính chết trên hình.
+             💡 <strong>Mẹo:</strong> Khi hộp thoại trình duyệt hiện ra, chọn tab video bạn muốn xem và nhớ <strong>tích chọn “Chia sẻ âm thanh / Share audio”</strong>. Bấm nút <strong>Ghim Phụ Đề (PiP)</strong> ở góc phải để phụ đề nổi đè lên video khi xem toàn màn hình.
           </p>
         </div>
 
@@ -376,7 +370,7 @@
             </label>
           </div>
 
-          <div class="sub-mode-row" style="margin-top: 10px;">
+          <div class="sub-mode-row" style="display: none;" aria-hidden="true">
             <label class="radio-pill">
               <input type="radio" name="subMode" value="bilingual" checked>
               <span>Song ngữ</span>
@@ -536,7 +530,7 @@
 
           <div class="history-list" id="historyList">
             <div class="history-empty" id="historyEmpty">
-              Chưa có dữ liệu. Hãy bấm <strong>Bắt Đầu Thu Âm Hệ Thống / Tab</strong> hoặc chọn <strong>File Video Máy Tính</strong> để bắt đầu!
+              Chưa có dữ liệu. Hãy bấm <strong>Bắt Đầu Xem & Lồng Tiếng</strong> hoặc chọn <strong>File Video Máy Tính</strong> để bắt đầu!
             </div>
           </div>
         </div>
