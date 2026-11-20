@@ -113,8 +113,8 @@ class SubtitleOCR:
             # Filter YouTube metadata timestamps like 59:39 or 59 39
             if re.search(r'\b\d{1,2}[:.]\d{2}\b|\b59\s*39\b', text):
                 continue
-            # Filter YouTube view counts, relative dates, or channel/thumbnail tags
-            if re.search(r'(?i)\b(?:lượt xem|views?|người đăng ký|subscribers?|trước|ago|truyengoc|báckinh|bickinh|backinh|anker|soundcore|bình luận|comments?|chia sẻ|share|tải xuống|download|toàn cầu|thông minh toàn cầu|dẫn dắt bởi)\b', text):
+            # Filter YouTube view counts, watermark spam or relative dates
+            if re.search(r'(?i)(?:truyengoc|b[áa]ckinh|bickinh|backinh|\b(?:lượt xem|views?|người đăng ký|subscribers?|trước|ago|anker|soundcore|bình luận|comments?|chia sẻ|share|tải xuống|download|toàn cầu|thông minh toàn cầu|dẫn dắt bởi)\b)', text):
                 continue
             # Filter YouTube "...thêm" expand button
             if re.search(r'(?i)\bthêm\s*$', text):
@@ -132,9 +132,8 @@ class SubtitleOCR:
             height = max(ys) - min(ys)
             center_x = sum(xs) / len(xs)
             center_y = sum(ys) / len(ys)
-            # Browser crops to subtitle area. Reject text far in the right column
-            # (where YouTube recommendation thumbnails/sidebar live) or far left.
-            if not (image_width * 0.08 <= center_x <= image_width * 0.82):
+            # Browser crops to subtitle area. Reject text outside valid frame bounds.
+            if not (image_width * 0.03 <= center_x <= image_width * 0.97):
                 continue
             if not (image_height * 0.05 <= center_y <= image_height * 0.95):
                 continue
@@ -163,8 +162,8 @@ class SubtitleOCR:
                 previous = group[-1]
                 group_x = sum(member["x"] for member in group) / len(group)
                 if (
-                    item["y"] - previous["y"] <= max(item["height"], previous["height"]) * 1.9
-                    and abs(item["x"] - group_x) <= image_width * 0.16
+                    item["y"] - previous["y"] <= max(item["height"], previous["height"]) * 1.85
+                    and abs(item["x"] - group_x) <= image_width * 0.35
                 ):
                     matches.append(group)
             if matches:

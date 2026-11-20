@@ -1103,19 +1103,19 @@ class LiveDubStudio {
       // Benchmarks on the target RTX 3050 machine found 960 px to be the best speed/accuracy
       // point for RapidOCR; larger frames only add CPU latency.
       const isTallPage = (height > width * 0.60);
-      const sourceX = Math.floor(width * 0.08);
-      const sourceWidth = Math.max(1, Math.floor(width * 0.72));
+      const sourceX = Math.floor(width * 0.04);
+      const sourceWidth = Math.max(1, Math.floor(width * 0.88));
       let sourceY, sourceHeight;
       if (isTallPage) {
         // Shared full browser webpage tab (e.g. YouTube): video is in the upper ~56% of tab width.
         // Capturing the bottom of the tab hits comments and description below the player!
         const estimatedVideoHeight = Math.min(height, width * 0.5625);
-        sourceY = Math.floor(estimatedVideoHeight * 0.68);
-        sourceHeight = Math.max(1, Math.floor(estimatedVideoHeight * 0.28));
+        sourceY = Math.floor(estimatedVideoHeight * 0.65);
+        sourceHeight = Math.max(1, Math.floor(estimatedVideoHeight * 0.32));
       } else {
         // Shared fullscreen video / 16:9 window
-        sourceY = Math.floor(height * 0.70);
-        sourceHeight = Math.max(1, Math.floor(height * 0.26));
+        sourceY = Math.floor(height * 0.68);
+        sourceHeight = Math.max(1, Math.floor(height * 0.28));
       }
       const scale = Math.min(1, 960 / width);
       this.ocrCanvas.width = Math.max(1, Math.round(sourceWidth * scale));
@@ -1182,6 +1182,19 @@ class LiveDubStudio {
     // Reject UI and thumbnail junk patterns
     if (/^(?:b[áa]ckinh|bickinh|truyengoc|lượt xem|\d+[:.]\d+)$/i.test(raw)) return;
     if (/\b(?:lượt xem|views?|người đăng ký|subscribers?|bình luận|comments?|chia sẻ|share|tải xuống|download|anker|soundcore)\b/i.test(raw)) return;
+
+    // Merge progressive subtitle expansions (e.g. "I can't" -> "I can't believe")
+    // If the new phrase extends the last partial phrase, update to the full thought
+    if (this.lastOCRText && raw.length > this.lastOCRText.length && raw.toLowerCase().includes(this.lastOCRText.toLowerCase())) {
+      this.displaySubtitle(raw, data.translated || raw);
+      if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = data.translated || raw;
+      if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = raw;
+      this.lastOCRText = raw;
+      if (this.isDubbingEnabled) {
+        this.enqueueLiveDubbing(data.translated || raw, null, raw, performance.now(), performance.now(), data.timings || null);
+      }
+      return;
+    }
 
     const now = performance.now();
     if (!this.recentOCRHistory) this.recentOCRHistory = [];
