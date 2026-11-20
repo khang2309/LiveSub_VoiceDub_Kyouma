@@ -417,6 +417,16 @@ def clean_speech_text(text: str) -> str:
     cleaned = re.sub(r'\b\d{1,2}:\d{2}(?::\d{2})?\b', '', cleaned)
     cleaned = re.sub(r'(?i)\b(?:truyengoc|báckinh|bickinh|backinh)\b', '', cleaned)
 
+    # Clean OCR typos & weird mixed-casing (e.g. KNow -> know, vou 're -> you're)
+    cleaned = re.sub(r'\b[Kk][Nn][Oo][Ww]\b', 'know', cleaned)
+    cleaned = re.sub(r'\bvou(?=[\s\'])', 'you', cleaned)
+    def _fix_mixed_case(m):
+        w = m.group(0)
+        if len(w) > 2 and w[0].isupper() and w[1].isupper() and w[2:].islower():
+            return w.capitalize()
+        return w
+    cleaned = re.sub(r'\b[A-Za-z]+\b', _fix_mixed_case, cleaned)
+
     # Clean dots in numbers (e.g. 250.000 -> 250 nghìn)
     cleaned = re.sub(r'(\d+)\.000\.000', r'\1 triệu', cleaned)
     cleaned = re.sub(r'(\d+)\.000', r'\1 nghìn', cleaned)

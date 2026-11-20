@@ -1199,10 +1199,14 @@ class LiveDubStudio {
     this.recentOCRHistory.push({ text: raw, time: now });
     this.lastTranscriptContext = raw;
     const record = this.addHistory(raw, data.translated || raw, 'ocr');
+
+    // Display subtitle immediately for zero perceived latency, in tight sync with video
+    this.displaySubtitle(raw, data.translated || raw);
+    if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = data.translated || raw;
+    if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = raw;
+
     if (this.isDubbingEnabled) {
       this.enqueueLiveDubbing(data.translated || raw, record.id, raw, now, now, data.timings || null);
-    } else {
-      this.displaySubtitle(raw, data.translated || raw);
     }
   }
 
@@ -2150,9 +2154,9 @@ class LiveDubStudio {
     this.isProcessingLiveDubbing = true;
     try {
       while (this.liveDubbingQueue.length > 0) {
-        // If congested (> 5), keep only the latest items so audio never falls behind video
-        if (this.liveDubbingQueue.length > 5) {
-          const dropped = this.liveDubbingQueue.splice(0, this.liveDubbingQueue.length - 2);
+        // If congested (> 2), keep only the latest items so audio stays locked to the video!
+        if (this.liveDubbingQueue.length > 2) {
+          const dropped = this.liveDubbingQueue.splice(0, this.liveDubbingQueue.length - 1);
           for (const d of dropped) {
             this.displaySubtitle(d.sourceText, d.text);
           }
@@ -2404,6 +2408,13 @@ class LiveDubStudio {
       let carry = null;
       let started = false;
 
+      // Accumulate PCM chunks to prevent microscopic slice underruns and eliminate robotic choppiness.
+      // Slices of ~0.18s (17,280 bytes) ensure smooth playback, with ~0.24s initial prebuffer.
+      const MIN_SLICE_BYTES = 17280;
+      const INITIAL_PREBUFFER_BYTES = 23040;
+      let pendingChunks = [];
+      let pendingBytesLen = 0;
+
       const finishIfDone = (force = false) => {
         if (force || (readingDone && localSources.size === 0)) {
           if (safetyTimeout) clearTimeout(safetyTimeout);
@@ -2420,33 +2431,12 @@ class LiveDubStudio {
         }, Math.max(1000, durSec * 1000));
       };
 
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        if (!value || value.byteLength === 0) continue;
-        if (token && !this.isPlaybackCurrent(token)) {
-          controller.abort();
-          return;
-        }
-
-        let bytes = value;
-        if (carry !== null) {
-          const joined = new Uint8Array(value.byteLength + 1);
-          joined[0] = carry;
-          joined.set(value, 1);
-          bytes = joined;
-          carry = null;
-        }
-        if (bytes.byteLength % 2) {
-          carry = bytes[bytes.byteLength - 1];
-          bytes = bytes.subarray(0, bytes.byteLength - 1);
-        }
-        if (!bytes.byteLength) continue;
-
-        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-        const frameCount = bytes.byteLength / 2;
+      const scheduleSlice = (sliceBytes) => {
+        if (!sliceBytes || sliceBytes.byteLength < 2) return;
+        const frameCount = Math.floor(sliceBytes.byteLength / 2);
         const audioBuffer = this.audioContext.createBuffer(1, frameCount, sampleRate);
         const channel = audioBuffer.getChannelData(0);
+        const view = new DataView(sliceBytes.buffer, sliceBytes.byteOffset, sliceBytes.byteLength);
         for (let i = 0; i < frameCount; i++) channel[i] = view.getInt16(i * 2, true) / 32768;
 
         const sourceNode = this.audioContext.createBufferSource();
@@ -2466,23 +2456,14 @@ class LiveDubStudio {
         const now = this.audioContext.currentTime;
         let startAt;
         if (!started) {
-          // Low-latency initial lead (0.09s) for instant playback start
-          startAt = now + 0.09;
-        } else if (nextStart < now + 0.02) {
-          this.realtimeMetrics.streamUnderruns++;
-          startAt = now + 0.05;
-        } else {
-          startAt = nextStart;
-        }
-        sourceNode.start(startAt);
-        nextStart = startAt + audioBuffer.duration / playbackRate;
-        if (!started) {
           started = true;
+          // Initial lead (0.08s) ensures audio starts smoothly
+          startAt = now + 0.08;
           if (this.liveDubbingQueue && this.liveDubbingQueue.length > 0) {
             const nextItem = this.liveDubbingQueue[0];
             this.prefetchLiveTts(nextItem.text, nextItem.voice);
           }
-          const callbackDelay = Math.max(0, (startAt - this.audioContext.currentTime) * 1000);
+          const callbackDelay = Math.max(0, (startAt - now) * 1000);
           startCallbackTimer = setTimeout(() => {
             startCallbackTimer = null;
             if (!token || this.isPlaybackCurrent(token)) {
@@ -2490,7 +2471,60 @@ class LiveDubStudio {
               this.releaseYouTubeDubbingHold();
             }
           }, callbackDelay);
+        } else {
+          // Seamless scheduling: connects sample-accurately at nextStart.
+          // In case of clock drift, schedule immediately with 5ms lead (NO 50ms silence penalty!).
+          startAt = (nextStart >= now + 0.005) ? nextStart : (now + 0.005);
         }
+        sourceNode.start(startAt);
+        nextStart = startAt + audioBuffer.duration / playbackRate;
+      };
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (token && !this.isPlaybackCurrent(token)) {
+          controller.abort();
+          return;
+        }
+
+        if (value && value.byteLength > 0) {
+          let bytes = value;
+          if (carry !== null) {
+            const joined = new Uint8Array(value.byteLength + 1);
+            joined[0] = carry;
+            joined.set(value, 1);
+            bytes = joined;
+            carry = null;
+          }
+          if (bytes.byteLength % 2) {
+            carry = bytes[bytes.byteLength - 1];
+            bytes = bytes.subarray(0, bytes.byteLength - 1);
+          }
+          if (bytes.byteLength > 0) {
+            pendingChunks.push(bytes);
+            pendingBytesLen += bytes.byteLength;
+          }
+        }
+
+        const threshold = started ? MIN_SLICE_BYTES : INITIAL_PREBUFFER_BYTES;
+        if (pendingBytesLen >= threshold || (done && pendingBytesLen > 0)) {
+          let sliceBytes;
+          if (pendingChunks.length === 1) {
+            sliceBytes = pendingChunks[0];
+          } else {
+            sliceBytes = new Uint8Array(pendingBytesLen);
+            let offset = 0;
+            for (const chunk of pendingChunks) {
+              sliceBytes.set(chunk, offset);
+              offset += chunk.byteLength;
+            }
+          }
+          pendingChunks = [];
+          pendingBytesLen = 0;
+          scheduleSlice(sliceBytes);
+        }
+
+        if (done) break;
       }
       readingDone = true;
       setSafetyTimeout(1.5);
