@@ -9,7 +9,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23e89486'/%3E%3Cpath d='M32 13a8 8 0 0 0-8 8v17a8 8 0 0 0 16 0V21a8 8 0 0 0-8-8Zm-16 22v3a16 16 0 0 0 32 0v-3h-5v3a11 11 0 0 1-22 0v-3Z' fill='%23170f0b'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css?v=20261121_streamlined_03">
+  <link rel="stylesheet" href="style.css?v=20261121_desktop_ui_05">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Roboto+Condensed:ital,wght@0,600;0,700;0,800;0,900;1,700&family=Oswald:wght@600;700&family=Young+Serif&display=swap" rel="stylesheet">
@@ -21,7 +21,7 @@
     <header class="app-header">
       <div class="brand">
         <div class="brand-icon">
-          <svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
             <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
             <line x1="12" y1="19" x2="12" y2="22"/>
@@ -29,10 +29,7 @@
             <path d="m19 8-3 3"/>
           </svg>
         </div>
-        <div>
-          <h1>LiveSub Studio</h1>
-          <p class="subtitle">Thuyết Minh & Phụ Đề Realtime (NVIDIA RTX 3050)</p>
-        </div>
+        <h1>LiveSub Studio</h1>
       </div>
 
       <div class="header-actions">
@@ -40,11 +37,11 @@
           <span class="status-dot"></span>
           <span id="statusText">Sẵn sàng</span>
         </div>
-        <button id="btnTestSpeaker" class="btn btn-secondary" title="Kiểm tra hệ thống âm thanh & loa của trình duyệt">
+        <button id="btnTestSpeaker" class="btn btn-secondary btn-sm" title="Kiểm tra hệ thống âm thanh loa">
           Thử loa
         </button>
-        <button id="btnFloatingWindow" class="btn btn-primary" title="Mở thanh phụ đề nổi Always-on-Top">
-          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button id="btnFloatingWindow" class="btn btn-primary btn-sm" title="Ghim thanh phụ đề nổi Always-on-Top">
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect width="20" height="12" x="2" y="6" rx="2"/>
             <line x1="6" y1="12" x2="18" y2="12"/>
           </svg>
@@ -55,72 +52,72 @@
 
     <!-- 1-TOUCH QUICK CONTROL BAR -->
     <div class="quick-control-bar">
-      <!-- 1. Nút hành động 1 chạm chính -->
-      <button id="btnToggleSystemAudio" class="btn-hero-action" type="button">
-        <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
-          <polygon points="5 3 19 12 5 21 5 3"/>
-        </svg>
-        <span id="btnSystemAudioText">BẮT ĐẦU ĐỌC & LỒNG TIẾNG SUB</span>
-      </button>
+      <!-- Hàng 1: Cấu hình chế độ, ngôn ngữ, giọng đọc -->
+      <div class="control-row-top">
+        <div class="control-cell mode-cell">
+          <span class="control-label">Chế độ video:</span>
+          <div class="mode-toggle-group">
+            <button type="button" id="btnModeSub" class="btn-mode active" title="Dành cho Anime, Phim có phụ đề chữ in trên video">
+              📷 Có phụ đề (Đọc chữ OCR)
+            </button>
+            <button type="button" id="btnModeAudio" class="btn-mode" title="Dành cho video không có sub: YouTube, Livestream">
+              🎙️ Không có sub (Whisper)
+            </button>
+          </div>
+        </div>
 
-      <!-- 2. Chế độ video (2 nút toggle trực quan, hoàn toàn không mâu thuẫn) -->
-      <div class="control-item" style="max-width: 320px;">
-        <label class="control-label">Chế độ nhận diện:</label>
-        <div class="mode-toggle-group">
-          <button type="button" id="btnModeSub" class="btn-mode active" title="Dành cho Anime, Phim có phụ đề chữ in trên video">
-            📷 Có phụ đề (Đọc chữ OCR)
-          </button>
-          <button type="button" id="btnModeAudio" class="btn-mode" title="Dành cho video không có sub: YouTube, Livestream">
-            🎙️ Không có sub (Whisper)
-          </button>
+        <div class="control-cell">
+          <label for="sourceLang" id="lblSourceLang" class="control-label">Ngôn Ngữ Phụ Đề:</label>
+          <select id="sourceLang" class="form-control form-control-compact">
+            <option value="vi-VN" selected>🇻🇳 Tiếng Việt (Có sẵn sub - Không dịch)</option>
+            <option value="en-US">🇬🇧 Tiếng Anh (Dịch sang Việt)</option>
+            <option value="ja-JP">🇯🇵 Tiếng Nhật (Dịch sang Việt)</option>
+            <option value="zh-CN">🇨🇳 Tiếng Trung (Dịch sang Việt)</option>
+            <option value="ko-KR">🇰🇷 Tiếng Hàn (Dịch sang Việt)</option>
+            <option value="auto">🌐 Tự động nhận diện</option>
+          </select>
+        </div>
+
+        <div class="control-cell">
+          <label for="voiceSelect" class="control-label">Giọng Lồng Tiếng (VieNeu AI):</label>
+          <select id="voiceSelect" class="form-control form-control-compact select-highlight">
+            <option value="vieneu:Trúc Ly" selected>🎙️ Trúc Ly (Nữ, Bắc - Tự nhiên)</option>
+            <option value="vieneu:Thái Sơn">🎙️ Thái Sơn (Nam, Nam - Kể chuyện)</option>
+            <option value="vieneu:Thiện Minh">🎙️ Thiện Minh (Nam, Bắc - Phim)</option>
+            <option value="vieneu:Thùy Dung">🎙️ Thùy Dung (Nữ, Nam - Truyền cảm)</option>
+            <option value="google-vi">⚡ Google Voice Tiếng Việt (~0.3s)</option>
+          </select>
         </div>
       </div>
 
-      <!-- 3. Ngôn ngữ (Tự động thích ứng theo chế độ bên cạnh) -->
-      <div class="control-item" style="max-width: 250px;">
-        <label for="sourceLang" id="lblSourceLang" class="control-label">Ngôn Ngữ Phụ Đề:</label>
-        <select id="sourceLang" class="form-control">
-          <option value="vi-VN" selected>🇻🇳 Tiếng Việt (Có sẵn sub - Không dịch)</option>
-          <option value="en-US">🇬🇧 Tiếng Anh (Dịch sang Việt)</option>
-          <option value="ja-JP">🇯🇵 Tiếng Nhật (Dịch sang Việt)</option>
-          <option value="zh-CN">🇨🇳 Tiếng Trung (Dịch sang Việt)</option>
-          <option value="ko-KR">🇰🇷 Tiếng Hàn (Dịch sang Việt)</option>
-          <option value="auto">🌐 Tự động nhận diện</option>
-        </select>
-      </div>
+      <!-- Hàng 2: Nút hành động chính + Nút dừng + Trạng thái -->
+      <div class="control-row-bottom">
+        <button id="btnToggleSystemAudio" class="btn-hero-action" type="button">
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+          <span id="btnSystemAudioText">BẮT ĐẦU ĐỌC & LỒNG TIẾNG SUB</span>
+        </button>
 
-      <!-- 4. Chọn giọng đọc VieNeu -->
-      <div class="control-item" style="max-width: 260px;">
-        <label for="voiceSelect" class="control-label">Giọng Lồng Tiếng (VieNeu AI):</label>
-        <select id="voiceSelect" class="form-control select-highlight">
-          <option value="vieneu:Trúc Ly" selected>🎙️ Trúc Ly (Nữ, Bắc, Tự nhiên - Khuyên dùng)</option>
-          <option value="vieneu:Thái Sơn">🎙️ Thái Sơn (Nam, Nam, Kể chuyện)</option>
-          <option value="vieneu:Thiện Minh">🎙️ Thiện Minh (Nam, Bắc, Phim ảnh)</option>
-          <option value="vieneu:Thùy Dung">🎙️ Thùy Dung (Nữ, Nam, Truyền cảm)</option>
-          <option value="google-vi">⚡ Google Voice Tiếng Việt (~0.3s)</option>
-        </select>
-      </div>
+        <button id="btnPanicKill" class="btn btn-secondary btn-compact" type="button" title="Dừng âm thanh đang phát ngay lập tức">
+          ⏹ Dừng Âm
+        </button>
 
-      <!-- 5. Nút Dừng Âm Thanh ngay lập tức -->
-      <button id="btnPanicKill" class="btn btn-secondary" type="button" title="Dừng âm thanh đang phát ngay lập tức" style="padding: 10px 16px;">
-        ⏹ Dừng Âm
-      </button>
+        <div id="oneTouchDetectionPill" class="one-touch-status-pill">
+          📷 <strong>Chế độ đọc chữ OCR:</strong> Quét phụ đề trên video ~150ms (Tắt Whisper)
+        </div>
+      </div>
     </div>
 
-    <!-- MAIN WORKSPACE: 2 CỘT GỌN GÀNG VỪA 1 MÀN HÌNH -->
+    <!-- MAIN WORKSPACE: 2 CỘT CÂN ĐỐI VỪA 1 MÀN HÌNH -->
     <main class="main-content-streamlined">
       <!-- Cột Trái: Màn Hình Phụ Đề Realtime (Cinema View) -->
       <section class="cinema-panel">
         <div class="cinema-panel-header">
-          <div style="display: flex; align-items: center; gap: 10px;">
-            <strong style="font-size: 1.05rem;">Màn Hình Phụ Đề Realtime (Cinema View)</strong>
-            <span id="oneTouchDetectionPill" class="one-touch-status-pill">
-              📷 Đang khóa chế độ đọc chữ OCR siêu tốc ~150ms (Tắt Whisper)
-            </span>
-          </div>
-          <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="panel-title-text">🎬 Phụ Đề Cinema View</span>
+          <div style="display: flex; align-items: center; gap: 6px;">
             <button id="btnCinemaPiP" class="btn btn-primary btn-sm" title="Ghim phụ đề nổi Always-on-Top">
-              📌 Ghim Phụ Đề (PiP)
+              📌 Ghim PiP
             </button>
             <button id="btnSubtitleFontMinus" class="btn-icon" title="Giảm cỡ chữ">A-</button>
             <button id="btnSubtitleFontPlus" class="btn-icon" title="Tăng cỡ chữ">A+</button>
@@ -135,7 +132,7 @@
             </div>
           </div>
 
-          <div class="dubbing-indicator" id="dubbingIndicator" style="margin-top: 20px;">
+          <div class="dubbing-indicator" id="dubbingIndicator" style="margin-top: 14px;">
             <div class="waveform">
               <span></span><span></span><span></span><span></span><span></span>
             </div>
@@ -147,30 +144,23 @@
       <!-- Cột Phải: Lịch Sử Thoại & Xuất File -->
       <section class="history-panel">
         <div class="history-panel-header">
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M3 3v5h5"/>
-              <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/>
-              <path d="M12 7v5l4 2"/>
-            </svg>
-            <strong style="font-size: 1.05rem;">Lịch Sử Thoại (<span id="historyCount">0</span> câu)</strong>
-          </div>
+          <span class="panel-title-text">📜 Lịch Sử Thoại (<span id="historyCount">0</span>)</span>
           <div style="display: flex; align-items: center; gap: 6px;">
-            <button id="btnExportSRT" class="btn btn-sm btn-secondary" title="Xuất file phụ đề chuẩn .SRT">Xuất .SRT</button>
-            <button id="btnExportTXT" class="btn btn-sm btn-secondary" title="Xuất kịch bản text .TXT">Xuất .TXT</button>
-            <button id="btnClearHistory" class="btn btn-sm btn-danger" title="Xóa toàn bộ lịch sử">Xóa Hết</button>
+            <button id="btnExportSRT" class="btn btn-sm btn-secondary" title="Xuất file phụ đề chuẩn .SRT">.SRT</button>
+            <button id="btnExportTXT" class="btn btn-sm btn-secondary" title="Xuất kịch bản text .TXT">.TXT</button>
+            <button id="btnClearHistory" class="btn btn-sm btn-danger" title="Xóa toàn bộ lịch sử">Xóa</button>
           </div>
         </div>
 
         <div class="history-list" id="historyList">
           <div class="history-empty" id="historyEmpty">
-            <p>👉 Chưa có câu thoại nào. Bấm <strong>BẮT ĐẦU ĐỌC & LỒNG TIẾNG SUB</strong> để bắt đầu xem phim!</p>
+            <p>👉 Chưa có câu thoại nào. Bấm <strong>BẮT ĐẦU</strong> để xem phim!</p>
           </div>
         </div>
       </section>
     </main>
 
-    <!-- HIDDEN LEGACY CONTAINER: Giữ toàn bộ elements cho test suite và tương thích ngược -->
+    <!-- HIDDEN LEGACY CONTAINER: Giữ toàn bộ elements cho test suite -->
     <div id="legacyHiddenContainer" style="display: none;" aria-hidden="true">
       <input type="checkbox" id="chkEnableWhisper">
       <nav class="source-nav-bar">
@@ -278,6 +268,6 @@
 
   <script src="/vendor/ort/ort.min.js?v=1.31.1"></script>
   <script src="/vendor/vad/bundle.min.js?v=0.0.31"></script>
-  <script src="app.js?v=20261121_mode_switch_v4"></script>
+  <script src="app.js?v=20261121_desktop_ui_v5"></script>
 </body>
 </html>
