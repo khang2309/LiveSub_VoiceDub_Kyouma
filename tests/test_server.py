@@ -436,6 +436,37 @@ class TranslationTests(unittest.TestCase):
         self.assertFalse(is_garbage_ocr("私が行きます"))
         self.assertFalse(is_garbage_ocr("你好世界"))
 
+    def test_long_sentence_and_multi_speaker_dialogue(self):
+        from server import clean_speech_text
+        from ocr_engine import SubtitleOCR
+
+        # 1. Long complex sentence (35 words, 150+ chars)
+        long_txt = "Nếu như ngươi dám bước thêm một bước nữa vào cấm địa của hoàng cung, ta nhất định sẽ không nương tay với ngươi đâu, hãy nhớ lấy lời ta nói hôm nay!"
+        cleaned_long = clean_speech_text(long_txt)
+        self.assertEqual(cleaned_long, long_txt)
+
+        # 2. Multi-speaker dialogue with dashes
+        multi_txt = "- Cậu có chắc là chúng ta nên đi theo con đường này không? - Tôi tin chắc chắn đây là lối ra duy nhất!"
+        cleaned_multi = clean_speech_text(multi_txt)
+        self.assertEqual(cleaned_multi, multi_txt)
+
+        # 3. SubtitleOCR._select_subtitle_lines retains 2-line dialogue
+        cands = [
+            "- Cậu có chắc là chúng ta nên đi theo đường này?",
+            "- Đừng lo, tôi biết rõ lối ra mà!"
+        ]
+        scores = [0.95, 0.94]
+        # Box 1: y=700..724, Box 2: y=748..772
+        boxes = [
+            [[100, 700], [860, 700], [860, 724], [100, 724]],
+            [[100, 748], [860, 748], [860, 772], [100, 772]],
+        ]
+        accepted = SubtitleOCR._select_subtitle_lines(cands, scores, boxes, 960, 800)
+        self.assertEqual(len(accepted), 2)
+        joined = " ".join(item[0] for item in accepted)
+        self.assertIn("- Cậu có chắc", joined)
+        self.assertIn("- Đừng lo", joined)
+
 
 if __name__ == '__main__':
     unittest.main()

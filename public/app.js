@@ -405,9 +405,10 @@ class LiveDubStudio {
     // Completed audio can safely play at 1.50x. Live PCM cannot: consuming it
     // faster than CUDA generates it creates the audible stop/start effect.
     // The backend derives serverCap from this session's measured CUDA RTF.
-    const requested = this.getSafePlaybackRate(Math.min(0.10, queueDepth * 0.04));
-    const measuredCap = Number.isFinite(serverCap) ? serverCap : 1.0;
-    let rate = Math.min(1.20, measuredCap, requested);
+    const queueBoost = Math.min(0.20, queueDepth * 0.06);
+    const requested = this.getSafePlaybackRate(queueBoost);
+    const measuredCap = Number.isFinite(serverCap) ? serverCap : 1.20;
+    let rate = Math.min(1.25, measuredCap, requested);
 
     if (this.isAdaptiveSpeedEnabled && originalDuration > 0 && textLength > 0) {
       const estimatedSyllables = Math.max(1, textLength / 3.8);
@@ -1572,8 +1573,8 @@ class LiveDubStudio {
     raw = raw.replace(junkTailRegex, '').trim().replace(/^[,.\-:;]+|[,.\-:;]+$/g, '').trim();
     if (!raw) return;
 
-    // Reject long paragraph noise (descriptions, articles, comments) - dialogue subtitles are short
-    if (raw.length > 125 || raw.split(/\s+/).length > 25) return;
+    // Dialogue subtitles: allow long sentences and multi-speaker dialogues up to 240 chars or 45 words
+    if (raw.length > 240 || raw.split(/\s+/).length > 45) return;
     // Reject 1-4 character alphanumeric noise (e.g. YA, EREE, TL2, Ta02, JNY, HE, CE)
     if (raw.length <= 4 && /^[A-Za-z0-9\s]+$/.test(raw)) return;
     // Reject corrupted Vietsub hard subtitle OCR reading (e.g. 'å', 'ö', 'ø', 'ß', 'ngvòi', 'thvòng')
@@ -2688,10 +2689,11 @@ class LiveDubStudio {
     this.isProcessingLiveDubbing = true;
     try {
       while (this.liveDubbingQueue.length > 0) {
-        // Backlog management: Drop older intermediate items if queue accumulates > 2 lines
-        // so the system stays synchronized with real-time video without falling behind!
-        if (this.liveDubbingQueue.length > 2) {
-          const dropped = this.liveDubbingQueue.splice(0, this.liveDubbingQueue.length - 1);
+        // Backlog management for fast-paced dialogue / rapid exchanges ("nói nhanh nói nhiều"):
+        // Buffer up to 5 cues so rapid dialogue between 2-3 characters is preserved in full.
+        // Adaptive playback rate dynamically accelerates audio (up to 1.25x-1.30x) to catch up naturally!
+        if (this.liveDubbingQueue.length > 5) {
+          const dropped = this.liveDubbingQueue.splice(0, this.liveDubbingQueue.length - 3);
           for (const d of dropped) {
             this.displaySubtitle(d.sourceText, d.text);
           }
@@ -2704,9 +2706,9 @@ class LiveDubStudio {
         );
         if (isStale()) continue;
 
-        // Evict ancient items (> 6s old) when user scrubbed or video advanced rapidly
+        // Evict ancient items (> 10s old) only when user scrubbed or video advanced rapidly
         const queuedAgeMs = item.enqueuedAt ? (performance.now() - item.enqueuedAt) : 0;
-        if (queuedAgeMs > 6000 && this.liveDubbingQueue.length > 0) {
+        if (queuedAgeMs > 10000 && this.liveDubbingQueue.length > 0) {
           this.displaySubtitle(item.sourceText, item.text);
           continue;
         }

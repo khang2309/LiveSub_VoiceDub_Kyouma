@@ -189,8 +189,8 @@ class SubtitleOCR:
             # Filter YouTube "...thêm" expand button
             if re.search(r'(?i)\bthêm\s*$', text):
                 continue
-            # Subtitle lines are spoken dialogue; reject long descriptions/paragraphs (> 25 words or > 120 chars)
-            if len(text.split()) > 25 or len(text) > 120:
+            # Subtitle lines are spoken dialogue; support long sentences and multi-line dialogues (up to 45 words or 240 chars)
+            if len(text.split()) > 45 or len(text) > 240:
                 continue
             # Filter short noise without alphabetic content or 1-4 char noise (e.g. Ta02, JNY, HE, CE)
             alpha_only = re.sub(r'[^a-zA-ZÀ-ỹ\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]', '', text)
@@ -236,8 +236,8 @@ class SubtitleOCR:
                 previous = group[-1]
                 group_x = sum(member["x"] for member in group) / len(group)
                 if (
-                    item["y"] - previous["y"] <= max(item["height"], previous["height"]) * 2.2
-                    and abs(item["x"] - group_x) <= image_width * 0.45
+                    item["y"] - previous["y"] <= max(item["height"], previous["height"]) * 3.0
+                    and abs(item["x"] - group_x) <= image_width * 0.42
                 ):
                     matches.append(group)
             if matches:
@@ -247,7 +247,7 @@ class SubtitleOCR:
 
         def group_score(group):
             avg_height = sum(item["height"] for item in group) / len(group)
-            chars = min(80, sum(len(item["text"]) for item in group))
+            chars = min(120, sum(len(item["text"]) for item in group))
             center_x = sum(item["x"] for item in group) / len(group)
             center_y = sum(item["y"] for item in group) / len(group)
             center_penalty = abs(center_x - image_width / 2) / image_width * 10
@@ -257,7 +257,7 @@ class SubtitleOCR:
 
         best = max(groups, key=group_score)
         total_words = sum(len(item["text"].split()) for item in best)
-        if total_words > 22 or sum(len(item["text"]) for item in best) > 120:
+        if total_words > 45 or sum(len(item["text"]) for item in best) > 240:
             return []
         best = sorted(best[:3], key=lambda item: item["y"])
         return [(item["text"], item["score"]) for item in best]

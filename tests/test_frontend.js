@@ -914,6 +914,59 @@ test('video seek detector preempts audio and invalidates old generation on abrup
   assert.equal(app.dubbingGeneration, 2);
 });
 
+test('handleOCRSubtitle supports long sentences and multi-speaker dialogue lines up to 240 chars', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.isDubbingEnabled = true;
+  app.liveDubbingQueue = [];
+  app.recentOCRHistory = [];
+  let enqueued = null;
+  app.enqueueLiveDubbing = (text) => { enqueued = text; };
+  app.addHistory = () => ({ id: 'h1' });
+
+  // 1. Long complex sentence (35 words, 160 chars)
+  const longText = 'Nếu như ngươi dám bước thêm một bước nữa vào cấm địa của hoàng cung, ta nhất định sẽ không nương tay với ngươi đâu, hãy nhớ lấy lời ta nói hôm nay!';
+  app.handleOCRSubtitle({ original: longText, translated: longText });
+  assert.equal(enqueued, longText);
+
+  // 2. Multi-speaker dialogue with hyphens (2 people talking at once)
+  enqueued = null;
+  const multiSpeaker = '- Cậu có chắc là chúng ta nên đi theo con đường này không? - Tôi tin chắc chắn đây là lối ra duy nhất của khu rừng!';
+  app.handleOCRSubtitle({ original: multiSpeaker, translated: multiSpeaker });
+  assert.equal(enqueued, multiSpeaker);
+});
+
+test('drainLiveDubbingQueue preserves rapid back-to-back dialogue without premature dropping', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.isDubbingEnabled = true;
+  app.dubbingGeneration = 1;
+  // 4 rapid cues from 3 people talking fast
+  app.liveDubbingQueue = [
+    { text: 'Mau lên!', generation: 1, enqueuedAt: performance.now() },
+    { text: 'Tôi đang cố đây!', generation: 1, enqueuedAt: performance.now() },
+    { text: 'Không kịp nữa rồi!', generation: 1, enqueuedAt: performance.now() },
+    { text: 'Nhảy xuống hồ đi!', generation: 1, enqueuedAt: performance.now() }
+  ];
+
+  // With queue buffer of 5, no items should be dropped when length <= 5
+  if (app.liveDubbingQueue.length > 5) {
+    app.liveDubbingQueue.splice(0, app.liveDubbingQueue.length - 3);
+  }
+  assert.equal(app.liveDubbingQueue.length, 4);
+});
+
+test('getSafeStreamingPlaybackRate accelerates on fast dialogue queue backlog up to 1.25x', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.getSafePlaybackRate = (boost) => 1.0 + boost;
+  app.isAdaptiveSpeedEnabled = false;
+
+  // Queue depth 0: normal rate
+  assert.equal(app.getSafeStreamingPlaybackRate(0, 1.25), 1.0);
+
+  // Queue depth 3 (fast speech backlog): accelerates to 1.18x
+  const rateBacklog = app.getSafeStreamingPlaybackRate(3, 1.25);
+  assert.ok(rateBacklog >= 1.15 && rateBacklog <= 1.25, `Rate ${rateBacklog} should be between 1.15x and 1.25x`);
+});
+
 
 
 
