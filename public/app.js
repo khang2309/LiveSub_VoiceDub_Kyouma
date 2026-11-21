@@ -955,18 +955,20 @@ class LiveDubStudio {
       }
     }
     if (mode === 'ocr') {
+      const savedLang = this.sourceLangSelect ? this.sourceLangSelect.value : (localStorage.getItem('livesub_sourcelang') || 'vi-VN');
       if (this.btnModeSub) this.btnModeSub.classList.add('active');
       if (this.btnModeAudio) this.btnModeAudio.classList.remove('active');
       if (this.lblSourceLang) this.lblSourceLang.textContent = 'Ngôn Ngữ Phụ Đề:';
       if (this.sourceLangSelect) {
         this.sourceLangSelect.innerHTML = `
-          <option value="vi-VN" selected>🇻🇳 Tiếng Việt (Không dịch)</option>
+          <option value="vi-VN">🇻🇳 Tiếng Việt (Không dịch)</option>
           <option value="en-US">🇬🇧 Tiếng Anh (Dịch sang Việt)</option>
           <option value="ja-JP">🇯🇵 Tiếng Nhật (Dịch sang Việt)</option>
           <option value="zh-CN">🇨🇳 Tiếng Trung (Dịch sang Việt)</option>
           <option value="ko-KR">🇰🇷 Tiếng Hàn (Dịch sang Việt)</option>
           <option value="auto">🌐 Tự động nhận diện</option>
         `;
+        this.sourceLangSelect.value = savedLang || 'vi-VN';
       }
       if (!this.isListening) {
         if (this.btnSystemAudioText) this.btnSystemAudioText.textContent = 'BẮT ĐẦU ĐỌC & LỒNG TIẾNG SUB';
@@ -975,18 +977,20 @@ class LiveDubStudio {
         this.oneTouchDetectionPill.innerHTML = '📷 Đang đọc sub OCR (~150ms)';
       }
     } else {
+      const savedLang = this.sourceLangSelect ? this.sourceLangSelect.value : (localStorage.getItem('livesub_sourcelang') || 'auto');
       if (this.btnModeSub) this.btnModeSub.classList.remove('active');
       if (this.btnModeAudio) this.btnModeAudio.classList.add('active');
       if (this.lblSourceLang) this.lblSourceLang.textContent = 'Tiếng Nói Nhân Vật:';
       if (this.sourceLangSelect) {
         this.sourceLangSelect.innerHTML = `
-          <option value="auto" selected>🌐 Tự động (Whisper GPU)</option>
+          <option value="auto">🌐 Tự động (Whisper GPU)</option>
           <option value="ja-JP">🇯🇵 Tiếng Nhật (Anime)</option>
           <option value="en-US">🇬🇧 Tiếng Anh</option>
           <option value="zh-CN">🇨🇳 Tiếng Trung</option>
           <option value="ko-KR">🇰🇷 Tiếng Hàn</option>
           <option value="vi-VN">🇻🇳 Tiếng Việt</option>
         `;
+        this.sourceLangSelect.value = savedLang || 'auto';
       }
       if (!this.isListening) {
         if (this.btnSystemAudioText) this.btnSystemAudioText.textContent = 'BẮT ĐẦU NGHE & LỒNG TIẾNG (WHISPER)';
@@ -1319,11 +1323,86 @@ class LiveDubStudio {
     await this.ocrVideo.play();
     this.ocrCanvas = document.createElement('canvas');
 
+    // Universal Motion & Video State Detector (32x18 thumbnail):
+    // Accurately detects pause, resume, and seek/scrub across any video player and website
+    this.motionCanvas = document.createElement('canvas');
+    this.motionCanvas.width = 32;
+    this.motionCanvas.height = 18;
+    this.motionCtx = this.motionCanvas.getContext('2d', { willReadFrequently: true });
+    this.lastFrameThumb = null;
+    this.staticFrameCount = 0;
+    this.isExternalVideoPaused = false;
+    this.isSeekPreempt = false;
+
     const scan = async () => {
       if (!this.isListening || !this.isOCRModeActive || this.ocrRequestActive || !this.ocrVideo) return;
       const width = this.ocrVideo.videoWidth;
       const height = this.ocrVideo.videoHeight;
       if (!width || !height) return;
+
+      // Analyze motion across consecutive frames
+      let avgDiff = 5.0;
+      if (this.motionCtx) {
+        this.motionCtx.drawImage(this.ocrVideo, 0, 0, 32, 18);
+        const currentThumb = this.motionCtx.getImageData(0, 0, 32, 18).data;
+        if (this.lastFrameThumb) {
+          let totalDiff = 0;
+          for (let i = 0; i < currentThumb.length; i += 4) {
+            totalDiff += Math.abs(currentThumb[i] - this.lastFrameThumb[i])
+              + Math.abs(currentThumb[i + 1] - this.lastFrameThumb[i + 1])
+              + Math.abs(currentThumb[i + 2] - this.lastFrameThumb[i + 2]);
+          }
+          avgDiff = totalDiff / (32 * 18 * 3);
+        }
+        this.lastFrameThumb = currentThumb;
+      }
+
+      // 1. SEEK / SCRUBBING DETECTION:
+      // Abrupt full-screen cut (avgDiff >= 36.0): Scrubbing detected!
+      // Instantly cut off old dialogue and purge queues so new scene speaks without lag
+      if (avgDiff >= 36.0) {
+        this.isSeekPreempt = true;
+        this.stopDubbingAudio(true, true);
+        this.liveDubbingQueue = [];
+        this.speechQueue = [];
+        this.recentOCRHistory = [];
+        this.lastOCRText = '';
+        this.playbackGeneration++;
+        this.dubbingGeneration++;
+        if (this.oneTouchDetectionPill) {
+          this.oneTouchDetectionPill.innerHTML = '⏩ <strong>Đã tua video:</strong> Chuyển ngay câu thoại mới';
+        }
+      }
+
+      // 2. VIDEO PAUSE / FREEZE DETECTION:
+      // When user pauses video in third-party player, frames become static (avgDiff < 0.6)
+      if (avgDiff < 0.6) {
+        this.staticFrameCount = (this.staticFrameCount || 0) + 1;
+        if (this.staticFrameCount >= 4) {
+          if (!this.isExternalVideoPaused) {
+            this.isExternalVideoPaused = true;
+            this.stopDubbingAudio(false, true);
+            this.liveDubbingQueue = [];
+            this.speechQueue = [];
+            if (this.oneTouchDetectionPill) {
+              this.oneTouchDetectionPill.innerHTML = '⏸️ <strong>Video tạm dừng:</strong> Đã ngắt âm thanh lồng tiếng';
+            }
+          }
+          return; // Skip OCR scan while video is paused
+        }
+      } else {
+        if (this.isExternalVideoPaused && avgDiff >= 2.0) {
+          // Video resumed playback
+          this.isExternalVideoPaused = false;
+          this.staticFrameCount = 0;
+          this.lastOCRText = '';
+          if (this.oneTouchDetectionPill) {
+            this.oneTouchDetectionPill.innerHTML = '▶️ <strong>Đang phát video:</strong> Tiếp tục lồng tiếng';
+          }
+        } else {
+          this.staticFrameCount = 0;
+        }
+      }
 
       // Capture the lower dialogue subtitle band across full video width.
       // Benchmarks on the target RTX 3050 machine found 960 px to be the best speed/accuracy
@@ -1365,7 +1444,7 @@ class LiveDubStudio {
 
       this.ocrRequestActive = true;
       try {
-        const blob = await new Promise(resolve => this.ocrCanvas.toBlob(resolve, 'image/jpeg', 0.78));
+        const blob = await new Promise(resolve => this.ocrCanvas.toBlob(resolve, 'image/jpeg', 0.90));
         if (!blob) return;
         const form = new FormData();
         form.append('image', blob, 'subtitle-frame.jpg');
@@ -1577,6 +1656,7 @@ class LiveDubStudio {
           this.liveDubbingQueue = [];
           this.speechQueue = [];
           this.playbackGeneration++;
+          this.isSeekPreempt = false;
         }
       }
     }
@@ -1609,6 +1689,14 @@ class LiveDubStudio {
     this.ocrVideo = null;
     this.ocrCanvas = null;
     this.lastOCRText = '';
+    if (this.motionCtx) {
+      this.motionCtx = null;
+      this.motionCanvas = null;
+      this.lastFrameThumb = null;
+    }
+    this.staticFrameCount = 0;
+    this.isExternalVideoPaused = false;
+    this.isSeekPreempt = false;
   }
 
   buildYouTubeSubtitleRequest(url) {
@@ -2875,13 +2963,13 @@ class LiveDubStudio {
         }
       };
 
-      const setSafetyTimeout = (extraSec = 1.5) => {
+      const setSafetyTimeout = (extraSec = 3.5) => {
         if (safetyTimeout) clearTimeout(safetyTimeout);
         const curTime = this.audioContext ? this.audioContext.currentTime : 0;
-        const durSec = (nextStart > curTime ? nextStart - curTime : 0.8) + extraSec;
+        const durSec = (nextStart > curTime ? nextStart - curTime : 1.2) + extraSec;
         safetyTimeout = setTimeout(() => {
           finishIfDone(true);
-        }, Math.max(1000, durSec * 1000));
+        }, Math.max(1500, durSec * 1000));
       };
 
       const scheduleSlice = (sliceBytes) => {
@@ -2987,7 +3075,7 @@ class LiveDubStudio {
         }
       }
       readingDone = true;
-      setSafetyTimeout(1.5);
+      setSafetyTimeout(3.5);
       finishIfDone();
       if (waitForEnd) await ended;
     } catch (error) {

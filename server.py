@@ -719,14 +719,23 @@ COMMON_VI_OCR_REPAIRS = [
     (r'\bso\s*còn\b', 'Số còn'),
     (r'\bsó\s*con\b', 'Số còn'),
     (r'\bso\s*con\b', 'Số còn'),
+    (r'\b[Ss][oóòó]\s*c[oòòó]n\b', 'Số còn'),
+    (r'\b[Ss]\s+c[oòòó]n\b', 'Số còn'),
     (r'\b[iIl]+[aá][iI]\s*toi\b', 'lại tôi'),
     (r'\biai\s*toi\b', 'lại tôi'),
     (r'\biai\b(?=\s+tôi|\s+toi)', 'lại'),
     (r'\blai\s*toi\b', 'lại tôi'),
     (r'\blại\s*toi\b', 'lại tôi'),
+    (r'\blai\s*t[oôôi]i\b', 'lại tôi'),
+    (r'\blai\s*ti\b', 'lại tôi'),
+    (r'\bti\s+kh[oô]ng\b', 'tôi không'),
     (r'\bkhong\s*lay\b', 'không lấy'),
     (r'\bkhong\s*tay\b', 'không lấy'),
     (r'\bkhông\s*tay\b', 'không lấy'),
+    (r'\bkh[oô]ng\s+(?:ly|láy|tay)\b', 'không lấy'),
+    (r'\bch[oó]n\s+(?:m[oộ]t\s+)?th[iị]\s+tr[aâ]n\b', 'chọn một thị trấn'),
+    (r'\bt[oôôi]i\s+h[aá]n\b', 'Tôi bán'),
+    (r'\btôi\s+hán\b', 'Tôi bán'),
     (r'\bkhong\b', 'không'),
     (r'\blay\b', 'lấy'),
     (r'\btoi\b', 'tôi'),
@@ -1203,7 +1212,8 @@ async def api_ocr_subtitle(
         raw_text = re.sub(r'[\u4e00-\u9fff\u3040-\u30ff]+', ' ', raw_text)
         raw_text = re.sub(r'[²³]', '', raw_text)
 
-    repaired = repair_vietnamese_ocr(raw_text)
+    is_vi_source = (source_lang or "auto").split("-")[0].lower() in ("vi", "auto")
+    repaired = repair_vietnamese_ocr(raw_text) if is_vi_source else raw_text
     original = clean_speech_text(repaired)
     if (
         not original

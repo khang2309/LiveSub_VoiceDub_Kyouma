@@ -67,25 +67,45 @@ class SubtitleOCR:
                 params = {
                     "Global.log_level": "error",
                     "Global.use_cls": False,
-                    "Global.text_score": 0.50,
+                    "Global.text_score": 0.40,
                     "Det.model_type": ModelType.TINY,
                     "Rec.model_type": ModelType.SMALL,
                     "Rec.lang_type": rec_lang,
+                    "Det.unclip_ratio": 2.0,
+                    "Det.thresh": 0.18,
+                    "Det.box_thresh": 0.35,
                     "Det.limit_type": "max",
-                    "Det.limit_side_len": 800,
-                    "EngineConfig.onnxruntime.intra_op_num_threads": 4,
+                    "Det.limit_side_len": 960,
+                    "EngineConfig.onnxruntime.intra_op_num_threads": 6,
                     "EngineConfig.onnxruntime.inter_op_num_threads": 1,
                 }
                 self._engines[family] = RapidOCR(params=params)
                 self._locks[family] = threading.Lock()
         return self._engines[family], self._locks[family]
 
+    @staticmethod
+    def _preprocess_subtitle_image(array: np.ndarray) -> np.ndarray:
+        """Enhance subtitle contrast against complex anime/movie backgrounds."""
+        if array is None or array.size == 0:
+            return array
+        try:
+            import cv2
+            lab = cv2.cvtColor(array, cv2.COLOR_RGB2LAB)
+            l_channel, a_channel, b_channel = cv2.split(lab)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            l_enhanced = clahe.apply(l_channel)
+            merged = cv2.merge((l_enhanced, a_channel, b_channel))
+            return cv2.cvtColor(merged, cv2.COLOR_LAB2RGB)
+        except Exception:
+            return array
+
     def recognize(self, image_bytes: bytes, language: str = "auto") -> dict:
         started = time.perf_counter()
         try:
             engine, lock = self._get_engine(language)
             image = Image.open(__import__("io").BytesIO(image_bytes)).convert("RGB")
-            array = np.asarray(image)
+            raw_array = np.asarray(image)
+            array = self._preprocess_subtitle_image(raw_array)
             acquired = lock.acquire(timeout=0.60)
             if not acquired:
                 return {
@@ -97,7 +117,7 @@ class SubtitleOCR:
                     "congested": True,
                 }
             try:
-                result = engine(array, use_cls=False, text_score=0.50)
+                result = engine(array, use_cls=False, text_score=0.40)
             finally:
                 lock.release()
             texts = list(result.txts if result.txts is not None else ())

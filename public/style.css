@@ -1766,16 +1766,16 @@ html, body {
   overflow: hidden;
 }
 
-@media (max-width: 650px) {
-  /* On compact screens, hide the redundant duplicate header PiP button
+@media (max-width: 768px) {
+  /* On compact/split-screen screens, hide the redundant duplicate header PiP button
      since Cinema View panel right below already has Ghim PiP */
   .app-header #btnFloatingWindow {
     display: none;
   }
 }
 
-@media (max-width: 480px) {
-  /* On very narrow screens, hide speaker test in header to prevent overlap */
+@media (max-width: 560px) {
+  /* On narrow screens, hide speaker test in header to prevent overlap */
   .app-header #btnTestSpeaker {
     display: none;
   }
@@ -1785,13 +1785,17 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 .app-header .brand h1 {
-  font-size: 1.05rem;
+  font-size: 1rem;
   margin: 0;
   line-height: 1;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .app-header .brand p.subtitle {

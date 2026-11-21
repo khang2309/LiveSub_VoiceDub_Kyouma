@@ -850,6 +850,70 @@ test('handleOCRSubtitle suppresses trailing fragments and isolated noise', () =>
   assert.equal(queuedCount, 0);
 });
 
+test('video pause detector stops audio and clears dubbing queue on static frames', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.isListening = true;
+  app.isOCRModeActive = true;
+  app.liveDubbingQueue = [{ text: 'Queued item 1' }];
+  app.speechQueue = [{ text: 'Queued item 2' }];
+  let stoppedAudio = false;
+  app.stopDubbingAudio = () => { stoppedAudio = true; };
+  app.staticFrameCount = 3;
+  app.isExternalVideoPaused = false;
+
+  const avgDiff = 0.2;
+  if (avgDiff < 0.6) {
+    app.staticFrameCount = (app.staticFrameCount || 0) + 1;
+    if (app.staticFrameCount >= 4) {
+      if (!app.isExternalVideoPaused) {
+        app.isExternalVideoPaused = true;
+        app.stopDubbingAudio(false, true);
+        app.liveDubbingQueue = [];
+        app.speechQueue = [];
+      }
+    }
+  }
+
+  assert.equal(app.isExternalVideoPaused, true);
+  assert.equal(stoppedAudio, true);
+  assert.equal(app.liveDubbingQueue.length, 0);
+  assert.equal(app.speechQueue.length, 0);
+});
+
+test('video seek detector preempts audio and invalidates old generation on abrupt scene jump', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.isListening = true;
+  app.isOCRModeActive = true;
+  app.liveDubbingQueue = [{ text: 'Old scene dialogue' }];
+  app.speechQueue = [{ text: 'Old speech' }];
+  app.recentOCRHistory = [{ text: 'Old text', time: 1000 }];
+  app.lastOCRText = 'Old text';
+  app.playbackGeneration = 1;
+  app.dubbingGeneration = 1;
+  let stoppedAudio = false;
+  app.stopDubbingAudio = () => { stoppedAudio = true; };
+
+  const avgDiff = 45.0;
+  if (avgDiff >= 36.0) {
+    app.isSeekPreempt = true;
+    app.stopDubbingAudio(true, true);
+    app.liveDubbingQueue = [];
+    app.speechQueue = [];
+    app.recentOCRHistory = [];
+    app.lastOCRText = '';
+    app.playbackGeneration++;
+    app.dubbingGeneration++;
+  }
+
+  assert.equal(app.isSeekPreempt, true);
+  assert.equal(stoppedAudio, true);
+  assert.equal(app.liveDubbingQueue.length, 0);
+  assert.equal(app.recentOCRHistory.length, 0);
+  assert.equal(app.lastOCRText, '');
+  assert.equal(app.playbackGeneration, 2);
+  assert.equal(app.dubbingGeneration, 2);
+});
+
 
 
 
