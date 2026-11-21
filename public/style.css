@@ -1752,9 +1752,8 @@ html, body {
 
 .app-header {
   padding: 6px 12px;
-  min-height: 38px;
-  max-height: 38px;
-  height: 38px;
+  min-height: 40px;
+  height: auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1763,21 +1762,21 @@ html, body {
   border-radius: 8px;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
-  overflow: hidden;
+  gap: 8px;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 800px) {
   /* On compact/split-screen screens, hide the redundant duplicate header PiP button
      since Cinema View panel right below already has Ghim PiP */
   .app-header #btnFloatingWindow {
-    display: none;
+    display: none !important;
   }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 580px) {
   /* On narrow screens, hide speaker test in header to prevent overlap */
   .app-header #btnTestSpeaker {
-    display: none;
+    display: none !important;
   }
 }
 
@@ -1787,6 +1786,13 @@ html, body {
   gap: 8px;
   min-width: 0;
   flex-shrink: 1;
+}
+
+.app-header .brand-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  flex-shrink: 0;
 }
 
 .app-header .brand h1 {

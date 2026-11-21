@@ -421,6 +421,34 @@ class TranslationTests(unittest.TestCase):
             repair_vietnamese_ocr("Só còn lai ti không ly."),
             "Số còn lại tôi không lấy."
         )
+        self.assertEqual(
+            repair_vietnamese_ocr("Tôi không bit chuyn gì đang xy ra."),
+            "Tôi không biết chuyện gì đang xảy ra."
+        )
+        self.assertEqual(
+            repair_vietnamese_ocr("Mau chy đi, nguy him lm!"),
+            "Mau chạy đi, nguy hiểm lắm!"
+        )
+        self.assertEqual(
+            repair_vietnamese_ocr("Chúng ta phi làm sao bây gi?"),
+            "Chúng ta phải làm sao bây giờ?"
+        )
+        self.assertEqual(
+            repair_vietnamese_ocr("Đó là s tht sao?"),
+            "Đó là sự thật sao?"
+        )
+        self.assertEqual(
+            repair_vietnamese_ocr("Cu y đã đi rồi."),
+            "cậu ấy đã đi rồi."
+        )
+        self.assertEqual(
+            repair_vietnamese_ocr("Ngưòi đó là ai vy?"),
+            "người đó là ai vậy?"
+        )
+        self.assertEqual(
+            repair_vietnamese_ocr("Không th nào như th đưc!"),
+            "không thể nào như thế được!"
+        )
 
     def test_is_garbage_ocr_rejects_mixed_noise_tokens(self):
         from server import is_garbage_ocr

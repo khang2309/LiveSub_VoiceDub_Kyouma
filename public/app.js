@@ -1405,25 +1405,31 @@ class LiveDubStudio {
         }
       }
 
-      // Capture the lower dialogue subtitle band across full video width.
+      // Capture the dialogue subtitle band across full video width.
       // Benchmarks on the target RTX 3050 machine found 960 px to be the best speed/accuracy
       // point for RapidOCR; larger frames only add CPU latency.
       const isTallPage = (height > width * 0.60);
       const sourceX = 0;
       const sourceWidth = width;
       let sourceY, sourceHeight;
-      if (isTallPage) {
+      if (this.ocrScanZone === 'top') {
+        sourceY = 0;
+        sourceHeight = Math.max(1, Math.floor(height * 0.38));
+      } else if (this.ocrScanZone === 'full') {
+        sourceY = 0;
+        sourceHeight = height;
+      } else if (isTallPage) {
         // Shared browser webpage tab (e.g. YouTube, Anime sites in split-screen):
-        // Scanning 56% to 92% of the viewport covers subtitles across all webpage layouts:
+        // Scanning 48% to 96% of the viewport covers subtitles across all webpage layouts:
         // - YouTube in browser window (where sub is at ~55-65%)
         // - Anime websites (AnimeHay, Vuighe...) where player is in the middle (sub at ~75-88%)
         // - 50/50 split-screen side-by-side mode
-        sourceY = Math.floor(height * 0.56);
-        sourceHeight = Math.max(1, Math.floor(height * 0.36));
+        sourceY = Math.floor(height * 0.48);
+        sourceHeight = Math.max(1, Math.floor(height * 0.48));
       } else {
-        // Shared fullscreen video / 16:9 window: focus strictly on lower dialogue band
-        sourceY = Math.floor(height * 0.70);
-        sourceHeight = Math.max(1, Math.floor(height * 0.24));
+        // Shared fullscreen video / 16:9 window: focus on lower dialogue band & 21:9 letterbox
+        sourceY = Math.floor(height * 0.62);
+        sourceHeight = Math.max(1, Math.floor(height * 0.34));
       }
       const scale = Math.min(1, 960 / width);
       this.ocrCanvas.width = Math.max(1, Math.round(sourceWidth * scale));
@@ -3051,11 +3057,10 @@ class LiveDubStudio {
             }
           }
 
-          const isNormalSubtitle = Boolean(text && text.length < 130);
+          // True low-latency streaming: Start playback immediately upon receiving the initial pre-buffer
+          // (~250ms of audio = 24000 bytes) instead of blocking for the entire 2.5s sentence generation!
           const threshold = started ? MIN_SLICE_BYTES : INITIAL_PREBUFFER_BYTES;
-          const shouldSchedule = isNormalSubtitle
-            ? ((done && pendingBytesLen > 0) || pendingBytesLen >= 192000)
-            : (pendingBytesLen >= threshold || (done && pendingBytesLen > 0));
+          const shouldSchedule = (pendingBytesLen >= threshold || (done && pendingBytesLen > 0));
           if (shouldSchedule) {
             let sliceBytes;
             if (pendingChunks.length === 1) {

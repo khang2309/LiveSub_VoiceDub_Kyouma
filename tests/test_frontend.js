@@ -785,14 +785,14 @@ test('hasSeenHardSubtitles locks anime mode to OCR and drops any stray VAD speec
   assert.equal(sentPhrase, false);
 });
 
-test('split screen and tall window crop covers subtitle band from 56% to 92%', () => {
+test('split screen and tall window crop covers subtitle band from 48% to 96%', () => {
   const width = 960;
   const height = 950;
   const isTallPage = (height > width * 0.60);
   assert.equal(isTallPage, true);
 
-  const sourceY = Math.floor(height * 0.56);
-  const sourceHeight = Math.max(1, Math.floor(height * 0.36));
+  const sourceY = Math.floor(height * 0.48);
+  const sourceHeight = Math.max(1, Math.floor(height * 0.48));
   const cropEnd = sourceY + sourceHeight;
 
   // Real anime subtitle in user split-screen screenshot was at Y=750 to 870
