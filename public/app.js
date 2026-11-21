@@ -46,7 +46,7 @@ class LiveDubStudio {
     this.isHybridModeActive = false;
     // Local VieNeu is the safe zero-cost default. The server benchmarks all
     // warmed providers once at startup and this value is refreshed once.
-    this.autoVoiceProvider = 'vieneu:Thái Sơn';
+    this.autoVoiceProvider = 'vieneu:Trúc Ly';
     this.fontSizePx = 26;
     this.floatingWindow = null;
 
@@ -116,8 +116,11 @@ class LiveDubStudio {
   }
 
   getEffectiveVoice() {
-    const selected = this.voiceSelect ? this.voiceSelect.value : 'auto-fast';
-    return selected === 'auto-fast' ? this.autoVoiceProvider : selected;
+    const selected = this.voiceSelect ? this.voiceSelect.value : 'vieneu:Trúc Ly';
+    if (selected === 'auto-fast') {
+      return this.autoVoiceProvider || 'vieneu:Trúc Ly';
+    }
+    return selected || 'vieneu:Trúc Ly';
   }
 
   updateAppliedSettings() {
@@ -1251,28 +1254,10 @@ class LiveDubStudio {
         0, 0, this.ocrCanvas.width, this.ocrCanvas.height
       );
 
-      // Smart Visual Diff: If the subtitle frame hasn't changed, skip network upload!
-      // This eliminates 75%-85% of redundant OCR calls on identical frames, freeing the GPU/CPU for TTS.
-      const cw = this.ocrCanvas.width;
-      const ch = this.ocrCanvas.height;
-      if (cw > 10 && ch > 10 && context.getImageData) {
-        try {
-          const imgData = context.getImageData(0, 0, cw, ch).data;
-          let sampleSum = 0;
-          let count = 0;
-          for (let i = 0; i < imgData.length; i += 32) {
-            sampleSum += imgData[i] + imgData[i + 1] + imgData[i + 2];
-            count++;
-          }
-          const avg = count ? (sampleSum / count) : 0;
-          const now = performance.now();
-          if (this.lastOCRSampleAvg !== undefined && Math.abs(avg - this.lastOCRSampleAvg) < 1.8 && (now - (this.lastOCRSampleTime || 0)) < 2800) {
-            return;
-          }
-          this.lastOCRSampleAvg = avg;
-          this.lastOCRSampleTime = now;
-        } catch (_) {}
-      }
+      // Fast non-blocking frame check: Do not scan if previous request is still in flight,
+      // or if the video has paused / ended.
+      if (this.ocrRequestActive) return;
+      if (this.ocrVideo.paused || this.ocrVideo.ended) return;
 
       this.ocrRequestActive = true;
       try {
@@ -1295,6 +1280,10 @@ class LiveDubStudio {
           this.handleOCRSubtitle(data);
         } else {
           this.ocrConsecutiveEmpty = (this.ocrConsecutiveEmpty || 0) + 1;
+          if (this.ocrConsecutiveEmpty >= 2) {
+            // After 2 empty frames (~480ms), reset lastOCRText so fresh subtitle lines or rewound scenes can speak immediately!
+            this.lastOCRText = '';
+          }
           if (this.ocrConsecutiveEmpty >= 3) {
             if (this.isHybridModeActive && (performance.now() - (this.lastHardSubTime || 0)) > 2500) {
               if (this.hasActiveHardSubtitles) {
@@ -1322,7 +1311,7 @@ class LiveDubStudio {
     };
 
     await scan();
-    this.ocrTimer = setInterval(scan, 280);
+    this.ocrTimer = setInterval(scan, 240);
     this.setSourceIntelligenceState('ocr', 'OCR đang chạy', 'Đang đọc vùng phụ đề trong khung hình; không dùng Whisper khi OCR hoạt động.');
     this.showToast('OCR đã bật. Để chính xác, hãy chia sẻ riêng tab/video thay vì toàn desktop.');
   }
@@ -1395,14 +1384,28 @@ class LiveDubStudio {
 
     const now = performance.now();
     if (!this.recentOCRHistory) this.recentOCRHistory = [];
-    this.recentOCRHistory = this.recentOCRHistory.filter(item => (now - item.time) < 6500);
+    this.recentOCRHistory = this.recentOCRHistory.filter(item => (now - item.time) < 1200);
 
-    // Suppress if duplicate or highly similar to recent detections within 6.5s
+    // Suppress if duplicate or highly similar to recent detections within 1.2s
     if (
       (this.lastOCRText && this.ocrSimilarity(raw, this.lastOCRText) >= 0.72) ||
       this.recentOCRHistory.some(item => this.ocrSimilarity(raw, item.text) >= 0.72)
     ) {
       return;
+    }
+
+    // Instant Preemption on Seek / New Dialogue Line:
+    // If a brand new subtitle arrives, immediately flush older queued lines and stop
+    // stale playback so the newly seeked or transitioned dialogue starts immediately!
+    if (this.isDubbingEnabled) {
+      if (this.lastOCRText && this.ocrSimilarity(raw, this.lastOCRText) < 0.72) {
+        if (typeof this.stopDubbingAudio === 'function') {
+          this.stopDubbingAudio(false, true);
+        }
+        this.liveDubbingQueue = [];
+        this.speechQueue = [];
+        this.playbackGeneration++;
+      }
     }
 
     this.lastOCRText = raw;
@@ -1849,7 +1852,9 @@ class LiveDubStudio {
           this.currentActiveAudioSource = null;
           this.currentGainNode = null;
         }
-        this.dubbingIndicator.classList.remove('active');
+        if (this.dubbingIndicator && this.dubbingIndicator.classList) {
+      this.dubbingIndicator.classList.remove('active');
+    }
         this.releaseYouTubeDubbingHold();
         if (this.ytPlayer && this.ytPlayer.setVolume && this.originalYtVol !== null) {
           setTimeout(() => {
@@ -1864,7 +1869,9 @@ class LiveDubStudio {
       sourceNode.start(0);
     } catch (err) {
       console.warn('Decoded audio playback error:', err);
+      if (this.dubbingIndicator && this.dubbingIndicator.classList) {
       this.dubbingIndicator.classList.remove('active');
+    }
     }
   }
 
@@ -2011,12 +2018,12 @@ class LiveDubStudio {
           getStream: async () => vadStream,
           pauseStream: async () => {},
           resumeStream: async () => vadStream,
-          positiveSpeechThreshold: 0.50,
-          negativeSpeechThreshold: 0.35,
-          // 600 ms redemption preserves full natural sentences without cutting between words
-          redemptionMs: 600,
-          preSpeechPadMs: 200,
-          minSpeechMs: 250,
+          positiveSpeechThreshold: 0.42,
+          negativeSpeechThreshold: 0.30,
+          // 350 ms redemption preserves natural sentences while triggering dubbing with near-zero latency
+          redemptionMs: 350,
+          preSpeechPadMs: 180,
+          minSpeechMs: 200,
           submitUserSpeechOnPause: true,
           onSpeechStart: () => {
             this.captureStartedAt = performance.now();
@@ -2026,10 +2033,10 @@ class LiveDubStudio {
             this.captureStartedAt = 0;
           },
           onFrameProcessed: (probabilities) => {
-            // Only split exceptionally long continuous monologues (> 7.5s) to prevent unbounded buffers
+            // Split continuous monologues (> 4.2s) to prevent unbounded buffers and voiceover lag
             if (this.captureStartedAt && probabilities) {
               const elapsed = performance.now() - this.captureStartedAt;
-              const isCeiling = elapsed > 7500;
+              const isCeiling = elapsed > 4200;
               if (isCeiling && this.neuralVAD && this.neuralVAD.frameProcessor) {
                 this.neuralVAD.frameProcessor.redemptionCounter = this.neuralVAD.frameProcessor.redemptionFrames || 999;
               }
@@ -2420,9 +2427,10 @@ class LiveDubStudio {
     this.isProcessingLiveDubbing = true;
     try {
       while (this.liveDubbingQueue.length > 0) {
-        // Backlog management: Do not drop dialogue unless queue is severely backed up (> 6 items)
-        if (this.liveDubbingQueue.length > 6) {
-          const dropped = this.liveDubbingQueue.splice(0, this.liveDubbingQueue.length - 3);
+        // Backlog management: Drop older intermediate items if queue accumulates > 2 lines
+        // so the system stays synchronized with real-time video without a 2-3 sentence lag!
+        if (this.liveDubbingQueue.length > 2) {
+          const dropped = this.liveDubbingQueue.splice(0, this.liveDubbingQueue.length - 1);
           for (const d of dropped) {
             this.displaySubtitle(d.sourceText, d.text);
           }
@@ -2435,9 +2443,9 @@ class LiveDubStudio {
         );
         if (isStale()) continue;
 
-        // Only evict truly ancient items (e.g. user scrubbed or jumped > 12s ahead in video)
+        // Evict ancient items (> 4s old) when user scrubbed or video advanced rapidly
         const queuedAgeMs = item.enqueuedAt ? (performance.now() - item.enqueuedAt) : 0;
-        if (queuedAgeMs > 12000 && this.liveDubbingQueue.length > 0) {
+        if (queuedAgeMs > 4000 && this.liveDubbingQueue.length > 0) {
           this.displaySubtitle(item.sourceText, item.text);
           continue;
         }
@@ -2544,7 +2552,9 @@ class LiveDubStudio {
       this.currentActiveAudioSource = sourceNode;
       this.currentGainNode = gainNode;
       sourceNode.onended = () => {
-        this.dubbingIndicator.classList.remove('active');
+        if (this.dubbingIndicator && this.dubbingIndicator.classList) {
+      this.dubbingIndicator.classList.remove('active');
+    }
         if (this.currentActiveAudioSource === sourceNode) {
           this.currentActiveAudioSource = null;
           this.currentGainNode = null;
@@ -2810,7 +2820,9 @@ class LiveDubStudio {
       if (typeof startCallbackTimer !== 'undefined' && startCallbackTimer) clearTimeout(startCallbackTimer);
       if (this.streamingAbortController === controller) this.streamingAbortController = null;
       if (waitForEnd) {
-        this.dubbingIndicator.classList.remove('active');
+        if (this.dubbingIndicator && this.dubbingIndicator.classList) {
+      this.dubbingIndicator.classList.remove('active');
+    }
         this.currentGainNode = null;
       }
     }
@@ -2854,7 +2866,9 @@ class LiveDubStudio {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       window.speechSynthesis.cancel();
     }
-    this.dubbingIndicator.classList.remove('active');
+    if (this.dubbingIndicator && this.dubbingIndicator.classList) {
+      this.dubbingIndicator.classList.remove('active');
+    }
     if (restoreOriginalVolume && this.ytPlayer && this.ytPlayer.setVolume && this.originalYtVol !== null) {
       this.ytPlayer.setVolume(this.originalYtVol);
     }

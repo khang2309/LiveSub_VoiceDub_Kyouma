@@ -705,5 +705,28 @@ test('openFloatingOverlay prioritizes documentPictureInPicture when available', 
   }
 });
 
+test('handleOCRSubtitle instantly preempts queue and stale audio when seek/dialogue changes', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.lastOCRText = 'Scene 1 line';
+  app.recentOCRHistory = [];
+  app.isDubbingEnabled = true;
+  app.liveDubbingQueue = [{ text: 'Old line 1' }, { text: 'Old line 2' }];
+  app.speechQueue = [{ id: 's1' }];
+  let stoppedAudio = false;
+  app.stopDubbingAudio = () => { stoppedAudio = true; };
+  app.addHistory = () => ({ id: 'ocr-seek' });
+  let queued = 0;
+  app.enqueueLiveDubbing = () => { queued++; };
+
+  // User seeks or scene changes to a completely different subtitle
+  app.handleOCRSubtitle({ original: 'Scene 99 new dialogue after seek', translated: 'Cảnh 99 mới sau khi tua' });
+
+  assert.equal(stoppedAudio, true);
+  assert.equal(app.liveDubbingQueue.length, 0);
+  assert.equal(app.speechQueue.length, 0);
+  assert.equal(queued, 1);
+  assert.equal(app.lastOCRText, 'Scene 99 new dialogue after seek');
+});
+
 
 

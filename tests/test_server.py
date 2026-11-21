@@ -356,6 +356,13 @@ class TranslationTests(unittest.TestCase):
         self.assertEqual(len(selected), 1)
         self.assertEqual(selected[0][0], "You can't hide forever, Jeff.")
 
+    def test_english_loanword_phonetics(self):
+        from server import clean_speech_text
+        self.assertEqual(clean_speech_text("Anh ấy là một HERO"), "Anh ấy là một hi-rô")
+        self.assertEqual(clean_speech_text("Tôi đang chơi GAME này"), "Tôi đang chơi gêm này")
+        self.assertEqual(clean_speech_text("Con BOSS cấp độ 100"), "Con bót cấp độ 100")
+        self.assertEqual(clean_speech_text("OK tôi hiểu rồi"), "ô kê tôi hiểu rồi")
+
 
 if __name__ == '__main__':
     unittest.main()

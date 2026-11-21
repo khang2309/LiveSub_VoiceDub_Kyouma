@@ -90,6 +90,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def add_no_cache_headers(request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.endswith((".html", ".js", ".css", ".json")):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
 # Custom Middleware to disable browser caching completely
 class NoCacheMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
@@ -539,6 +550,39 @@ def clean_speech_text(text: str) -> str:
     cleaned = re.sub(r'\$(\s*)([\d,.]+)', r'\2 dollars', cleaned)
     cleaned = re.sub(r'([\d,.]+)(\s*)₫', r'\1 đồng', cleaned)
 
+    # Vietnamese loanwords and acronyms phonetics for natural VieNeu speech
+    loanword_map = [
+        (r'(?i)\bhero\b', 'hi-rô'),
+        (r'(?i)\bboss\b', 'bót'),
+        (r'(?i)\bgame\b', 'gêm'),
+        (r'(?i)\bgamer\b', 'gê-mơ'),
+        (r'(?i)\blevel\b', 'le-vơn'),
+        (r'(?i)\bvideo\b', 'vi-đê-ô'),
+        (r'(?i)\bok\b', 'ô kê'),
+        (r'(?i)\bo\.k\.?\b', 'ô kê'),
+        (r'(?i)\bteam\b', 'tim'),
+        (r'(?i)\bplayer\b', 'plây-ơ'),
+        (r'(?i)\bkill\b', 'kiu'),
+        (r'(?i)\bkiller\b', 'kin-lơ'),
+        (r'(?i)\bskill\b', 'skiu'),
+        (r'(?i)\bstream\b', 'xì-trim'),
+        (r'(?i)\bstreamer\b', 'xì-tri-mơ'),
+        (r'(?i)\blive\b', 'lai'),
+        (r'(?i)\blivestream\b', 'lai-xì-trim'),
+        (r'(?i)\byoutube\b', 'Du-túp'),
+        (r'(?i)\bfacebook\b', 'Phây-bút'),
+        (r'(?i)\btiktok\b', 'Tóp-tóp'),
+        (r'(?i)\bnpc\b', 'en-pi-xi'),
+        (r'(?i)\bgta\s*6\b', 'G-T-A 6'),
+        (r'(?i)\bgta\s*vi\b', 'G-T-A 6'),
+        (r'(?i)\bgta\b', 'G-T-A'),
+        (r'(?i)\bfbi\b', 'ép-bi-ai'),
+        (r'(?i)\bvip\b', 'víp'),
+        (r'(?i)\bai\b', 'ây-ai'),
+    ]
+    for pattern, replacement in loanword_map:
+        cleaned = re.sub(pattern, replacement, cleaned)
+
     return re.sub(r'\s+', ' ', cleaned).strip()
 
 def fast_translate_to_vi(
@@ -603,7 +647,7 @@ async def synthesize_edge_tts(text: str, voice: str) -> bytes:
 
 _network_tts_state = {
     "status": "idle",
-    "selected": "google-vi",
+    "selected": "vieneu:Trúc Ly",
     "google_ms": None,
     "edge_ms": None,
     "vieneu_ttfa_ms": None,
@@ -622,16 +666,11 @@ def select_auto_tts_provider():
     local_ttfa = _network_tts_state.get("vieneu_ttfa_ms")
     local_rtf = _network_tts_state.get("vieneu_rtf")
 
-    # Streaming local speech wins when it can keep generating faster than
-    # playback. TTFA is the relevant latency because audio starts immediately.
-    if local_ttfa is not None and local_rtf is not None and local_rtf < 0.95:
-        network_complete = min(
-            [value for value in (google_ms, edge_ms) if value is not None],
-            default=float("inf"),
-        )
-        if local_ttfa <= network_complete + 100:
-            _network_tts_state["selected"] = "vieneu:Thái Sơn"
-            return
+    # VieNeu-TTS running locally on CUDA RTX 3050 is the hard primary voice.
+    # It delivers natural Vietnamese neural intonation without cloud latency or quota limits.
+    if local_ttfa is not None or local_rtf is not None:
+        _network_tts_state["selected"] = "vieneu:Trúc Ly"
+        return
 
     candidates = []
     if google_ms is not None:
@@ -639,12 +678,10 @@ def select_auto_tts_provider():
     if edge_ms is not None:
         candidates.append((edge_ms, "vi-VN-HoaiMyNeural"))
     if not candidates:
+        _network_tts_state["selected"] = "vieneu:Trúc Ly"
         return
     fastest_ms, fastest_name = min(candidates)
-    if edge_ms is not None and (google_ms is None or edge_ms <= google_ms + 300):
-        _network_tts_state["selected"] = "vi-VN-HoaiMyNeural"
-    else:
-        _network_tts_state["selected"] = fastest_name
+    _network_tts_state["selected"] = fastest_name
 
 
 async def warm_and_benchmark_network_tts():
@@ -756,7 +793,7 @@ async def generate_tts_bytes(text: str, voice: str = "vieneu:Trúc Ly") -> tuple
     auto_requested = voice == "auto-fast"
     auto_started = time.perf_counter() if auto_requested else None
     if auto_requested:
-        voice = _network_tts_state.get("selected") or "google-vi"
+        voice = _network_tts_state.get("selected") or "vieneu:Trúc Ly"
 
     # Voice Option 0: VieNeu-TTS (pnnbao97/VieNeu-TTS)
     if voice.startswith("vieneu:") or voice == "vieneu":
@@ -1098,7 +1135,7 @@ async def api_transcribe(
     audio: UploadFile = File(...),
     source_lang: Optional[str] = Form("auto"),
     dubbing: Optional[bool] = Form(True),
-    voice: Optional[str] = Form("google-vi"),
+    voice: Optional[str] = Form("vieneu:Trúc Ly"),
     previous_context: Optional[str] = Form("")
 ):
     request_started = time.perf_counter()
@@ -1126,15 +1163,10 @@ async def api_transcribe(
             temperature=0.0,
             condition_on_previous_text=False,
             without_timestamps=True,
-            vad_filter=True,
-            vad_parameters=dict(
-                min_silence_duration_ms=160,
-                threshold=0.25,
-                speech_pad_ms=80
-            ),
+            vad_filter=False,
             repetition_penalty=1.20,
             no_repeat_ngram_size=2,
-            compression_ratio_threshold=2.4,
+            compression_ratio_threshold=2.8,
             no_speech_threshold=0.60
         )
 
