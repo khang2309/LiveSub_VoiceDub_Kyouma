@@ -41,3 +41,6 @@ server.stdout.log
 server.stderr.log
 server_runtime.stdout.log
 server_runtime.stderr.log
+
+.chrome_remote/
+*.log
