@@ -588,6 +588,52 @@ def clean_speech_text(text: str) -> str:
 COMMON_VI_OCR_REPAIRS = [
     # Strip stray Japanese/Chinese kanji and kana from Vietnamese subs
     (r'[\u4e00-\u9fff\u3040-\u30ff]+', ' '),
+    # High-priority phrase and multi-word repairs for RapidOCR collapsed glyphs & dropped vowels
+    (r'\bMt\s+trong\s+nhng\b', 'Một trong những'),
+    (r'\bmt\s+trong\s+nhng\b', 'một trong những'),
+    (r'\bMt\s+(?=trong|người|ngư[ờo]i|chút|lát|cách|phần|ngày|mình|minh|câu|lần|thứ|cái|con|nơi|năm|tháng|việc|vic|lúc|ai)\b', 'Một '),
+    (r'\bmt\s+(?=trong|người|ngư[ờo]i|chút|lát|cách|phần|ngày|mình|minh|câu|lần|thứ|cái|con|nơi|năm|tháng|việc|vic|lúc|ai)\b', 'một '),
+    (r'\b[Nn]hng\b', lambda m: 'Những' if m.group(0)[0].isupper() else 'những'),
+    (r'\b(tài|tai|dữ|du|nguyên|nguyen|nhiên|nhien)\s+liu\b', r'\1 liệu'),
+    (r'\bliu\b(?=\s+này|\s+đó|\s+trên|\s+tham)', 'liệu'),
+    (r'\bminh\s+ho\b', 'minh hoạ'),
+    (r'\b(bào|bao|pha|hạn|han)\s+ch\b', r'\1 chế'),
+    (r'\bch\s+biến\b', 'chế biến'),
+    (r'\bthu[oôó]c\s+trung\s+sinh\b', 'thuốc trường sinh'),
+    (r'\btrung\s+sinh\b', 'trường sinh'),
+    (r'\bNhung\b', 'Nhưng'),
+    (r'(^|[\.,!\?;]\s*)nhung\b', r'\1nhưng'),
+    (r'\bnhung\s+(?=họ|ho|tôi|toi|ta|anh|chị|chi|em|cậu|cu|người|ngư[ờo]i|điều|đó|do)', 'nhưng '),
+    (r'\bbo\s+se\b', 'bảo sẽ'),
+    (r'\bbảo\s+se\b', 'bảo sẽ'),
+    (r'\bbo\s+sẽ\b', 'bảo sẽ'),
+    (r'\bmi\s+quyn\b', 'mấy quyển'),
+    (r'\bmấy\s+quyn\b', 'mấy quyển'),
+    (r'\bquyn\b', 'quyển'),
+    (r'\bđ\s+lồi\b', 'đổ lỗi'),
+    (r'\bđổ\s+lồi\b', 'đổ lỗi'),
+    (r'\blồi\b(?=\s+cho|\s+về|\s+lầm|\s+của)', 'lỗi'),
+    (r'\bHoàng\s+đ\s+đang\b', 'Hoàng đế đang'),
+    (r'\bHoàng\s+đê\s+đang\b', 'Hoàng đế đang'),
+    (r'\bHoàng\s+đ\b', 'Hoàng đế'),
+    (r'\bcai\s+tri\b', 'cai trị'),
+    (r'\bđ[âa]?t\s+n[uư]c\b', 'đất nước'),
+    (r'\bđất\s+n[uư]c\b', 'đất nước'),
+    (r'\bn[uư]c\b(?=[\.,!\?]|$|\s+này|\s+ngoài|\s+ta|\s+mình)', 'nước'),
+    (r'\bCh[ảăa]ng\s+ph[ảa]i\b', 'Chẳng phải'),
+    (r'\bch[ảăa]ng\s+ph[ảa]i\b', 'chẳng phải'),
+    (r'\bvic\s+của\s+minh\b', 'việc của mình'),
+    (r'\bvic\s+của\b', 'việc của'),
+    (r'\bvic\b', 'việc'),
+    (r'\bcủa\s+minh\b', 'của mình'),
+    (r'\bminh\b(?=[\.,!\?]|$)', 'mình'),
+    (r'\b(sót|sot|quay|còn|con|trở|tro|mang|giữ|giu|lấy|lay|đứng|dung|ở|o|nhìn|nhin|gặp|gap|nhớ|nho|nghĩ|nghi)\s+lai\b', r'\1 lại'),
+    (r'\blai\s+(sau|đây|gần|nữa|thôi)\b', r'lại \1'),
+    (r'\b(?:ho|Ho)\s+(có|bán|bảo|sẽ|không|lại|đã|đang|được)\b', lambda m: ('Họ ' if m.group(0)[0].isupper() else 'họ ') + m.group(1)),
+    (r'\bsē\b', 'sẽ'),
+    (r'\bSē\b', 'Sẽ'),
+    (r'\bse\b(?=\s+(?:đổ|quay|đến|làm|đi|có|không|được|thấy|nói|biết|bảo|trở|cho|mang))', 'sẽ'),
+    (r'\bSe\b(?=\s+(?:đổ|quay|đến|làm|đi|có|không|được|thấy|nói|biết|bảo|trở|cho|mang))', 'Sẽ'),
     # Common OCR syllable errors on hard subs
     (r'\bThuò\s*l\s*p\s*quô\b', 'Thuở lập quốc'),
     (r'\bl\s*p\s*quô\b', 'lập quốc'),
@@ -692,11 +738,11 @@ COMMON_VI_OCR_REPAIRS = [
     (r'\bThôi\s*k[eé]\b', 'Thôi kệ'),
     (r'\bThi\s*k[eě]\b', 'Thôi kệ'),
     (r'\bcàl[aā]c\b', 'cả Lão'),
-    (r'\bcáL[aā]o\s*hàbà\b', 'cả Lão bà bà'),
-    (r'\bcáL[aā]o\b', 'cả Lão'),
-    (r'\bL[aā]o\s*bàbà\b', 'Lão bà bà'),
-    (r'\bL[aā]o\s*hàbà\b', 'Lão bà bà'),
-    (r'\bL[aā]o\b', 'Lão'),
+    (r'\bcáL[aāà]o\s*hàbà\b', 'cả Lão bà bà'),
+    (r'\bcáL[aāà]o\b', 'cả Lão'),
+    (r'\bL[aāà]o\s*bàbà\b', 'Lão bà bà'),
+    (r'\bL[aāà]o\s*hàbà\b', 'Lão bà bà'),
+    (r'\bL[aāà]o\b', 'Lão'),
     (r'\bhàbà\b', 'bà bà'),
     (r'\bbàbà\b', 'bà bà'),
     (r'\bcébiát\b', 'có biết'),
@@ -837,11 +883,28 @@ def is_garbage_ocr(text: str) -> bool:
         return True
     return False
 
+EURO_PRE_SUBS = [
+    ('å', 'ả'), ('Å', 'Ả'),
+    ('ů', 'ủ'), ('Ů', 'Ủ'),
+    ('ð', 'ờ'), ('Ð', 'Ờ'),
+    ('ē', 'ẽ'), ('Ē', 'Ẽ'),
+    ('ō', 'o'), ('Ō', 'O'),
+    ('sē', 'sẽ'), ('Sē', 'Sẽ'),
+    ('Chảng', 'Chẳng'), ('chảng', 'chẳng'),
+    ('nguời', 'người'), ('nguði', 'người'), ('ngưi', 'người'),
+]
+
 def repair_vietnamese_ocr(text: str) -> str:
     cleaned = text
+    # 0. Pre-normalize European diacritic substitutions assigned by RapidOCR
+    for k, v in EURO_PRE_SUBS:
+        cleaned = cleaned.replace(k, v)
     # 1. Apply specific Vietnamese OCR syllable and phrase repairs first
     for pat, rep in COMMON_VI_OCR_REPAIRS:
-        cleaned = re.sub(pat, rep, cleaned, flags=re.IGNORECASE)
+        if callable(rep):
+            cleaned = re.sub(pat, rep, cleaned, flags=re.IGNORECASE)
+        else:
+            cleaned = re.sub(pat, rep, cleaned, flags=re.IGNORECASE)
     # 2. Strip any remaining European accents that corrupt VieNeu phonetic tokenizer
     for k, v in EURO_TO_VI_GLYPHS.items():
         if k in cleaned:
@@ -1043,7 +1106,8 @@ def audio_array_to_wav(audio_arr) -> bytes:
     return buf.getvalue()
 
 async def generate_tts_bytes(text: str, voice: str = "vieneu:Trúc Ly") -> tuple[bytes, str]:
-    cleaned = clean_speech_text(text)
+    repaired = repair_vietnamese_ocr(text)
+    cleaned = clean_speech_text(repaired)
     cleaned = normalize_loanwords_and_phonetics(cleaned)
     if not cleaned or not re.search(r'[a-zA-ZÀ-ỹ]', cleaned):
         return b"", "audio/mpeg"
@@ -1155,7 +1219,8 @@ async def api_dub_subtitle(req: SubtitleDubRequest):
             req.text, req.source_lang or "auto", "vi", req.previous_context or ""
         )
     else:
-        translated = clean_speech_text(req.text)
+        repaired = repair_vietnamese_ocr(req.text)
+        translated = clean_speech_text(repaired)
     if not translated:
         translated = req.text
 
@@ -1293,7 +1358,8 @@ async def api_tts(req: TTSRequest):
 @app.post("/api/tts-stream")
 async def api_tts_stream(req: TTSRequest):
     """Stream VieNeu PCM to the browser instead of waiting for a complete WAV."""
-    cleaned = clean_speech_text(req.text)
+    repaired = repair_vietnamese_ocr(req.text)
+    cleaned = clean_speech_text(repaired)
     cleaned = normalize_loanwords_and_phonetics(cleaned)
     if not cleaned:
         raise HTTPException(status_code=400, detail="Text required")

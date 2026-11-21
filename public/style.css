@@ -1763,6 +1763,7 @@ html, body {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   gap: 8px;
+  overflow: hidden;
 }
 
 @media (max-width: 800px) {
@@ -1773,8 +1774,15 @@ html, body {
   }
 }
 
-@media (max-width: 580px) {
+@media (max-width: 650px) {
   /* On narrow screens, hide speaker test in header to prevent overlap */
+  .app-header #btnTestSpeaker {
+    display: none !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-header #btnFloatingWindow,
   .app-header #btnTestSpeaker {
     display: none !important;
   }

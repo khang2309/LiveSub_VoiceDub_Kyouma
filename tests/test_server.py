@@ -449,6 +449,35 @@ class TranslationTests(unittest.TestCase):
             repair_vietnamese_ocr("Không th nào như th đưc!"),
             "không thể nào như thế được!"
         )
+        # Test 7 sentences from user screenshots (AnimeHay & LiveSub logs)
+        self.assertEqual(
+            repair_vietnamese_ocr("Mt trong nhng tài liu có tranh minh ho còn sót lai cho việc bào ch thuốc trung sinh"),
+            "Một trong những tài liệu có tranh minh hoạ còn sót lại cho việc bào chế thuốc trường sinh"
+        )
+        self.assertEqual(
+            repair_vietnamese_ocr("Nhung ho có bo se quay lai sau"),
+            "Nhưng họ có bảo sẽ quay lại sau"
+        )
+        self.assertEqual(
+            repair_vietnamese_ocr("Không, mi quyn đó thôi"),
+            "Không, mấy quyển đó thôi"
+        )
+        self.assertEqual(
+            repair_vietnamese_ocr("Ho có bán gì khác không ?"),
+            "Họ có bán gì khác không ?"
+        )
+        self.assertEqual(
+            repair_vietnamese_ocr("Rồi nguði ta sē đ lồi cho Hoàng đ đang cai tri đt nuc.."),
+            "Rồi người ta sẽ đổ lỗi cho Hoàng đế đang cai trị đất nước.."
+        )
+        self.assertEqual(
+            repair_vietnamese_ocr("Chång phåi vic cůa minh."),
+            "Chẳng phải việc của mình."
+        )
+        self.assertEqual(
+            repair_vietnamese_ocr("Số còn lại tôi không lấy."),
+            "Số còn lại tôi không lấy."
+        )
 
     def test_is_garbage_ocr_rejects_mixed_noise_tokens(self):
         from server import is_garbage_ocr
