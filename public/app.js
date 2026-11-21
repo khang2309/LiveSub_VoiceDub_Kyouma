@@ -257,6 +257,10 @@ class LiveDubStudio {
     this.systemSubModeRadios = document.querySelectorAll('input[name="systemSubMode"]');
     this.chkAdaptiveSpeed = document.getElementById('chkAdaptiveSpeed');
     this.chkEnableWhisper = document.getElementById('chkEnableWhisper');
+    this.btnModeSub = document.getElementById('btnModeSub');
+    this.btnModeAudio = document.getElementById('btnModeAudio');
+    this.lblSourceLang = document.getElementById('lblSourceLang');
+    this.currentSystemMode = 'ocr';
 
     // Source 2: Local Video File
     this.localVideoDropZone = document.getElementById('localVideoDropZone');
@@ -472,6 +476,10 @@ class LiveDubStudio {
     });
 
     // 2. Source 1: System / Tab Audio
+    if (this.btnModeSub && this.btnModeAudio) {
+      this.btnModeSub.addEventListener('click', () => this.setSystemMode('ocr'));
+      this.btnModeAudio.addEventListener('click', () => this.setSystemMode('whisper'));
+    }
     if (this.btnToggleSystemAudio) {
       this.btnToggleSystemAudio.addEventListener('click', () => this.toggleSystemAudio());
     }
@@ -924,6 +932,54 @@ class LiveDubStudio {
   }
 
   // --- SOURCE 1: SYSTEM AUDIO ---
+  setSystemMode(mode) {
+    this.currentSystemMode = mode;
+    if (this.chkEnableWhisper) {
+      this.chkEnableWhisper.checked = (mode === 'whisper');
+    }
+    if (mode === 'ocr') {
+      if (this.btnModeSub) this.btnModeSub.classList.add('active');
+      if (this.btnModeAudio) this.btnModeAudio.classList.remove('active');
+      if (this.lblSourceLang) this.lblSourceLang.textContent = 'Ngôn Ngữ Phụ Đề:';
+      if (this.sourceLangSelect) {
+        this.sourceLangSelect.innerHTML = `
+          <option value="vi-VN" selected>🇻🇳 Tiếng Việt (Có sẵn sub - Không dịch)</option>
+          <option value="en-US">🇬🇧 Tiếng Anh (Dịch sang Việt)</option>
+          <option value="ja-JP">🇯🇵 Tiếng Nhật (Dịch sang Việt)</option>
+          <option value="zh-CN">🇨🇳 Tiếng Trung (Dịch sang Việt)</option>
+          <option value="ko-KR">🇰🇷 Tiếng Hàn (Dịch sang Việt)</option>
+          <option value="auto">🌐 Tự động nhận diện</option>
+        `;
+      }
+      if (!this.isListening) {
+        if (this.btnSystemAudioText) this.btnSystemAudioText.textContent = 'BẮT ĐẦU ĐỌC & LỒNG TIẾNG SUB';
+      }
+      if (this.oneTouchDetectionPill) {
+        this.oneTouchDetectionPill.innerHTML = '📷 <strong>Chế độ đọc chữ OCR:</strong> Quét phụ đề trên video ~150ms (Tắt Whisper)';
+      }
+    } else {
+      if (this.btnModeSub) this.btnModeSub.classList.remove('active');
+      if (this.btnModeAudio) this.btnModeAudio.classList.add('active');
+      if (this.lblSourceLang) this.lblSourceLang.textContent = 'Tiếng Nói Nhân Vật:';
+      if (this.sourceLangSelect) {
+        this.sourceLangSelect.innerHTML = `
+          <option value="auto" selected>🌐 Tự động nhận diện (Whisper GPU)</option>
+          <option value="en-US">🇬🇧 Tiếng Anh (Dịch sang Việt)</option>
+          <option value="ja-JP">🇯🇵 Tiếng Nhật (Dịch sang Việt)</option>
+          <option value="zh-CN">🇨🇳 Tiếng Trung (Dịch sang Việt)</option>
+          <option value="ko-KR">🇰🇷 Tiếng Hàn (Dịch sang Việt)</option>
+          <option value="vi-VN">🇻🇳 Tiếng Việt (Nhắc lại giọng Việt)</option>
+        `;
+      }
+      if (!this.isListening) {
+        if (this.btnSystemAudioText) this.btnSystemAudioText.textContent = 'BẮT ĐẦU NGHE & LỒNG TIẾNG (WHISPER)';
+      }
+      if (this.oneTouchDetectionPill) {
+        this.oneTouchDetectionPill.innerHTML = '🎙️ <strong>Chế độ nghe tiếng Whisper:</strong> Nhận diện âm thanh video trực tiếp (Tắt đọc sub)';
+      }
+    }
+  }
+
   async toggleSystemAudio() {
     if (this.isListening && this.activeSource === 'system') {
       this.stopListening();
@@ -981,15 +1037,21 @@ class LiveDubStudio {
       });
 
       this.showToast('🎬 Đã kết nối video! Hãy phát phim để tự động lồng tiếng.');
-      const enableWhisper = this.chkEnableWhisper ? this.chkEnableWhisper.checked : false;
-      if (hasAudio && enableWhisper) {
-        await this.setupVADAndRecording(this.mediaStream);
-      }
+      const isWhisperMode = (this.currentSystemMode === 'whisper') || (this.getRadioGroupValue(this.systemCaptureMode, 'hard_sub') === 'audio_only');
+      this.isOCRModeActive = !isWhisperMode;
+      this.isHybridModeActive = false;
       this.updateMasterDubUI();
-      // Always start OCR for video subtitles (fastest & most accurate for Vietsub)
-      await this.startHardSubtitleOCR(this.mediaStream);
-      if (hasAudio && enableWhisper) {
-        await this.runInitialSubtitleProbe(this.mediaStream);
+
+      if (isWhisperMode) {
+        this.showToast('🎙️ Chế độ Whisper GPU: Đang nghe tiếng nói từ video...');
+        if (hasAudio) {
+          await this.setupVADAndRecording(this.mediaStream);
+        } else {
+          this.showToast('⚠️ Hãy nhớ tích "Chia sẻ âm thanh / Share audio" khi chọn tab video để Whisper nghe được tiếng!');
+        }
+      } else {
+        this.showToast('📷 Chế độ đọc chữ (OCR): Đang quét phụ đề trên video...');
+        await this.startHardSubtitleOCR(this.mediaStream);
       }
     } catch (err) {
       if (err.name !== 'NotAllowedError') {
@@ -2999,6 +3061,11 @@ class LiveDubStudio {
     this.btnSystemAudioText.textContent = 'BẮT ĐẦU XEM & DỊCH TỰ ĐỘNG (1 CHẠM)';
     this.btnToggleSystemAudio.classList.remove('btn-danger');
     this.btnToggleSystemAudio.classList.add('btn-primary');
+    if (this.btnSystemAudioText) {
+      this.btnSystemAudioText.textContent = (this.currentSystemMode === 'whisper')
+        ? 'BẮT ĐẦU NGHE & LỒNG TIẾNG (WHISPER)'
+        : 'BẮT ĐẦU ĐỌC & LỒNG TIẾNG SUB';
+    }
     this.updateMasterDubUI();
 
     this.btnMicText.textContent = 'Bật Microphone';

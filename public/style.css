@@ -1853,3 +1853,43 @@ select:focus-visible {
 
 
 
+
+/* MODE SWITCHER PILL TABS */
+.mode-toggle-group {
+  display: inline-flex;
+  background: var(--bg-card-hover, #241a17);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 4px;
+}
+
+.btn-mode {
+  padding: 7px 13px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-mode:hover {
+  color: var(--color-text, #fff);
+}
+
+.btn-mode.active {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  box-shadow: 0 2px 8px var(--color-shadow);
+}
+
+.control-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
