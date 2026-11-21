@@ -943,19 +943,19 @@ class LiveDubStudio {
       if (this.lblSourceLang) this.lblSourceLang.textContent = 'Ngôn Ngữ Phụ Đề:';
       if (this.sourceLangSelect) {
         this.sourceLangSelect.innerHTML = `
-          <option value="vi-VN" selected>🇻🇳 Tiếng Việt (Có sẵn sub - Không dịch)</option>
-          <option value="en-US">🇬🇧 Tiếng Anh (Dịch sang Việt)</option>
-          <option value="ja-JP">🇯🇵 Tiếng Nhật (Dịch sang Việt)</option>
-          <option value="zh-CN">🇨🇳 Tiếng Trung (Dịch sang Việt)</option>
-          <option value="ko-KR">🇰🇷 Tiếng Hàn (Dịch sang Việt)</option>
-          <option value="auto">🌐 Tự động nhận diện</option>
+          <option value="vi-VN" selected>🇻🇳 Tiếng Việt (Không dịch)</option>
+          <option value="en-US">🇬🇧 Tiếng Anh</option>
+          <option value="ja-JP">🇯🇵 Tiếng Nhật</option>
+          <option value="zh-CN">🇨🇳 Tiếng Trung</option>
+          <option value="ko-KR">🇰🇷 Tiếng Hàn</option>
+          <option value="auto">🌐 Tự động</option>
         `;
       }
       if (!this.isListening) {
         if (this.btnSystemAudioText) this.btnSystemAudioText.textContent = 'BẮT ĐẦU ĐỌC & LỒNG TIẾNG SUB';
       }
       if (this.oneTouchDetectionPill) {
-        this.oneTouchDetectionPill.innerHTML = '📷 <strong>Chế độ đọc chữ OCR:</strong> Quét phụ đề trên video ~150ms (Tắt Whisper)';
+        this.oneTouchDetectionPill.innerHTML = '📷 Đang đọc sub OCR (~150ms)';
       }
     } else {
       if (this.btnModeSub) this.btnModeSub.classList.remove('active');
@@ -963,19 +963,19 @@ class LiveDubStudio {
       if (this.lblSourceLang) this.lblSourceLang.textContent = 'Tiếng Nói Nhân Vật:';
       if (this.sourceLangSelect) {
         this.sourceLangSelect.innerHTML = `
-          <option value="auto" selected>🌐 Tự động nhận diện (Whisper GPU)</option>
-          <option value="en-US">🇬🇧 Tiếng Anh (Dịch sang Việt)</option>
-          <option value="ja-JP">🇯🇵 Tiếng Nhật (Dịch sang Việt)</option>
-          <option value="zh-CN">🇨🇳 Tiếng Trung (Dịch sang Việt)</option>
-          <option value="ko-KR">🇰🇷 Tiếng Hàn (Dịch sang Việt)</option>
-          <option value="vi-VN">🇻🇳 Tiếng Việt (Nhắc lại giọng Việt)</option>
+          <option value="auto" selected>🌐 Tự động (Whisper GPU)</option>
+          <option value="en-US">🇬🇧 Tiếng Anh</option>
+          <option value="ja-JP">🇯🇵 Tiếng Nhật</option>
+          <option value="zh-CN">🇨🇳 Tiếng Trung</option>
+          <option value="ko-KR">🇰🇷 Tiếng Hàn</option>
+          <option value="vi-VN">🇻🇳 Tiếng Việt</option>
         `;
       }
       if (!this.isListening) {
         if (this.btnSystemAudioText) this.btnSystemAudioText.textContent = 'BẮT ĐẦU NGHE & LỒNG TIẾNG (WHISPER)';
       }
       if (this.oneTouchDetectionPill) {
-        this.oneTouchDetectionPill.innerHTML = '🎙️ <strong>Chế độ nghe tiếng Whisper:</strong> Nhận diện âm thanh video trực tiếp (Tắt đọc sub)';
+        this.oneTouchDetectionPill.innerHTML = '🎙️ Đang nghe Whisper GPU (~0.3s)';
       }
     }
   }

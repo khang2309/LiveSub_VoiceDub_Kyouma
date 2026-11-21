@@ -51,7 +51,7 @@ body {
   background: var(--bg-primary);
   color: var(--text-main);
   font-family: var(--font-sans);
-  min-height: 100vh;
+  min-height: 100%;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   overflow-x: clip;
@@ -64,7 +64,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
-  min-height: 100vh;
+  min-height: 100%;
 }
 
 /* Studio Floating Toast */
@@ -1716,38 +1716,54 @@ select:focus-visible {
 }
 
 
+
+
 /* ==========================================================================
-   PERFECT STREAMLINED DESKTOP STUDIO UI (Zero-overflow, 100vh Application Frame)
+   FLUID & BULLETPROOF RESPONSIVE DESKTOP STUDIO UI
+   Handles all scale levels (100%, 125%, 150%, 175%) and split-screen smoothly.
    ========================================================================== */
 
 html, body {
-  height: 100%;
-  overflow: hidden !important;
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
 }
 
 .app-container {
-  height: 100vh;
-  max-height: 100vh;
-  overflow: hidden;
-  padding: 8px 14px;
-  gap: 8px;
+  min-height: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 10px 14px 20px;
+  gap: 10px;
   display: flex;
   flex-direction: column;
-  max-width: 100% !important;
   box-sizing: border-box;
 }
 
 .app-header {
-  padding: 6px 14px;
-  min-height: 42px;
+  padding: 8px 14px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
   flex-shrink: 0;
   border-radius: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
 }
 
 .app-header .brand {
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 
@@ -1755,16 +1771,14 @@ html, body {
   font-size: 1.15rem;
   margin: 0;
   line-height: 1.2;
-}
-
-.app-header .brand p.subtitle {
-  display: none; /* Hide verbose subtitle to keep header compact */
+  white-space: nowrap;
 }
 
 .app-header .header-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 /* Quick Control Bar */
@@ -1781,23 +1795,23 @@ html, body {
 }
 
 .control-row-top {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(220px, 1.2fr) minmax(180px, 1fr) minmax(180px, 1fr);
+  gap: 10px;
+  align-items: end;
+}
+
+@media (max-width: 780px) {
+  .control-row-top {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
 }
 
 .control-cell {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  flex: 1;
-  min-width: 180px;
-}
-
-.control-cell.mode-cell {
-  flex: 1.2;
-  min-width: 260px;
+  min-width: 0;
 }
 
 .control-label {
@@ -1806,29 +1820,33 @@ html, body {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .form-control-compact {
   padding: 6px 10px;
   font-size: 0.88rem;
-  height: 36px;
+  height: 38px;
   border-radius: 8px;
+  width: 100%;
 }
 
 .mode-toggle-group {
-  display: inline-flex;
+  display: flex;
   background: var(--bg-card-hover, #241a17);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 2px;
   gap: 2px;
-  height: 36px;
-  box-sizing: border-box;
+  height: 38px;
+  width: 100%;
 }
 
 .btn-mode {
   flex: 1;
-  padding: 0 10px;
+  padding: 0 6px;
   font-size: 0.82rem;
   font-weight: 600;
   border-radius: 6px;
@@ -1841,7 +1859,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .btn-mode:hover {
@@ -1858,7 +1876,8 @@ html, body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding-top: 4px;
+  flex-wrap: wrap;
+  padding-top: 6px;
   border-top: 1px solid var(--border-color);
 }
 
@@ -1867,8 +1886,8 @@ html, body {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 9px 20px;
-  font-size: 0.95rem;
+  padding: 0 20px;
+  font-size: 0.92rem;
   font-weight: 700;
   border-radius: 8px;
   background: var(--color-accent);
@@ -1878,10 +1897,10 @@ html, body {
   transition: all 0.2s ease;
   white-space: nowrap;
   height: 38px;
+  flex-shrink: 0;
 }
 
 .btn-hero-action:hover {
-  transform: translateY(-1px);
   filter: brightness(1.08);
 }
 
@@ -1895,39 +1914,39 @@ html, body {
   padding: 0 14px;
   font-size: 0.88rem;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .one-touch-status-pill {
-  flex: 1;
+  flex: 1 1 180px;
+  min-width: 160px;
   font-size: 0.82rem;
   color: var(--text-muted);
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  padding: 8px 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  padding: 0 12px;
   display: flex;
   align-items: center;
   gap: 6px;
   height: 38px;
-  box-sizing: border-box;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Main Content Workspace */
 .main-content-streamlined {
   display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
-  gap: 10px;
+  grid-template-columns: minmax(320px, 1.18fr) minmax(260px, 0.82fr);
+  gap: 12px;
   flex: 1;
-  min-height: 0; /* Crucial for internal scroll */
+  min-height: 460px;
 }
 
-@media (max-width: 820px) {
+@media (max-width: 720px) {
   .main-content-streamlined {
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1939,14 +1958,16 @@ html, body {
   border-radius: 12px;
   padding: 10px 12px;
   box-shadow: 0 4px 16px var(--color-shadow);
-  min-height: 0; /* Crucial: never overflow window height */
-  overflow: hidden;
+  height: 100%;
+  min-height: 440px;
 }
 
 .cinema-panel-header, .history-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 6px;
+  flex-wrap: wrap;
   margin-bottom: 8px;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--border-color);
@@ -1959,9 +1980,16 @@ html, body {
   white-space: nowrap;
 }
 
+.header-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 .cinema-screen {
   flex: 1;
-  min-height: 0;
+  min-height: 360px;
   background: #000;
   border-radius: 8px;
   display: flex;
@@ -1971,28 +1999,28 @@ html, body {
   padding: 20px;
   text-align: center;
   position: relative;
-  overflow: hidden;
 }
 
 .sub-display-vi {
-  font-size: 1.5rem;
+  font-size: 1.55rem;
   font-weight: 700;
   color: #fff;
   text-shadow: 0 2px 8px rgba(0,0,0,0.9), 0 0 6px #000;
   line-height: 1.35;
-  max-width: 90%;
+  max-width: 95%;
   word-break: break-word;
 }
 
 .sub-display-original {
-  font-size: 1rem;
+  font-size: 0.95rem;
   color: #aaa;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .history-list {
   flex: 1;
-  min-height: 0;
+  min-height: 360px;
+  max-height: 560px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -2000,7 +2028,6 @@ html, body {
   padding-right: 4px;
 }
 
-/* Custom clean scrollbar */
 .history-list::-webkit-scrollbar {
   width: 6px;
 }
@@ -2009,12 +2036,12 @@ html, body {
   border-radius: 3px;
 }
 
-/* Ensure mobile/split-screen headers do not collapse into column */
-@media (max-width: 900px) {
-  .app-header {
-    flex-direction: row !important;
+/* Responsive Split-Screen & Zoom Scaling */
+@media (max-width: 760px) {
+  .control-row-top {
+    grid-template-columns: 1fr 1fr !important;
   }
-  .app-header .header-actions {
-    flex-direction: row !important;
+  .control-row-top .control-cell:first-child {
+    grid-column: 1 / -1 !important;
   }
 }

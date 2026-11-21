@@ -9,7 +9,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23e89486'/%3E%3Cpath d='M32 13a8 8 0 0 0-8 8v17a8 8 0 0 0 16 0V21a8 8 0 0 0-8-8Zm-16 22v3a16 16 0 0 0 32 0v-3h-5v3a11 11 0 0 1-22 0v-3Z' fill='%23170f0b'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css?v=20261121_desktop_ui_05">
+  <link rel="stylesheet" href="style.css?v=20261121_perfect_v7">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Roboto+Condensed:ital,wght@0,600;0,700;0,800;0,900;1,700&family=Oswald:wght@600;700&family=Young+Serif&display=swap" rel="stylesheet">
@@ -37,7 +37,7 @@
           <span class="status-dot"></span>
           <span id="statusText">Sẵn sàng</span>
         </div>
-        <button id="btnTestSpeaker" class="btn btn-secondary btn-sm" title="Kiểm tra hệ thống âm thanh loa">
+        <button id="btnTestSpeaker" class="btn btn-secondary btn-sm" title="Kiểm tra âm thanh loa">
           Thử loa
         </button>
         <button id="btnFloatingWindow" class="btn btn-primary btn-sm" title="Ghim thanh phụ đề nổi Always-on-Top">
@@ -54,14 +54,14 @@
     <div class="quick-control-bar">
       <!-- Hàng 1: Cấu hình chế độ, ngôn ngữ, giọng đọc -->
       <div class="control-row-top">
-        <div class="control-cell mode-cell">
+        <div class="control-cell">
           <span class="control-label">Chế độ video:</span>
           <div class="mode-toggle-group">
             <button type="button" id="btnModeSub" class="btn-mode active" title="Dành cho Anime, Phim có phụ đề chữ in trên video">
-              📷 Có phụ đề (Đọc chữ OCR)
+              📷 Có Sub (OCR)
             </button>
             <button type="button" id="btnModeAudio" class="btn-mode" title="Dành cho video không có sub: YouTube, Livestream">
-              🎙️ Không có sub (Whisper)
+              🎙️ Không Sub (Whisper)
             </button>
           </div>
         </div>
@@ -69,23 +69,23 @@
         <div class="control-cell">
           <label for="sourceLang" id="lblSourceLang" class="control-label">Ngôn Ngữ Phụ Đề:</label>
           <select id="sourceLang" class="form-control form-control-compact">
-            <option value="vi-VN" selected>🇻🇳 Tiếng Việt (Có sẵn sub - Không dịch)</option>
-            <option value="en-US">🇬🇧 Tiếng Anh (Dịch sang Việt)</option>
-            <option value="ja-JP">🇯🇵 Tiếng Nhật (Dịch sang Việt)</option>
-            <option value="zh-CN">🇨🇳 Tiếng Trung (Dịch sang Việt)</option>
-            <option value="ko-KR">🇰🇷 Tiếng Hàn (Dịch sang Việt)</option>
+            <option value="vi-VN" selected>🇻🇳 Tiếng Việt (Không dịch)</option>
+            <option value="en-US">🇬🇧 Tiếng Anh</option>
+            <option value="ja-JP">🇯🇵 Tiếng Nhật</option>
+            <option value="zh-CN">🇨🇳 Tiếng Trung</option>
+            <option value="ko-KR">🇰🇷 Tiếng Hàn</option>
             <option value="auto">🌐 Tự động nhận diện</option>
           </select>
         </div>
 
         <div class="control-cell">
-          <label for="voiceSelect" class="control-label">Giọng Lồng Tiếng (VieNeu AI):</label>
+          <label for="voiceSelect" class="control-label">Giọng Lồng Tiếng:</label>
           <select id="voiceSelect" class="form-control form-control-compact select-highlight">
-            <option value="vieneu:Trúc Ly" selected>🎙️ Trúc Ly (Nữ, Bắc - Tự nhiên)</option>
-            <option value="vieneu:Thái Sơn">🎙️ Thái Sơn (Nam, Nam - Kể chuyện)</option>
-            <option value="vieneu:Thiện Minh">🎙️ Thiện Minh (Nam, Bắc - Phim)</option>
-            <option value="vieneu:Thùy Dung">🎙️ Thùy Dung (Nữ, Nam - Truyền cảm)</option>
-            <option value="google-vi">⚡ Google Voice Tiếng Việt (~0.3s)</option>
+            <option value="vieneu:Trúc Ly" selected>🎙️ Trúc Ly (Nữ - Bắc)</option>
+            <option value="vieneu:Thái Sơn">🎙️ Thái Sơn (Nam - Nam)</option>
+            <option value="vieneu:Thiện Minh">🎙️ Thiện Minh (Nam - Bắc)</option>
+            <option value="vieneu:Thùy Dung">🎙️ Thùy Dung (Nữ - Nam)</option>
+            <option value="google-vi">⚡ Google Voice (~0.3s)</option>
           </select>
         </div>
       </div>
@@ -104,18 +104,18 @@
         </button>
 
         <div id="oneTouchDetectionPill" class="one-touch-status-pill">
-          📷 <strong>Chế độ đọc chữ OCR:</strong> Quét phụ đề trên video ~150ms (Tắt Whisper)
+          📷 Đang đọc sub OCR (~150ms)
         </div>
       </div>
     </div>
 
-    <!-- MAIN WORKSPACE: 2 CỘT CÂN ĐỐI VỪA 1 MÀN HÌNH -->
+    <!-- MAIN WORKSPACE: 2 CỘT CÂN ĐỐI LẤP ĐẦY KHÔNG GIAN -->
     <main class="main-content-streamlined">
       <!-- Cột Trái: Màn Hình Phụ Đề Realtime (Cinema View) -->
       <section class="cinema-panel">
         <div class="cinema-panel-header">
           <span class="panel-title-text">🎬 Phụ Đề Cinema View</span>
-          <div style="display: flex; align-items: center; gap: 6px;">
+          <div class="header-btn-group">
             <button id="btnCinemaPiP" class="btn btn-primary btn-sm" title="Ghim phụ đề nổi Always-on-Top">
               📌 Ghim PiP
             </button>
@@ -145,7 +145,7 @@
       <section class="history-panel">
         <div class="history-panel-header">
           <span class="panel-title-text">📜 Lịch Sử Thoại (<span id="historyCount">0</span>)</span>
-          <div style="display: flex; align-items: center; gap: 6px;">
+          <div class="header-btn-group">
             <button id="btnExportSRT" class="btn btn-sm btn-secondary" title="Xuất file phụ đề chuẩn .SRT">.SRT</button>
             <button id="btnExportTXT" class="btn btn-sm btn-secondary" title="Xuất kịch bản text .TXT">.TXT</button>
             <button id="btnClearHistory" class="btn btn-sm btn-danger" title="Xóa toàn bộ lịch sử">Xóa</button>
@@ -268,6 +268,6 @@
 
   <script src="/vendor/ort/ort.min.js?v=1.31.1"></script>
   <script src="/vendor/vad/bundle.min.js?v=0.0.31"></script>
-  <script src="app.js?v=20261121_desktop_ui_v5"></script>
+  <script src="app.js?v=20261121_perfect_v7"></script>
 </body>
 </html>
