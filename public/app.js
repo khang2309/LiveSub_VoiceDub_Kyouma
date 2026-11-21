@@ -1438,6 +1438,9 @@ class LiveDubStudio {
     if (!text || typeof text !== 'string') return true;
     const trimmed = text.trim();
     if (trimmed.length < 2) return true;
+    // Reject noise tokens with mixed letters and digits (e.g. AA82n, Ta02, 2a, a2)
+    const rawTokens = trimmed.match(/\S+/g) || [];
+    if (rawTokens.some(w => /[a-zA-Z]+[0-9]+|[0-9]+[a-zA-Z]+/.test(w))) return true;
     const letters = trimmed.match(/[a-zA-Zà-ỹÀ-Ỹ]/g);
     if (!letters || letters.length < 3) return true;
     const vowels = trimmed.match(/[aeiouyàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵAEIOUYÀ-Ỹ]/g);
@@ -1518,8 +1521,7 @@ class LiveDubStudio {
     if (this.isDubbingEnabled) {
       if (this.lastOCRText && this.ocrSimilarity(raw, this.lastOCRText) < 0.72) {
         const isCurrentlySpeaking = Boolean(this.currentActiveAudioSource);
-        const elapsedSinceDubStart = this.lastDubbingStartedAt ? (performance.now() - this.lastDubbingStartedAt) : 9999;
-        if (!isCurrentlySpeaking || elapsedSinceDubStart > 4000 || this.isSeekPreempt) {
+        if (!isCurrentlySpeaking || this.isSeekPreempt) {
           if (typeof this.stopDubbingAudio === 'function') {
             this.stopDubbingAudio(false, true);
           }
@@ -2549,9 +2551,9 @@ class LiveDubStudio {
     this.isProcessingLiveDubbing = true;
     try {
       while (this.liveDubbingQueue.length > 0) {
-        // Backlog management: Drop older intermediate items if queue accumulates > 2 lines
+        // Backlog management: Drop older intermediate items if queue accumulates > 4 lines
         // so the system stays synchronized with real-time video without a 2-3 sentence lag!
-        if (this.liveDubbingQueue.length > 2) {
+        if (this.liveDubbingQueue.length > 4) {
           const dropped = this.liveDubbingQueue.splice(0, this.liveDubbingQueue.length - 1);
           for (const d of dropped) {
             this.displaySubtitle(d.sourceText, d.text);
@@ -2565,9 +2567,9 @@ class LiveDubStudio {
         );
         if (isStale()) continue;
 
-        // Evict ancient items (> 4s old) when user scrubbed or video advanced rapidly
+        // Evict ancient items (> 6s old) when user scrubbed or video advanced rapidly
         const queuedAgeMs = item.enqueuedAt ? (performance.now() - item.enqueuedAt) : 0;
-        if (queuedAgeMs > 4000 && this.liveDubbingQueue.length > 0) {
+        if (queuedAgeMs > 6000 && this.liveDubbingQueue.length > 0) {
           this.displaySubtitle(item.sourceText, item.text);
           continue;
         }

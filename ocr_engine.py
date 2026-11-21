@@ -26,14 +26,14 @@ class SubtitleOCR:
         "cmn": LangRec.CH,
         "ja": LangRec.JAPAN,
         "jp": LangRec.JAPAN,
-        "vi": LangRec.LATIN,
-        "latin": LangRec.LATIN,
+        "vi": "vi",
+        "latin": "vi",
         "es": LangRec.LATIN,
         "fr": LangRec.LATIN,
         "de": LangRec.LATIN,
         "th": LangRec.TH,
         "thai": LangRec.TH,
-        "auto": LangRec.EN,
+        "auto": "vi",
     }
 
     def __init__(self):
@@ -49,24 +49,30 @@ class SubtitleOCR:
         value = (language or "auto").lower().replace("_", "-")
         return value.split("-", 1)[0]
 
-    def _family(self, language: str) -> LangRec:
-        return self._LANG_MAP.get(self.normalize_language(language), LangRec.CH)
+    def _family(self, language: str):
+        norm = self.normalize_language(language)
+        if norm in ("vi", "vietnamese", "auto"):
+            return "vi"
+        return self._LANG_MAP.get(norm, "vi")
 
     def _get_engine(self, language: str) -> tuple[RapidOCR, threading.Lock]:
         family = self._family(language)
         with self._state_lock:
             if family not in self._engines:
                 self.status = "loading"
+                rec_lang = "vi" if family == "vi" else (
+                    {"latin": "la"}.get(self.normalize_language(language), self.normalize_language(language))
+                    if family == LangRec.LATIN else family
+                )
                 params = {
                     "Global.log_level": "error",
                     "Global.use_cls": False,
-                    "Global.text_score": 0.58,
+                    "Global.text_score": 0.50,
                     "Det.model_type": ModelType.TINY,
                     "Rec.model_type": ModelType.TINY,
-                    "Rec.lang_type": (
-                        {"latin": "la"}.get(self.normalize_language(language), self.normalize_language(language))
-                        if family == LangRec.LATIN else family
-                    ),
+                    "Rec.lang_type": rec_lang,
+                    "Det.limit_type": "max",
+                    "Det.limit_side_len": 800,
                     "EngineConfig.onnxruntime.intra_op_num_threads": 4,
                     "EngineConfig.onnxruntime.inter_op_num_threads": 1,
                 }
@@ -80,7 +86,7 @@ class SubtitleOCR:
             engine, lock = self._get_engine(language)
             image = Image.open(__import__("io").BytesIO(image_bytes)).convert("RGB")
             array = np.asarray(image)
-            acquired = lock.acquire(timeout=0.25)
+            acquired = lock.acquire(timeout=0.60)
             if not acquired:
                 return {
                     "text": "",
@@ -91,7 +97,7 @@ class SubtitleOCR:
                     "congested": True,
                 }
             try:
-                result = engine(array, use_cls=False, text_score=0.58)
+                result = engine(array, use_cls=False, text_score=0.50)
             finally:
                 lock.release()
             texts = list(result.txts if result.txts is not None else ())
@@ -199,8 +205,8 @@ class SubtitleOCR:
         if not candidates:
             return []
 
-        max_height = max(item["height"] for item in candidates)
-        candidates = [item for item in candidates if item["height"] >= max_height * 0.55]
+        # Do not aggressively drop candidates by max_height to preserve subtitles when watermarks exist
+        candidates = [item for item in candidates if item["height"] >= 10.0]
         candidates.sort(key=lambda item: item["y"])
 
         groups = []
@@ -223,8 +229,11 @@ class SubtitleOCR:
             avg_height = sum(item["height"] for item in group) / len(group)
             chars = min(80, sum(len(item["text"]) for item in group))
             center_x = sum(item["x"] for item in group) / len(group)
+            center_y = sum(item["y"] for item in group) / len(group)
             center_penalty = abs(center_x - image_width / 2) / image_width * 10
-            return avg_height + chars * 0.28 + min(3, len(group)) * 5 - center_penalty
+            # Dialogue subtitles are located in the lower portion of the frame
+            bottom_bonus = (center_y / image_height) * 15.0
+            return avg_height + chars * 0.28 + min(3, len(group)) * 5 - center_penalty + bottom_bonus
 
         best = max(groups, key=group_score)
         total_words = sum(len(item["text"].split()) for item in best)
@@ -238,10 +247,10 @@ class SubtitleOCR:
         from PIL import ImageDraw
 
         image = Image.new("RGB", (640, 96), "black")
-        ImageDraw.Draw(image).text((20, 30), "Subtitle warmup 123", fill="white")
+        ImageDraw.Draw(image).text((20, 30), "Đúng rồi subtitle warmup 123", fill="white")
         buffer = __import__("io").BytesIO()
         image.save(buffer, format="PNG")
-        self.recognize(buffer.getvalue(), "en")
+        self.recognize(buffer.getvalue(), "vi")
 
     def snapshot(self) -> dict:
         return {

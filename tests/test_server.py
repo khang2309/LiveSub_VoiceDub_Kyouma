@@ -386,9 +386,32 @@ class TranslationTests(unittest.TestCase):
             "Đúng rồi. Sao em biết"
         )
         self.assertEqual(
+            repair_vietnamese_ocr("Dúng ròi. Sao em biét?"),
+            "Đúng rồi. Sao em biết?"
+        )
+        self.assertEqual(
+            repair_vietnamese_ocr("Chácthê nghĩa là"),
+            "Chắc thế nghĩa là"
+        )
+        self.assertEqual(
+            repair_vietnamese_ocr("Chuyên mình ting làm việc à đó"),
+            "Chuyện mình từng làm việc ở đó"
+        )
+        self.assertEqual(
+            repair_vietnamese_ocr("Mua cái kia cho-em!"),
+            "Mua cái kia cho em!"
+        )
+        self.assertEqual(
             repair_vietnamese_ocr("Chi áy không còn sóng dugc láu"),
             "Chị ấy không còn sống được lâu"
         )
+
+    def test_is_garbage_ocr_rejects_mixed_noise_tokens(self):
+        from server import is_garbage_ocr
+        self.assertTrue(is_garbage_ocr("2: AA82n AA 2"))
+        self.assertTrue(is_garbage_ocr("Ta02"))
+        self.assertFalse(is_garbage_ocr("Đúng rồi. Sao em biết?"))
+        self.assertFalse(is_garbage_ocr("Chuyện mình từng làm việc ở đó"))
 
 
 if __name__ == '__main__':

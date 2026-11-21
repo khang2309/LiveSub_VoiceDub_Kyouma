@@ -648,12 +648,15 @@ COMMON_VI_OCR_REPAIRS = [
     (r'\bxuóng\b', 'xuống'),
     (r'\bminh\s*e\b', 'mình e'),
     (r'\bnéu\b', 'nếu'),
+    (r'\b[Dd]úng\s+r[oòô]i\b', 'Đúng rồi'),
     (r'\b[Dd]úng\b', 'Đúng'),
     (r'\b[Dd]ung\b(?=\s+rồi|\s+ròi|\s+rôi|\s+vậy|\s+thế)', 'Đúng'),
     (r'\br[oòô]i\b', 'rồi'),
     (r'\bbi[eéê][rrt]\b', 'biết'),
+    (r'\bbi[eéê][rt][²2]\b', 'biết?'),
     (r'\bbiêtr\b', 'biết'),
     (r'\bbiêt\b', 'biết'),
+    (r'\bbiét\b', 'biết'),
     (r'\bChác\s*Thê\b', 'Chắc thế'),
     (r'\bChác\b', 'Chắc'),
     (r'\bThê\b', 'thế'),
@@ -662,6 +665,7 @@ COMMON_VI_OCR_REPAIRS = [
     (r'\bminh\b(?=\s+từng|\s+ting|\s+e|\s+nếu)', 'mình'),
     (r'\bting\b', 'từng'),
     (r'\bà\s*đó\b', 'ở đó'),
+    (r'(\w+)[-\s]*em\b', r'\1 em'),
     (r'\bTriêu\s*Vu\b', 'Triệu Vũ'),
     (r'\bding\s*c[oó]\b', 'đừng có'),
     (r'\bding\b', 'đừng'),
@@ -683,6 +687,10 @@ def is_garbage_ocr(text: str) -> bool:
     """Detect and reject random OCR texture noise hallucinated during silent frames (e.g. TL2 L2 t 1, naTLn nL)."""
     text = text.strip()
     if not text or len(text) < 2:
+        return True
+    # Reject noise words with mixed letters and numbers (e.g. AA82n, Ta02, 2a, a2)
+    raw_tokens = re.findall(r'\S+', text)
+    if any(re.search(r'[a-zA-Z]+[0-9]+|[0-9]+[a-zA-Z]+', w) for w in raw_tokens):
         return True
     letters = re.findall(r'[a-zA-Zà-ỹÀ-Ỹ]', text)
     if not letters or len(letters) < 3:
@@ -1085,9 +1093,10 @@ async def api_ocr_subtitle(
     if re.search(r'^[\u4e00-\u9fff]{2,4}\s+[\u4e00-\u9fff]{2,4}$', raw_text):
         return {"empty": True, **result}
 
-    # If text contains Latin/Vietnamese letters, strip any background Japanese kanji/kana
+    # If text contains Latin/Vietnamese letters, strip any background Japanese kanji/kana and noise symbols
     if re.search(r'[a-zA-Zà-ỹÀ-Ỹ]', raw_text):
         raw_text = re.sub(r'[\u4e00-\u9fff\u3040-\u30ff]+', ' ', raw_text)
+        raw_text = re.sub(r'[²³]', '', raw_text)
 
     repaired = repair_vietnamese_ocr(raw_text)
     original = clean_speech_text(repaired)
