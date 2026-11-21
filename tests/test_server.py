@@ -478,6 +478,14 @@ class TranslationTests(unittest.TestCase):
             repair_vietnamese_ocr("Số còn lại tôi không lấy."),
             "Số còn lại tôi không lấy."
         )
+        self.assertEqual(
+            repair_vietnamese_ocr("Anh cūng không cn giám sát đâu, Hu Khiu."),
+            "Anh cũng không cần giám sát đâu, Hu Khiu."
+        )
+        self.assertEqual(
+            repair_vietnamese_ocr("Anh đâu th bo em lai."),
+            "Anh đâu thể bỏ em lại."
+        )
 
     def test_is_garbage_ocr_rejects_mixed_noise_tokens(self):
         from server import is_garbage_ocr
