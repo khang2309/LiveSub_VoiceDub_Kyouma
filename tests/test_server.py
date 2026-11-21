@@ -412,6 +412,9 @@ class TranslationTests(unittest.TestCase):
         self.assertTrue(is_garbage_ocr("Ta02"))
         self.assertFalse(is_garbage_ocr("Đúng rồi. Sao em biết?"))
         self.assertFalse(is_garbage_ocr("Chuyện mình từng làm việc ở đó"))
+        self.assertFalse(is_garbage_ocr("どうしたの？"))
+        self.assertFalse(is_garbage_ocr("私が行きます"))
+        self.assertFalse(is_garbage_ocr("你好世界"))
 
 
 if __name__ == '__main__':

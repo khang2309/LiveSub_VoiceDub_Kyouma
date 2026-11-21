@@ -681,6 +681,8 @@ COMMON_VI_OCR_REPAIRS = [
     (r'\bsóng\b(?=\s+được|\s+dugc)', 'sống'),
     (r'\bdugc\b', 'được'),
     (r'\bláu\b', 'lâu'),
+    (r'\bSaoem\b', 'Sao em'),
+    (r'\bCh[aá]cth[eê]\b', 'Chắc thế'),
 ]
 
 def is_garbage_ocr(text: str) -> bool:
@@ -688,6 +690,10 @@ def is_garbage_ocr(text: str) -> bool:
     text = text.strip()
     if not text or len(text) < 2:
         return True
+    # If text contains Japanese / Chinese / Korean glyphs, treat as valid CJK dialogue
+    if re.search(r'[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]', text):
+        cjk_chars = re.findall(r'[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]', text)
+        return len(cjk_chars) < 2
     # Reject noise words with mixed letters and numbers (e.g. AA82n, Ta02, 2a, a2)
     raw_tokens = re.findall(r'\S+', text)
     if any(re.search(r'[a-zA-Z]+[0-9]+|[0-9]+[a-zA-Z]+', w) for w in raw_tokens):
@@ -1303,16 +1309,16 @@ async def api_transcribe(
         segments, info = whisper_model.transcribe(
             tmp_path,
             language=lang_code,
-            beam_size=1,
+            beam_size=2 if whisper_runtime.get("device") == "cuda" else 1,
             best_of=1,
             temperature=0.0,
             condition_on_previous_text=False,
             without_timestamps=True,
             vad_filter=False,
-            repetition_penalty=1.20,
-            no_repeat_ngram_size=2,
+            repetition_penalty=1.05,
+            no_repeat_ngram_size=0,
             compression_ratio_threshold=2.8,
-            no_speech_threshold=0.60
+            no_speech_threshold=0.45
         )
 
         texts = []

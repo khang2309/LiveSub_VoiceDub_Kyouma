@@ -800,6 +800,33 @@ test('split screen and tall window crop covers subtitle band from 56% to 92%', (
   assert.ok(subY >= sourceY && subY <= cropEnd, `Subtitle at ${subY} must be inside [${sourceY}, ${cropEnd}]`);
 });
 
+test('isGarbageOCR correctly preserves Japanese and CJK dialogue', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  assert.equal(app.isGarbageOCR('どうしたの？'), false);
+  assert.equal(app.isGarbageOCR('私が行きます'), false);
+  assert.equal(app.isGarbageOCR('Đúng rồi. Sao em biết?'), false);
+  assert.equal(app.isGarbageOCR('AA82n AA 2'), true);
+  assert.equal(app.isGarbageOCR('Ta02'), true);
+});
+
+test('handleOCRSubtitle protects active TTS stream from interruption', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.lastOCRText = 'First line';
+  app.recentOCRHistory = [];
+  app.isDubbingEnabled = true;
+  app.liveDubbingQueue = [{ text: 'Queued line' }];
+  app.streamingAbortController = { abort: () => {} };
+  let stoppedAudio = false;
+  app.stopDubbingAudio = () => { stoppedAudio = true; };
+  app.addHistory = () => ({ id: 'new-id' });
+  app.enqueueLiveDubbing = () => {};
+
+  app.handleOCRSubtitle({ original: 'Next line in anime', translated: 'Câu tiếp theo' });
+  // Must NOT stop active speaking audio or clear queue
+  assert.equal(stoppedAudio, false);
+  assert.equal(app.liveDubbingQueue.length, 1);
+});
+
 
 
 

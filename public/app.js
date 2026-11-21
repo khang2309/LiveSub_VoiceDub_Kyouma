@@ -646,8 +646,12 @@ class LiveDubStudio {
     }
     if (this.sourceLangSelect) {
       this.sourceLangSelect.addEventListener('change', () => {
-        const name = this.sourceLangSelect.selectedOptions[0].text;
-        localStorage.setItem('livesub_sourcelang', this.sourceLangSelect.value);
+        const val = this.sourceLangSelect.value;
+        const name = this.sourceLangSelect.selectedOptions[0] ? this.sourceLangSelect.selectedOptions[0].text : val;
+        this.detectedOCRLanguage = null;
+        this.autoDetectedSourceLang = null;
+        this.lastOCRText = '';
+        localStorage.setItem('livesub_sourcelang', val);
         this.showToast(` Đã chọn ngôn ngữ gốc: ${name}`);
         this.updateAppliedSettings();
       });
@@ -934,8 +938,21 @@ class LiveDubStudio {
   // --- SOURCE 1: SYSTEM AUDIO ---
   setSystemMode(mode) {
     this.currentSystemMode = mode;
+    this.isOCRModeActive = (mode === 'ocr');
+    this.detectedOCRLanguage = null;
+    this.autoDetectedSourceLang = null;
+    this.lastOCRText = '';
     if (this.chkEnableWhisper) {
       this.chkEnableWhisper.checked = (mode === 'whisper');
+    }
+    if (this.isListening && this.mediaStream) {
+      if (mode === 'ocr') {
+        if (this.neuralVAD) try { this.neuralVAD.pause(); } catch (_) {}
+        this.startHardSubtitleOCR(this.mediaStream);
+      } else {
+        this.stopHardSubtitleOCR();
+        this.setupVADAndRecording(this.mediaStream);
+      }
     }
     if (mode === 'ocr') {
       if (this.btnModeSub) this.btnModeSub.classList.add('active');
@@ -944,11 +961,11 @@ class LiveDubStudio {
       if (this.sourceLangSelect) {
         this.sourceLangSelect.innerHTML = `
           <option value="vi-VN" selected>🇻🇳 Tiếng Việt (Không dịch)</option>
-          <option value="en-US">🇬🇧 Tiếng Anh</option>
-          <option value="ja-JP">🇯🇵 Tiếng Nhật</option>
-          <option value="zh-CN">🇨🇳 Tiếng Trung</option>
-          <option value="ko-KR">🇰🇷 Tiếng Hàn</option>
-          <option value="auto">🌐 Tự động</option>
+          <option value="en-US">🇬🇧 Tiếng Anh (Dịch sang Việt)</option>
+          <option value="ja-JP">🇯🇵 Tiếng Nhật (Dịch sang Việt)</option>
+          <option value="zh-CN">🇨🇳 Tiếng Trung (Dịch sang Việt)</option>
+          <option value="ko-KR">🇰🇷 Tiếng Hàn (Dịch sang Việt)</option>
+          <option value="auto">🌐 Tự động nhận diện</option>
         `;
       }
       if (!this.isListening) {
@@ -964,8 +981,8 @@ class LiveDubStudio {
       if (this.sourceLangSelect) {
         this.sourceLangSelect.innerHTML = `
           <option value="auto" selected>🌐 Tự động (Whisper GPU)</option>
+          <option value="ja-JP">🇯🇵 Tiếng Nhật (Anime)</option>
           <option value="en-US">🇬🇧 Tiếng Anh</option>
-          <option value="ja-JP">🇯🇵 Tiếng Nhật</option>
           <option value="zh-CN">🇨🇳 Tiếng Trung</option>
           <option value="ko-KR">🇰🇷 Tiếng Hàn</option>
           <option value="vi-VN">🇻🇳 Tiếng Việt</option>
@@ -1020,6 +1037,7 @@ class LiveDubStudio {
       }
 
       this.activeSource = 'system';
+      this.isListening = true;
       this.detectedOCRLanguage = null;
       this.hasActiveHardSubtitles = false;
       this.hasSeenHardSubtitles = false;
@@ -1175,9 +1193,9 @@ class LiveDubStudio {
   }
 
   resolveOCRLanguage() {
-    if (this.detectedOCRLanguage) return this.detectedOCRLanguage;
     const selectedSpeech = this.sourceLangSelect ? this.sourceLangSelect.value : 'auto';
     if (selectedSpeech && selectedSpeech !== 'auto') return selectedSpeech;
+    if (this.detectedOCRLanguage) return this.detectedOCRLanguage;
     const selectedCaption = this.getRadioGroupValue(this.webCaptionLanguage, 'auto');
     return ['original', 'auto'].includes(selectedCaption) ? 'auto' : selectedCaption;
   }
@@ -1287,7 +1305,9 @@ class LiveDubStudio {
     }
 
     this.stopHardSubtitleOCR();
+    this.isListening = true;
     this.isOCRModeActive = true;
+    this.activeSource = 'system';
     if (this.neuralVAD) await this.neuralVAD.pause();
     if (this.activeAbortController) this.activeAbortController.abort();
     while (this.speechQueue.length) this.speechQueue.shift().resolve();
@@ -1438,6 +1458,11 @@ class LiveDubStudio {
     if (!text || typeof text !== 'string') return true;
     const trimmed = text.trim();
     if (trimmed.length < 2) return true;
+    // Allow Japanese, Chinese and Korean dialogue text
+    if (/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/.test(trimmed)) {
+      const cjk = trimmed.match(/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/g) || [];
+      return cjk.length < 2;
+    }
     // Reject noise tokens with mixed letters and digits (e.g. AA82n, Ta02, 2a, a2)
     const rawTokens = trimmed.match(/\S+/g) || [];
     if (rawTokens.some(w => /[a-zA-Z]+[0-9]+|[0-9]+[a-zA-Z]+/.test(w))) return true;
@@ -1520,7 +1545,9 @@ class LiveDubStudio {
     // ensuring the character's current line is spoken completely and clearly without being chopped in half!
     if (this.isDubbingEnabled) {
       if (this.lastOCRText && this.ocrSimilarity(raw, this.lastOCRText) < 0.72) {
-        const isCurrentlySpeaking = Boolean(this.currentActiveAudioSource);
+        const isCurrentlySpeaking = Boolean(this.currentActiveAudioSource)
+          || (this.streamingAudioSources && this.streamingAudioSources.size > 0)
+          || Boolean(this.streamingAbortController);
         if (!isCurrentlySpeaking || this.isSeekPreempt) {
           if (typeof this.stopDubbingAudio === 'function') {
             this.stopDubbingAudio(false, true);
@@ -2912,8 +2939,12 @@ class LiveDubStudio {
             }
           }
 
-          const threshold = started ? MIN_SLICE_BYTES : Math.min(INITIAL_PREBUFFER_BYTES, 15360);
-          if (pendingBytesLen >= threshold || (done && pendingBytesLen > 0)) {
+          const isNormalSubtitle = Boolean(text && text.length < 130);
+          const threshold = started ? MIN_SLICE_BYTES : INITIAL_PREBUFFER_BYTES;
+          const shouldSchedule = isNormalSubtitle
+            ? ((done && pendingBytesLen > 0) || pendingBytesLen >= 192000)
+            : (pendingBytesLen >= threshold || (done && pendingBytesLen > 0));
+          if (shouldSchedule) {
             let sliceBytes;
             if (pendingChunks.length === 1) {
               sliceBytes = pendingChunks[0];

@@ -151,7 +151,7 @@ class SubtitleOCR:
 
         for text, score, box in zip(texts, scores, boxes):
             text = (text or "").strip()
-            if not text or score < 0.58 or not any(char.isalnum() for char in text):
+            if not text or score < 0.45 or not any(char.isalnum() for char in text):
                 continue
             # Filter YouTube metadata timestamps like 59:39 or 59 39, standalone digits/counters (e.g. 23, 20)
             if re.search(r'^\s*\d{1,4}\s*$|\b\d{1,2}[:.]\d{2}\b|\b59\s*39\b', text):
@@ -231,9 +231,9 @@ class SubtitleOCR:
             center_x = sum(item["x"] for item in group) / len(group)
             center_y = sum(item["y"] for item in group) / len(group)
             center_penalty = abs(center_x - image_width / 2) / image_width * 10
-            # Dialogue subtitles are located in the lower portion of the frame
-            bottom_bonus = (center_y / image_height) * 15.0
-            return avg_height + chars * 0.28 + min(3, len(group)) * 5 - center_penalty + bottom_bonus
+            # Balanced vertical scoring: subtitles inside player are centered or lower-middle
+            vert_score = min(5.0, (center_y / image_height) * 6.0)
+            return avg_height + chars * 0.28 + min(3, len(group)) * 5 - center_penalty + vert_score
 
         best = max(groups, key=group_score)
         total_words = sum(len(item["text"].split()) for item in best)
