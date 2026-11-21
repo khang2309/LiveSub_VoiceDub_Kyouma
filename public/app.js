@@ -1376,7 +1376,7 @@ class LiveDubStudio {
     };
 
     await scan();
-    this.ocrTimer = setInterval(scan, 240);
+    this.ocrTimer = setInterval(scan, 100);
     this.setSourceIntelligenceState('ocr', 'OCR đang chạy', 'Đang đọc vùng phụ đề trong khung hình; không dùng Whisper khi OCR hoạt động.');
     this.showToast('OCR đã bật. Để chính xác, hãy chia sẻ riêng tab/video thay vì toàn desktop.');
   }
@@ -2815,7 +2815,7 @@ class LiveDubStudio {
         if (!started) {
           started = true;
           this.lastDubbingStartedAt = performance.now();
-          startAt = now + 0.05;
+          startAt = now + 0.005;
           if (this.liveDubbingQueue && this.liveDubbingQueue.length > 0) {
             const nextItem = this.liveDubbingQueue[0];
             this.prefetchLiveTts(nextItem.text, nextItem.voice);

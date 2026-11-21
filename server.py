@@ -617,6 +617,20 @@ COMMON_VI_OCR_REPAIRS = [
     (r'\bcông\s+thân\b', 'công thần'),
     (r'\btù\b', 'từ'),
     (r'\bdó\b', 'đó'),
+    (r'\bđuợc\b', 'được'),
+    (r'\bđưọc\b', 'được'),
+    (r'\bnguòi\b', 'người'),
+    (r'\bkhong\b', 'không'),
+    (r'\bko\b', 'không'),
+    (r'\bdã\b', 'đã'),
+    (r'\bdến\b', 'đến'),
+    (r'\bdầu\b', 'đầu'),
+    (r'\bdây\b', 'đây'),
+    (r'\bdiều\b', 'điều'),
+    (r'\bdược\b', 'được'),
+    (r'\bthâp\b', 'thấp'),
+    (r'\bxuât\b', 'xuất'),
+    (r'\bpháp\s+su\b', 'pháp sư'),
 ]
 
 def repair_vietnamese_ocr(text: str) -> str:
