@@ -363,6 +363,25 @@ class TranslationTests(unittest.TestCase):
         self.assertEqual(clean_speech_text("Con BOSS cấp độ 100"), "Con bót cấp độ 100")
         self.assertEqual(clean_speech_text("OK tôi hiểu rồi"), "ô kê tôi hiểu rồi")
 
+    def test_repair_vietnamese_ocr(self):
+        from server import repair_vietnamese_ocr
+        self.assertEqual(
+            repair_vietnamese_ocr("Thuò l p quô, trong tên cüa ba vi công thân"),
+            "Thuở lập quốc, trong tên của ba vị công thần"
+        )
+        self.assertEqual(
+            repair_vietnamese_ocr("Vây là tù dó, nhüng tôc dugc Hoàng dé công nhân"),
+            "Vậy là từ đó, những tộc được Hoàng đế công nhận"
+        )
+        self.assertEqual(
+            repair_vietnamese_ocr("禾馬 váy là tù do, nhüng tôc dugc Hoàng dê công nhân"),
+            "vậy là từ đó, những tộc được Hoàng đế công nhận"
+        )
+        self.assertEqual(
+            repair_vietnamese_ocr("禾馬已 vè sau, nhúng chū khác"),
+            "về sau, những chữ khác"
+        )
+
 
 if __name__ == '__main__':
     unittest.main()

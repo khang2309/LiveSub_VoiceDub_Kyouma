@@ -712,6 +712,7 @@ test('handleOCRSubtitle instantly preempts queue and stale audio when seek/dialo
   app.isDubbingEnabled = true;
   app.liveDubbingQueue = [{ text: 'Old line 1' }, { text: 'Old line 2' }];
   app.speechQueue = [{ id: 's1' }];
+  app.ocrConsecutiveEmpty = 1;
   let stoppedAudio = false;
   app.stopDubbingAudio = () => { stoppedAudio = true; };
   app.addHistory = () => ({ id: 'ocr-seek' });
@@ -727,6 +728,26 @@ test('handleOCRSubtitle instantly preempts queue and stale audio when seek/dialo
   assert.equal(queued, 1);
   assert.equal(app.lastOCRText, 'Scene 99 new dialogue after seek');
 });
+
+test('ocrSimilarity handles Vietnamese diacritic fluctuations and ignores stray CJK characters', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  const s1 = 'Vây là tù dó, nhüng tôc dugc Hoàng dé công nhân';
+  const s2 = '禾馬 váy là tù do, nhüng tôc dugc Hoàng dê công nhân';
+  // With stray kanji and minor diacritic shifts, similarity should still be recognized as the same line (> 0.72)
+  const sim = app.ocrSimilarity(s1, s2);
+  assert.ok(sim >= 0.72, `Expected >= 0.72 but got ${sim}`);
+});
+
+test('restorePreferences ensures bilingual subMode default rather than hidden none', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  global.localStorage = {
+    getItem: (key) => (key === 'livesub_sub_mode' ? 'none' : null),
+    setItem: () => {}
+  };
+  app.restorePreferences();
+  assert.equal(app.currentSubMode, 'bilingual');
+});
+
 
 
 

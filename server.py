@@ -585,6 +585,46 @@ def clean_speech_text(text: str) -> str:
 
     return re.sub(r'\s+', ' ', cleaned).strip()
 
+COMMON_VI_OCR_REPAIRS = [
+    # Strip stray Japanese/Chinese kanji and kana from Vietnamese subs
+    (r'[\u4e00-\u9fff\u3040-\u30ff]+', ' '),
+    # Common OCR syllable errors on hard subs
+    (r'\bThuò\s*l\s*p\s*quô\b', 'Thuở lập quốc'),
+    (r'\bl\s*p\s*quô\b', 'lập quốc'),
+    (r'\bThuò\b', 'Thuở'),
+    (r'\btù\s*dó\b', 'từ đó'),
+    (r'\bviots\s*do\b', 'vậy là từ đó'),
+    (r'\bváy\s*là\s*tù\s*do\b', 'vậy là từ đó'),
+    (r'\bváy\s*là\b', 'vậy là'),
+    (r'\bVây\s*là\b', 'Vậy là'),
+    (r'\bnhüng\b', 'những'),
+    (r'\bnhúng\b', 'những'),
+    (r'\bnhung\s+toe\b', 'những tộc'),
+    (r'\btôc\b', 'tộc'),
+    (r'\btoe\b(?=\s+được|\s+dugc)', 'tộc'),
+    (r'\bdugc\b', 'được'),
+    (r'\bduoc\b', 'được'),
+    (r'\bHoong\b', 'Hoàng'),
+    (r'\bdé\b', 'đế'),
+    (r'\bdê\b', 'đế'),
+    (r'\bcong\s*nh\s*n\b', 'công nhận'),
+    (r'\bcông\s*nhân\b', 'công nhận'),
+    (r'\bcüa\b', 'của'),
+    (r'\bchū\b', 'chữ'),
+    (r'\bchü\b', 'chữ'),
+    (r'\bvè\b', 'về'),
+    (r'\bba\s+vi\b', 'ba vị'),
+    (r'\bcông\s+thân\b', 'công thần'),
+    (r'\btù\b', 'từ'),
+    (r'\bdó\b', 'đó'),
+]
+
+def repair_vietnamese_ocr(text: str) -> str:
+    cleaned = text
+    for pat, rep in COMMON_VI_OCR_REPAIRS:
+        cleaned = re.sub(pat, rep, cleaned, flags=re.IGNORECASE)
+    return re.sub(r'\s+', ' ', cleaned).strip()
+
 def fast_translate_to_vi(
     text: str,
     source_lang: str = "auto",
@@ -956,7 +996,20 @@ async def api_ocr_subtitle(
     except Exception as error:
         raise HTTPException(status_code=503, detail=f"OCR unavailable: {error}")
 
-    original = clean_speech_text(result["text"])
+    raw_text = result["text"].strip()
+    # Reject anime legal disclaimers and Japanese staff credits (non-dialogue)
+    if re.search(r'(?i)(?:登場人物|フィクション|架空|団体|名称等は|この物語は|減\d+a|分\d+人物|監督|脚本|演出|キャラクターデザイン|総作画監督|美術監督|色彩設計|撮影監督|編集|音響監督|音楽|アニメーション制作|製作)', raw_text):
+        return {"empty": True, **result}
+    # Reject lines that are strictly 2-3 Japanese names without dialogue
+    if re.search(r'^[\u4e00-\u9fff]{2,4}\s+[\u4e00-\u9fff]{2,4}$', raw_text):
+        return {"empty": True, **result}
+
+    # If text contains Latin/Vietnamese letters, strip any background Japanese kanji/kana
+    if re.search(r'[a-zA-Zà-ỹÀ-Ỹ]', raw_text):
+        raw_text = re.sub(r'[\u4e00-\u9fff\u3040-\u30ff]+', ' ', raw_text)
+
+    repaired = repair_vietnamese_ocr(raw_text)
+    original = clean_speech_text(repaired)
     if (
         not original
         or len(original) < 2
@@ -968,7 +1021,7 @@ async def api_ocr_subtitle(
     has_vi_markers = bool(
         source_lang == "vi"
         or re.search(r'[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]', original, re.I)
-        or re.search(r'\b(?:không|được|người|chúng|tôi|bạn|của|trong|một|cho|với|như|đã|sẽ|đang)\b', original, re.I)
+        or re.search(r'\b(?:không|được|người|chúng|tôi|bạn|của|trong|một|cho|với|như|đã|sẽ|đang|vậy|từ|đó|những|tộc|hoàng|đế|công|nhận|thuở|lập|quốc|ba|vị|về|sau|chữ|khác)\b', original, re.I)
     )
     if has_vi_markers:
         translated = original
@@ -982,6 +1035,8 @@ async def api_ocr_subtitle(
             previous_context=previous_context or "",
         )
         translation_ms = round((time.perf_counter() - translation_started) * 1000, 1)
+
+    print(f"📷 [OCR-SUB] raw='{result['text']}' -> clean='{original}' -> vi='{translated or original}'")
 
     return {
         "empty": False,

@@ -215,12 +215,14 @@ class LiveDubStudio {
       this.sourceLangSelect.value = savedLang;
     }
     const savedSubMode = localStorage.getItem('livesub_sub_mode');
-    if (savedSubMode && ['bilingual', 'vi_only', 'source_only', 'en_only', 'none'].includes(savedSubMode)) {
+    if (savedSubMode && ['bilingual', 'vi_only', 'source_only', 'en_only'].includes(savedSubMode)) {
       this.currentSubMode = savedSubMode;
       const radio = Array.from(this.subModeRadios || []).find(item => item.value === savedSubMode);
       if (radio) radio.checked = true;
       const sysRadio = Array.from(this.systemSubModeRadios || []).find(item => item.value === savedSubMode);
       if (sysRadio) sysRadio.checked = true;
+    } else {
+      this.currentSubMode = 'bilingual';
     }
     const savedCaptionMode = localStorage.getItem('livesub_caption_mode');
     if (savedCaptionMode && this.webCaptionMode) {
@@ -927,6 +929,22 @@ class LiveDubStudio {
       return;
     }
 
+    this.ensureAudioUnlocked();
+    const AudioCtx = typeof window !== 'undefined' ? (window.AudioContext || window.webkitAudioContext) : null;
+    if (AudioCtx) {
+      if (!this.audioContext || this.audioContext.state === 'closed') {
+        this.audioContext = new AudioCtx();
+      }
+      if (this.audioContext && this.audioContext.state === 'suspended') {
+        await this.audioContext.resume().catch(() => {});
+      }
+    }
+
+    // Default to bilingual subtitle mode if previously muted
+    if (this.currentSubMode === 'none') {
+      this.setSubMode('bilingual');
+    }
+
     this.stopListening();
     try {
       this.mediaStream = await navigator.mediaDevices.getDisplayMedia({
@@ -939,10 +957,9 @@ class LiveDubStudio {
       });
 
       const audioTracks = this.mediaStream.getAudioTracks();
-      if (audioTracks.length === 0) {
-        alert(' BẠN CHƯA TÍCH CHỌN "Chia sẻ âm thanh / Share audio".\n\nVui lòng bấm lại và tích vào ô chia sẻ âm thanh ở góc dưới cửa sổ chọn tab/màn hình.');
-        this.mediaStream.getTracks().forEach(t => t.stop());
-        return;
+      const hasAudio = audioTracks.length > 0;
+      if (!hasAudio) {
+        this.showToast('ℹ️ Chế độ Đọc chữ (OCR) trên video đang hoạt động. Nếu cần nghe âm thanh, hãy chọn lại và tích "Chia sẻ âm thanh"!');
       }
 
       this.activeSource = 'system';
@@ -960,14 +977,18 @@ class LiveDubStudio {
         track.onended = () => this.stopListening();
       });
 
-      this.showToast(' Đã kết nối âm thanh hệ thống! Hãy phát video để nghe lồng tiếng.');
-      await this.setupVADAndRecording(this.mediaStream);
+      this.showToast('🎬 Đã kết nối video! Hãy phát phim để tự động lồng tiếng.');
+      if (hasAudio) {
+        await this.setupVADAndRecording(this.mediaStream);
+      }
       this.updateMasterDubUI();
       if (this.isOCRModeActive) {
         await this.startHardSubtitleOCR(this.mediaStream);
       } else if (this.isHybridModeActive) {
         await this.startHardSubtitleOCR(this.mediaStream);
-        await this.runInitialSubtitleProbe(this.mediaStream);
+        if (hasAudio) {
+          await this.runInitialSubtitleProbe(this.mediaStream);
+        }
       }
     } catch (err) {
       if (err.name !== 'NotAllowedError') {
@@ -1259,6 +1280,47 @@ class LiveDubStudio {
       if (this.ocrRequestActive) return;
       if (this.ocrVideo.paused || this.ocrVideo.ended) return;
 
+      // Fast static video / pause detection via downsampled pixel hash
+      try {
+        const sampleW = Math.min(this.ocrCanvas.width, 80);
+        const sampleH = Math.min(this.ocrCanvas.height, 20);
+        const curData = context.getImageData(0, 0, sampleW, sampleH).data;
+        let frameDiff = 0;
+        if (this._prevFrameData && this._prevFrameData.length === curData.length) {
+          for (let i = 0; i < curData.length; i += 16) {
+            frameDiff += Math.abs(curData[i] - this._prevFrameData[i]);
+          }
+        } else {
+          frameDiff = 9999;
+        }
+        this._prevFrameData = curData;
+
+        const isFrameStatic = (frameDiff < 40);
+        if (isFrameStatic) {
+          this._staticFrameCount = (this._staticFrameCount || 0) + 1;
+          // If static for > 2 consecutive scans (~480ms), user has paused the video!
+          if (this._staticFrameCount >= 2) {
+            this.isVideoPaused = true;
+            return; // Skip duplicate OCR request while paused!
+          }
+        } else {
+          // Frame motion detected!
+          if (this.isVideoPaused) {
+            // User just resumed or sought the video! (Bấm tiếp tục / tua)
+            this.isVideoPaused = false;
+            this.lastOCRText = '';
+            this.recentOCRHistory = [];
+            if (this.liveDubbingQueue && this.liveDubbingQueue.length > 0) {
+              this.liveDubbingQueue = [];
+            }
+            if (typeof this.stopDubbingAudio === 'function') {
+              this.stopDubbingAudio(false, true);
+            }
+          }
+          this._staticFrameCount = 0;
+        }
+      } catch (_) {}
+
       this.ocrRequestActive = true;
       try {
         const blob = await new Promise(resolve => this.ocrCanvas.toBlob(resolve, 'image/jpeg', 0.78));
@@ -1274,6 +1336,9 @@ class LiveDubStudio {
           this.ocrConsecutiveEmpty = 0;
           this.hasActiveHardSubtitles = true;
           this.lastHardSubTime = performance.now();
+          if (/[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/i.test(data.original) || /\b(?:không|được|người|chúng|tôi|bạn|của|trong|một|cho|với|như|đã|sẽ|đang|vậy|từ|đó|những|tộc|hoàng|đế)\b/i.test(data.original)) {
+            this.detectedOCRLanguage = 'vi';
+          }
           if (this.neuralVAD && this.neuralVADActive) {
             try { this.neuralVAD.pause(); } catch (_) {}
           }
@@ -1318,8 +1383,12 @@ class LiveDubStudio {
 
   ocrSimilarity(s1, s2) {
     if (!s1 || !s2) return 0;
-    const a = s1.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
-    const b = s2.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+    // Strip stray CJK kanji/kana that occasionally leak from anime backgrounds into subtitles
+    const c1 = String(s1).replace(/[\u4e00-\u9fff\u3040-\u30ff]/g, '');
+    const c2 = String(s2).replace(/[\u4e00-\u9fff\u3040-\u30ff]/g, '');
+    const strip = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'd');
+    const a = strip(c1).toLowerCase().replace(/[^\w]/g, '');
+    const b = strip(c2).toLowerCase().replace(/[^\w]/g, '');
     if (a === b) return 1.0;
     if (!a || !b) return 0;
     const maxLen = Math.max(a.length, b.length);
@@ -1341,6 +1410,11 @@ class LiveDubStudio {
   handleOCRSubtitle(data) {
     let raw = String(data.original || '').replace(/\s+/g, ' ').trim();
     if (!raw) return;
+
+    // Strip stray CJK characters if line contains Latin letters (protects against background kanji in anime)
+    if (/[a-zA-Zà-ỹÀ-Ỹ]/.test(raw)) {
+      raw = raw.replace(/[\u4e00-\u9fff\u3040-\u30ff]+/g, ' ').replace(/\s+/g, ' ').trim();
+    }
 
     // Strip video titles, channel watermark tags and web fansub junk leaking into subtitle
     const junkTailRegex = /(?:^|\s+)(?:animehay|animevietsub|bit\.ly|citumo|rap\s*citu|hdbet|3bet|ch[oơ]ingay|n[oổ]\s*h[uũ]|b[áa]ckinh|bickinh|backinh|truyengoc).*$/i;
@@ -1399,12 +1473,15 @@ class LiveDubStudio {
     // stale playback so the newly seeked or transitioned dialogue starts immediately!
     if (this.isDubbingEnabled) {
       if (this.lastOCRText && this.ocrSimilarity(raw, this.lastOCRText) < 0.72) {
-        if (typeof this.stopDubbingAudio === 'function') {
-          this.stopDubbingAudio(false, true);
+        const elapsedSinceDubStart = this.lastDubbingStartedAt ? (performance.now() - this.lastDubbingStartedAt) : 9999;
+        if (elapsedSinceDubStart > 800 || (this.ocrConsecutiveEmpty || 0) >= 1) {
+          if (typeof this.stopDubbingAudio === 'function') {
+            this.stopDubbingAudio(false, true);
+          }
+          this.liveDubbingQueue = [];
+          this.speechQueue = [];
+          this.playbackGeneration++;
         }
-        this.liveDubbingQueue = [];
-        this.speechQueue = [];
-        this.playbackGeneration++;
       }
     }
 
@@ -2737,6 +2814,7 @@ class LiveDubStudio {
         let startAt;
         if (!started) {
           started = true;
+          this.lastDubbingStartedAt = performance.now();
           startAt = now + 0.05;
           if (this.liveDubbingQueue && this.liveDubbingQueue.length > 0) {
             const nextItem = this.liveDubbingQueue[0];
