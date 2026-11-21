@@ -1152,13 +1152,11 @@ class LiveDubStudio {
       const sourceWidth = width;
       let sourceY, sourceHeight;
       if (isTallPage) {
-        const topBarHeight = Math.min(60, Math.floor(height * 0.05));
-        const estimatedVideoHeight = Math.min(height - topBarHeight, width * 0.5625);
-        sourceY = topBarHeight + Math.floor(estimatedVideoHeight * 0.70);
-        sourceHeight = Math.max(1, Math.floor(estimatedVideoHeight * 0.22));
+        sourceY = Math.floor(height * 0.56);
+        sourceHeight = Math.max(1, Math.floor(height * 0.36));
       } else {
         sourceY = Math.floor(height * 0.70);
-        sourceHeight = Math.max(1, Math.floor(height * 0.23));
+        sourceHeight = Math.max(1, Math.floor(height * 0.24));
       }
       const scale = Math.min(1, 960 / width);
       const probeCanvas = document.createElement('canvas');
@@ -1254,18 +1252,17 @@ class LiveDubStudio {
       const sourceWidth = width;
       let sourceY, sourceHeight;
       if (isTallPage) {
-        // Shared browser webpage tab (e.g. YouTube): top bar is ~56px.
-        // Video player sits below top bar with 16:9 aspect ratio.
-        // Keep scan zone strictly inside the video dialogue subtitle band (72% to 92% of video player)
-        // avoiding video titles/channel bars below the player.
-        const topBarHeight = Math.min(60, Math.floor(height * 0.05));
-        const estimatedVideoHeight = Math.min(height - topBarHeight, width * 0.5625);
-        sourceY = topBarHeight + Math.floor(estimatedVideoHeight * 0.72);
-        sourceHeight = Math.max(1, Math.floor(estimatedVideoHeight * 0.20));
+        // Shared browser webpage tab (e.g. YouTube, Anime sites in split-screen):
+        // Scanning 56% to 92% of the viewport covers subtitles across all webpage layouts:
+        // - YouTube in browser window (where sub is at ~55-65%)
+        // - Anime websites (AnimeHay, Vuighe...) where player is in the middle (sub at ~75-88%)
+        // - 50/50 split-screen side-by-side mode
+        sourceY = Math.floor(height * 0.56);
+        sourceHeight = Math.max(1, Math.floor(height * 0.36));
       } else {
         // Shared fullscreen video / 16:9 window: focus strictly on lower dialogue band
-        sourceY = Math.floor(height * 0.72);
-        sourceHeight = Math.max(1, Math.floor(height * 0.21));
+        sourceY = Math.floor(height * 0.70);
+        sourceHeight = Math.max(1, Math.floor(height * 0.24));
       }
       const scale = Math.min(1, 960 / width);
       this.ocrCanvas.width = Math.max(1, Math.round(sourceWidth * scale));

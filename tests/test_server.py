@@ -381,6 +381,14 @@ class TranslationTests(unittest.TestCase):
             repair_vietnamese_ocr("禾馬已 vè sau, nhúng chū khác"),
             "về sau, những chữ khác"
         )
+        self.assertEqual(
+            repair_vietnamese_ocr("Dúng ròi. Sao em biêtr"),
+            "Đúng rồi. Sao em biết"
+        )
+        self.assertEqual(
+            repair_vietnamese_ocr("Chi áy không còn sóng dugc láu"),
+            "Chị ấy không còn sống được lâu"
+        )
 
 
 if __name__ == '__main__':
