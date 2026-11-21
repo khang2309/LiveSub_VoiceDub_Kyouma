@@ -797,8 +797,6 @@ select:focus-visible {
 
 @media (max-width: 620px) {
   .app-container { padding: var(--space-sm); }
-  .app-header, .header-actions { align-items: stretch; }
-  .app-header, .header-actions { flex-direction: column; }
   .source-nav-bar {
     grid-template-columns: repeat(3, minmax(240px, 1fr));
     overflow-x: auto;
@@ -1755,7 +1753,7 @@ html, body {
 .app-header {
   padding: 6px 12px;
   min-height: 38px;
-  max-height: 38px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1763,6 +1761,15 @@ html, body {
   border-radius: 8px;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+@media (max-width: 650px) {
+  /* On compact screens, hide the redundant duplicate header PiP button
+     since Cinema View panel right below already has Ghim PiP */
+  .app-header #btnFloatingWindow {
+    display: none;
+  }
 }
 
 .app-header .brand {
@@ -1786,6 +1793,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-shrink: 0;
 }
 
 /* Quick Control Bar */
@@ -1815,6 +1823,13 @@ html, body {
   }
   .control-row-top .control-cell:first-child {
     grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 480px) {
+  .control-row-top {
+    grid-template-columns: 1fr;
+    gap: 6px;
   }
 }
 
@@ -1889,6 +1904,25 @@ html, body {
   gap: 8px;
   padding-top: 5px;
   border-top: 1px solid var(--border-color);
+  flex-wrap: nowrap;
+}
+
+@media (max-width: 580px) {
+  .control-row-bottom {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .control-row-bottom .btn-hero-action {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+  .control-row-bottom .btn-compact {
+    width: 100%;
+  }
+  .control-row-bottom .one-touch-status-pill {
+    width: 100%;
+  }
 }
 
 .btn-hero-action {
@@ -1954,6 +1988,12 @@ html, body {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+@media (max-width: 460px) {
+  .main-content-streamlined {
+    grid-template-columns: 1fr;
+  }
 }
 
 .cinema-panel, .history-panel {
