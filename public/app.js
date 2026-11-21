@@ -814,16 +814,19 @@ class LiveDubStudio {
       }
     }
 
-    const activeHtml = `<span class="toggle-indicator-dot"></span><span> ĐÃ BẬT LỒNG TIẾNG (${voiceName})</span>`;
+    const activeRunningHtml = `<span class="toggle-indicator-dot"></span><span>🟢 ĐANG LỒNG TIẾNG (${voiceName})</span>`;
+    const readyWaitingHtml = `<span class="toggle-indicator-dot"></span><span>🟢 ĐÃ BẬT LỒNG TIẾNG (${voiceName})</span>`;
     const pausedHtml = `<span class="toggle-indicator-dot"></span><span>⏸️ ĐÃ TẮT LỒNG TIẾNG (Bấm để bật)</span>`;
+
+    const statusHtml = this.isDubbingEnabled ? (this.isListening ? activeRunningHtml : readyWaitingHtml) : pausedHtml;
 
     if (this.btnMasterDubToggle) {
       this.btnMasterDubToggle.className = `btn-master-dub-toggle ${this.isDubbingEnabled ? 'active' : 'paused'}`;
-      this.btnMasterDubToggle.innerHTML = this.isDubbingEnabled ? activeHtml : pausedHtml;
+      this.btnMasterDubToggle.innerHTML = statusHtml;
     }
     if (this.btnCinemaMasterDubToggle) {
       this.btnCinemaMasterDubToggle.className = `btn-master-dub-toggle ${this.isDubbingEnabled ? 'active' : 'paused'}`;
-      this.btnCinemaMasterDubToggle.innerHTML = this.isDubbingEnabled ? activeHtml : pausedHtml;
+      this.btnCinemaMasterDubToggle.innerHTML = statusHtml;
     }
   }
 
@@ -940,6 +943,9 @@ class LiveDubStudio {
       }
 
       this.activeSource = 'system';
+      this.detectedOCRLanguage = null;
+      this.hasActiveHardSubtitles = false;
+      this.lastHardSubTime = 0;
       const captureMode = this.getRadioGroupValue(this.systemCaptureMode, 'auto');
       this.isOCRModeActive = (captureMode === 'hard_sub');
       this.isHybridModeActive = (captureMode === 'auto');
@@ -953,9 +959,11 @@ class LiveDubStudio {
 
       this.showToast(' Đã kết nối âm thanh hệ thống! Hãy phát video để nghe lồng tiếng.');
       await this.setupVADAndRecording(this.mediaStream);
+      this.updateMasterDubUI();
       if (this.isOCRModeActive) {
         await this.startHardSubtitleOCR(this.mediaStream);
       } else if (this.isHybridModeActive) {
+        await this.startHardSubtitleOCR(this.mediaStream);
         await this.runInitialSubtitleProbe(this.mediaStream);
       }
     } catch (err) {
@@ -1080,6 +1088,7 @@ class LiveDubStudio {
   }
 
   resolveOCRLanguage() {
+    if (this.detectedOCRLanguage) return this.detectedOCRLanguage;
     const selectedSpeech = this.sourceLangSelect ? this.sourceLangSelect.value : 'auto';
     if (selectedSpeech && selectedSpeech !== 'auto') return selectedSpeech;
     const selectedCaption = this.getRadioGroupValue(this.webCaptionLanguage, 'auto');
@@ -1151,33 +1160,36 @@ class LiveDubStudio {
 
       if (raw && hasViMarkers) {
         // Video already has Vietsub!
-        this.isOCRModeActive = false;
-        this.isDubbingEnabled = false;
+        this.isOCRModeActive = true;
+        this.detectedOCRLanguage = 'vi';
+        this.hasActiveHardSubtitles = true;
         this.updateMasterDubUI();
-        this.showToast('✨ Video đã có sẵn Vietsub! Đã tắt thuyết minh để bạn xem phụ đề gốc tự nhiên.');
+        this.showToast('Đã nhận diện Vietsub. Đang đọc phụ đề tiếng Việt bằng OCR.');
         if (this.oneTouchDetectionPill) {
-          this.oneTouchDetectionPill.innerHTML = '✨ <strong>Đã nhận diện:</strong> Video có sẵn Vietsub — Đã tắt thuyết minh để xem tự nhiên.';
+          this.oneTouchDetectionPill.innerHTML = '⚡ <strong>Đã nhận diện:</strong> Vietsub trên video — Đang đọc trực tiếp bằng OCR (VieNeu)';
         }
+        await this.startHardSubtitleOCR(stream);
       } else if (raw && raw.length >= 2) {
         // Video has foreign hard subtitles!
         this.isOCRModeActive = true;
+        this.hasActiveHardSubtitles = true;
         this.showToast('📷 Đã phát hiện phụ đề tiếng gốc trong video! Đang đọc OCR & lồng tiếng VieNeu-TTS.');
         if (this.oneTouchDetectionPill) {
           this.oneTouchDetectionPill.innerHTML = '📷 <strong>Đã nhận diện:</strong> Phụ đề chữ trong video -> Đang đọc OCR & Lồng tiếng VieNeu';
         }
         await this.startHardSubtitleOCR(stream);
       } else {
-        // No hard subtitles detected in frame -> use direct audio Whisper GPU
-        this.isOCRModeActive = false;
-        this.showToast('🎙️ Video không có phụ đề -> Whisper GPU CUDA đang nghe trực tiếp âm thanh & thuyết minh!');
+        // No hard subtitles detected in frame -> Whisper GPU CUDA actively listens, while OCR stands by
+        this.hasActiveHardSubtitles = false;
+        this.showToast('🎙️ Chế độ 1 Chạm: Whisper GPU đang nghe âm thanh & tự động đọc phụ đề khi xuất hiện.');
         if (this.oneTouchDetectionPill) {
-          this.oneTouchDetectionPill.innerHTML = '🎙️ <strong>Đã nhận diện:</strong> Không có sub -> Whisper GPU đang nghe trực tiếp âm thanh & thuyết minh';
+          this.oneTouchDetectionPill.innerHTML = '🎙️ <strong>Chế độ 1 Chạm:</strong> Whisper GPU đang nghe âm thanh & tự động đọc phụ đề khi xuất hiện (OCR)';
         }
       }
     } catch (err) {
       console.warn('Initial subtitle probe failed, defaulting to Whisper:', err);
-      this.isOCRModeActive = false;
-      this.showToast('🎙️ Chế độ mặc định: Whisper GPU đang nghe trực tiếp âm thanh video.');
+      this.hasActiveHardSubtitles = false;
+      this.showToast('🎙️ Chế độ 1 Chạm: Whisper GPU đang nghe trực tiếp âm thanh video.');
     }
   }
 
@@ -1191,6 +1203,9 @@ class LiveDubStudio {
 
     this.stopHardSubtitleOCR();
     this.isOCRModeActive = true;
+    if (this.neuralVAD) await this.neuralVAD.pause();
+    if (this.activeAbortController) this.activeAbortController.abort();
+    while (this.speechQueue.length) this.speechQueue.shift().resolve();
     this.lastOCRText = '';
     this.ocrVideo = document.createElement('video');
     this.ocrVideo.muted = true;
@@ -1272,13 +1287,31 @@ class LiveDubStudio {
         const data = await response.json();
         if (!data.empty && data.original) {
           this.ocrConsecutiveEmpty = 0;
+          this.hasActiveHardSubtitles = true;
+          this.lastHardSubTime = performance.now();
+          if (this.neuralVAD && this.neuralVADActive) {
+            try { this.neuralVAD.pause(); } catch (_) {}
+          }
           this.handleOCRSubtitle(data);
         } else {
           this.ocrConsecutiveEmpty = (this.ocrConsecutiveEmpty || 0) + 1;
-          if (this.ocrConsecutiveEmpty >= 3 && this.currentSubMode !== 'none') {
-            this.displaySubtitle('', '');
-            if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = '';
-            if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = '';
+          if (this.ocrConsecutiveEmpty >= 3) {
+            if (this.isHybridModeActive && (performance.now() - (this.lastHardSubTime || 0)) > 2500) {
+              if (this.hasActiveHardSubtitles) {
+                this.hasActiveHardSubtitles = false;
+                if (this.neuralVAD && this.neuralVADActive) {
+                  try { this.neuralVAD.resume(); } catch (_) {}
+                }
+                if (this.oneTouchDetectionPill) {
+                  this.oneTouchDetectionPill.innerHTML = '🎙️ <strong>Chế độ 1 Chạm:</strong> Whisper GPU đang nghe âm thanh trực tiếp';
+                }
+              }
+            }
+            if (this.currentSubMode !== 'none' && typeof this.displaySubtitle === 'function') {
+              this.displaySubtitle('', '');
+              if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = '';
+              if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = '';
+            }
           }
         }
       } catch (error) {
@@ -1289,7 +1322,7 @@ class LiveDubStudio {
     };
 
     await scan();
-    this.ocrTimer = setInterval(scan, 500);
+    this.ocrTimer = setInterval(scan, 280);
     this.setSourceIntelligenceState('ocr', 'OCR đang chạy', 'Đang đọc vùng phụ đề trong khung hình; không dùng Whisper khi OCR hoạt động.');
     this.showToast('OCR đã bật. Để chính xác, hãy chia sẻ riêng tab/video thay vì toàn desktop.');
   }
@@ -1321,7 +1354,7 @@ class LiveDubStudio {
     if (!raw) return;
 
     // Strip video titles, channel watermark tags and web fansub junk leaking into subtitle
-    const junkTailRegex = /(?:^|\s+)(?:t[oöô]i\s*s[oóọ]ng\s*s[oóọ]t|mrbeast|gta\s*(?:6|vi|v\b)|grand\s*theft\s*auto|t[oó][\s\w]*k[eé]t\s*b[aạ]n|b[aả]n\s*l[oồ]ng\s*ti[eê]ng|t[eé]c[eèé]|tecd|tacd|tiac[eèé]|teck|tetcd|cie|clerk\s*baskets|baskets\s*threaten|threaten\s*o\s*clerk|animehay|animevietsub|bit\.ly|citumo|rap\s*citu|hdbet|3bet|ch[oơ]ingay|n[oổ]\s*h[uũ]|b[áa]ckinh|bickinh|backinh|truyengoc).*$/i;
+    const junkTailRegex = /(?:^|\s+)(?:animehay|animevietsub|bit\.ly|citumo|rap\s*citu|hdbet|3bet|ch[oơ]ingay|n[oổ]\s*h[uũ]|b[áa]ckinh|bickinh|backinh|truyengoc).*$/i;
     raw = raw.replace(junkTailRegex, '').trim().replace(/^[,.\-:;]+|[,.\-:;]+$/g, '').trim();
     if (!raw) return;
 
@@ -1333,12 +1366,14 @@ class LiveDubStudio {
     if (/[åäöøß]|ngv[oò]i|thv[oò]ng|nu[aá]c\s*m[aå]t|lung\s*tr[oò]ng|l[aā]o\s*b[aà]|ky\s*vi[eê]n/i.test(raw)) return;
     // Reject UI, channel names, and thumbnail junk patterns
     if (/^(?:b[áa]ckinh|bickinh|backinh|truyengoc|lượt xem|\d+[:.]\d+|\d{1,4})$/i.test(raw)) return;
-    if (/\b(?:animehay|animevietsub|bit\.ly|citumo|rap\s*citu|hdbet|3bet|chơingay|nổ\s*hũ|lượt xem|views?|người đăng ký|subscribers?|bình luận|comments?|chia sẻ|share|tải xuống|download|anker|soundcore|phong thần|diễn nghĩa|trường giang|đấu trường sinh tử|sống sót|mrbeast|gta\s*6|gta\s*vi|grand theft auto|kết bạn|ket ban|bản lồng tiếng|đăng ký)\b/i.test(raw)) return;
+    if (/\b(?:animehay|animevietsub|bit\.ly|citumo|rap\s*citu|hdbet|3bet|chơingay|nổ\s*hũ|lượt xem|views?|người đăng ký|subscribers?|bình luận|comments?|chia sẻ|share|tải xuống|download|bản lồng tiếng|đăng ký)\b/i.test(raw)) return;
 
-    // Display subtitle IMMEDIATELY for 0ms on-screen response
-    this.displaySubtitle(raw, data.translated || raw);
-    if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = data.translated || raw;
-    if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = raw;
+    // Display subtitle immediately if dubbing is disabled
+    if (!this.isDubbingEnabled && typeof this.displaySubtitle === 'function') {
+      this.displaySubtitle(raw, data.translated || raw);
+      if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = data.translated || raw;
+      if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = raw;
+    }
 
     // Merge progressive subtitle expansions (e.g. "I can't" -> "I can't believe")
     // Update the last queued dubbing item if it hasn't played yet, avoiding duplicate/choppy fragments!
@@ -1375,10 +1410,12 @@ class LiveDubStudio {
     this.lastTranscriptContext = raw;
     const record = this.addHistory(raw, data.translated || raw, 'ocr');
 
-    // Display subtitle immediately for zero perceived latency, in tight sync with video
-    this.displaySubtitle(raw, data.translated || raw);
-    if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = data.translated || raw;
-    if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = raw;
+    // Display subtitle immediately if dubbing is disabled (when dubbing is enabled, onStart reveals it in perfect sync)
+    if (!this.isDubbingEnabled && typeof this.displaySubtitle === 'function') {
+      this.displaySubtitle(raw, data.translated || raw);
+      if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = data.translated || raw;
+      if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = raw;
+    }
 
     if (this.isDubbingEnabled) {
       this.enqueueLiveDubbing(data.translated || raw, record.id, raw, now, now, data.timings || null);
@@ -1999,7 +2036,7 @@ class LiveDubStudio {
             }
           },
           onSpeechEnd: (audio) => {
-            if (!this.isListening || !audio || audio.length < 3200) return;
+            if (!this.isListening || this.isOCRModeActive || !audio || audio.length < 3200) return;
             const wavBlob = this.encodeWAV16k([audio], 16000);
             wavBlob.livesubCapturedAt = this.captureStartedAt || performance.now();
             wavBlob.livesubFinalizedAt = performance.now();
@@ -2165,6 +2202,7 @@ class LiveDubStudio {
   }
 
   enqueueSpeechPhrase(audioBlob) {
+    if (this.isOCRModeActive) return Promise.resolve();
     if (!audioBlob || (typeof audioBlob.size === 'number' && audioBlob.size < 1000)) {
       return Promise.resolve();
     }
@@ -2204,6 +2242,7 @@ class LiveDubStudio {
   }
 
   async processSpeechPhrase(audioBlob, sequence = 0, captureMeta = null) {
+    if (this.isOCRModeActive) return;
 
     this.isTranscribing = true;
     this.setStatus('active', 'AI nhận diện GPU & dịch...');
@@ -2240,6 +2279,7 @@ class LiveDubStudio {
 
       const data = await response.json();
       if (data.timings) this.realtimeMetrics.lastServerTimings = data.timings;
+      if (this.isOCRModeActive) return;
       if (selectedSourceLang === 'auto' && data.detected_lang && data.detected_lang !== 'auto') {
         this.autoDetectedSourceLang = data.detected_lang;
       }
@@ -2402,10 +2442,7 @@ class LiveDubStudio {
           continue;
         }
 
-        if (this.liveDubbingQueue.length > 0) {
-          const nextItem = this.liveDubbingQueue[0];
-          this.prefetchLiveTts(nextItem.text, nextItem.voice);
-        }
+        // Start the current line before submitting another GPU synthesis request.
         try {
           const revealSubtitle = () => {
             if (item.capturedAt) {
@@ -2740,7 +2777,7 @@ class LiveDubStudio {
             }
           }
 
-          const threshold = started ? MIN_SLICE_BYTES : INITIAL_PREBUFFER_BYTES;
+          const threshold = started ? MIN_SLICE_BYTES : Math.min(INITIAL_PREBUFFER_BYTES, 15360);
           if (pendingBytesLen >= threshold || (done && pendingBytesLen > 0)) {
             let sliceBytes;
             if (pendingChunks.length === 1) {
@@ -2883,9 +2920,11 @@ class LiveDubStudio {
     this.audioMeterFill.style.width = '0%';
     this.meterPercentText.textContent = '0%';
 
-    this.btnSystemAudioText.textContent = 'Bắt Đầu Xem & Lồng Tiếng (Tab / Cửa Sổ)';
+    this.hasActiveHardSubtitles = false;
+    this.btnSystemAudioText.textContent = 'BẮT ĐẦU XEM & DỊCH TỰ ĐỘNG (1 CHẠM)';
     this.btnToggleSystemAudio.classList.remove('btn-danger');
     this.btnToggleSystemAudio.classList.add('btn-primary');
+    this.updateMasterDubUI();
 
     this.btnMicText.textContent = 'Bật Microphone';
     this.btnToggleMic.classList.remove('btn-danger');

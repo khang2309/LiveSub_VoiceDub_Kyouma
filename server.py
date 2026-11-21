@@ -1,6 +1,19 @@
 import os
 import sys
 import io
+
+# Ensure UTF-8 output on Windows console and PowerShell redirects
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 import re
 import wave
 import json
@@ -803,7 +816,7 @@ def generate_vieneu_pcm_chunks(text: str, voice_name: str):
             text,
             voice=voice_name,
             apply_watermark=False,
-            max_chars=192,
+            max_chars=64,
         ):
             if audio_arr is None or len(audio_arr) == 0:
                 continue
@@ -913,21 +926,34 @@ async def api_ocr_subtitle(
         or re.search(r'(?i)^(?:b[áa]ckinh|bickinh|truyengoc|\d+[:.]\d+)$', original.strip())
     ):
         return {"empty": True, **result}
-    translation_started = time.perf_counter()
-    translated = fast_translate_to_vi(
-        original,
-        source_lang=source_lang or "auto",
-        target_lang="vi",
-        previous_context=previous_context or "",
+
+    # Fast bypass for Vietsub: If text is already in Vietnamese, skip Google Translate completely!
+    has_vi_markers = bool(
+        source_lang == "vi"
+        or re.search(r'[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]', original, re.I)
+        or re.search(r'\b(?:không|được|người|chúng|tôi|bạn|của|trong|một|cho|với|như|đã|sẽ|đang)\b', original, re.I)
     )
+    if has_vi_markers:
+        translated = original
+        translation_ms = 0.0
+    else:
+        translation_started = time.perf_counter()
+        translated = fast_translate_to_vi(
+            original,
+            source_lang=source_lang or "auto",
+            target_lang="vi",
+            previous_context=previous_context or "",
+        )
+        translation_ms = round((time.perf_counter() - translation_started) * 1000, 1)
+
     return {
         "empty": False,
         "original": original,
         "translated": translated or original,
-        "translation_provider": translation_router.snapshot()["metrics"]["last_provider"],
+        "translation_provider": "local_passthrough" if has_vi_markers else translation_router.snapshot()["metrics"]["last_provider"],
         "timings": {
             "ocr_ms": result["latency_ms"],
-            "translation_ms": round((time.perf_counter() - translation_started) * 1000, 1),
+            "translation_ms": translation_ms,
         },
         "confidence": result["confidence"],
         "ocr_engine": result["engine"],
@@ -1152,7 +1178,8 @@ async def api_transcribe(
 
         audio_b64 = None
         mime_type = "audio/mpeg"
-        if dubbing and translated_text:
+        is_dubbing_enabled = str(dubbing).strip().lower() not in ["false", "0", "no", "off"] if dubbing is not None else True
+        if is_dubbing_enabled and translated_text:
             audio_bytes, mime_type = await generate_tts_bytes(translated_text, voice=voice)
             if audio_bytes:
                 audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")

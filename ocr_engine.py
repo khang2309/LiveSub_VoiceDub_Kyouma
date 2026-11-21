@@ -63,7 +63,10 @@ class SubtitleOCR:
                     "Global.text_score": 0.58,
                     "Det.model_type": ModelType.TINY,
                     "Rec.model_type": ModelType.TINY,
-                    "Rec.lang_type": family,
+                    "Rec.lang_type": (
+                        {"latin": "la"}.get(self.normalize_language(language), self.normalize_language(language))
+                        if family == LangRec.LATIN else family
+                    ),
                     "EngineConfig.onnxruntime.intra_op_num_threads": 4,
                     "EngineConfig.onnxruntime.inter_op_num_threads": 1,
                 }
@@ -155,7 +158,7 @@ class SubtitleOCR:
             text = cleaned_text
 
             # Filter watermarks, fansub credits, websites and ads (e.g. AnimeHay, AnimeVietsub, bit.ly, rap cituMo...)
-            if re.search(r'(?i)(?:animehay|animevietsub|bit\.ly|cituMo|rap\s*citu|hdbet|3bet|chơingay|nổ\s*hũ|truyengoc|b[áa]ckinh|bickinh|backinh|\b(?:lượt xem|views?|người đăng ký|subscribers?|trước|ago|anker|soundcore|bình luận|comments?|chia sẻ|share|tải xuống|download|toàn cầu|thông minh toàn cầu|dẫn dắt bởi|phong thần|diễn nghĩa|trường giang|đấu trường sinh tử|mrbeast|gta\s*6|gta\s*vi|grand theft auto|kết bạn|ket ban|gaming|bản lồng tiếng|đăng ký)\b)', text):
+            if re.search(r'(?i)(?:animehay|animevietsub|bit\.ly|cituMo|rap\s*citu|hdbet|3bet|chơingay|nổ\s*hũ|truyengoc|b[áa]ckinh|bickinh|backinh|\b(?:lượt xem|views?|người đăng ký|subscribers?|trước|ago|anker|soundcore|bình luận|comments?|chia sẻ|share|tải xuống|download|toàn cầu|thông minh toàn cầu|dẫn dắt bởi|phong thần|diễn nghĩa|trường giang|đấu trường sinh tử|bản lồng tiếng|đăng ký)\b)', text):
                 continue
             # Filter YouTube "...thêm" expand button
             if re.search(r'(?i)\bthêm\s*$', text):
