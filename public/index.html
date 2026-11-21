@@ -538,7 +538,10 @@
 
           <div class="history-list" id="historyList">
             <div class="history-empty" id="historyEmpty">
-              👉 Bạn chưa kết nối video. Hãy bấm nút <strong>[ ▶️ BẮT ĐẦU XEM & DỊCH TỰ ĐỘNG ]</strong> ở khung bên trái, rồi chọn Tab video bạn đang xem để AI tự động thuyết minh!
+              <p>👉 Chưa kết nối video hoặc tab trình duyệt.</p>
+              <button type="button" class="btn btn-primary" onclick="document.getElementById('btnToggleSystemAudio').click()" style="margin-top: 10px; font-size: 14px; padding: 10px 20px; cursor: pointer; border-radius: 8px;">
+                ▶ BẮT ĐẦU XEM & DỊCH TỰ ĐỘNG (1 CHẠM)
+              </button>
             </div>
           </div>
         </div>
@@ -552,6 +555,6 @@
 
   <script src="/vendor/ort/ort.min.js?v=1.31.1"></script>
   <script src="/vendor/vad/bundle.min.js?v=0.0.31"></script>
-  <script src="app.js?v=20261121_instant_seek_v6"></script>
+  <script src="app.js?v=20261121_instant_seek_v7"></script>
 </body>
 </html>

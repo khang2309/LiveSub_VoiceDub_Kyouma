@@ -1407,9 +1407,26 @@ class LiveDubStudio {
     return 1.0 - (v0[b.length] / maxLen);
   }
 
+  isGarbageOCR(text) {
+    if (!text || typeof text !== 'string') return true;
+    const trimmed = text.trim();
+    if (trimmed.length < 2) return true;
+    const letters = trimmed.match(/[a-zA-Zà-ỹÀ-Ỹ]/g);
+    if (!letters || letters.length < 3) return true;
+    const vowels = trimmed.match(/[aeiouyàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵAEIOUYÀ-Ỹ]/g);
+    if (!vowels || (vowels.length / letters.length) < 0.22) return true;
+    const words = trimmed.match(/[a-zA-Zà-ỹÀ-Ỹ0-9]+/g) || [];
+    const vowelRegex = /[aeiouyàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵAEIOUYÀ-Ỹ]/;
+    const wordsWithVowels = words.filter(w => vowelRegex.test(w));
+    if (wordsWithVowels.length === 0 || (words.length >= 2 && (wordsWithVowels.length / words.length) < 0.5)) return true;
+    if (/\b[A-Za-z]+[0-9]+\b/.test(trimmed) && words.length <= 3) return true;
+    return false;
+  }
+
   handleOCRSubtitle(data) {
     let raw = String(data.original || '').replace(/\s+/g, ' ').trim();
     if (!raw) return;
+    if (this.isGarbageOCR(raw)) return;
 
     // Strip stray CJK characters if line contains Latin letters (protects against background kanji in anime)
     if (/[a-zA-Zà-ỹÀ-Ỹ]/.test(raw)) {

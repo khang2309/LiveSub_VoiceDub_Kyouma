@@ -631,7 +631,43 @@ COMMON_VI_OCR_REPAIRS = [
     (r'\bthâp\b', 'thấp'),
     (r'\bxuât\b', 'xuất'),
     (r'\bpháp\s+su\b', 'pháp sư'),
+    (r'\b[Dd]ā\b', 'đã'),
+    (r'\bnhièu\b', 'nhiều'),
+    (r'\btuân\b', 'tuần'),
+    (r'\bròi\b', 'rồi'),
+    (r'\blân\b', 'lần'),
+    (r'\bdàu\b', 'đầu'),
+    (r'\bcúa\b', 'của'),
+    (r'\bnguòi\b', 'người'),
+    (r'\blgi\s*chon\b', 'lại chọn'),
+    (r'\blgi\b', 'lại'),
+    (r'\bTé\s*dā\b', 'Tết đã'),
+    (r'\bTé\b(?=\s+đã|\s+dā)', 'Tết'),
+    (r'\bláng\s*xuóng\b', 'lắng xuống'),
+    (r'\bláng\b(?=\s+xuống|\s+xuóng)', 'lắng'),
+    (r'\bxuóng\b', 'xuống'),
+    (r'\bminh\s*e\b', 'mình e'),
+    (r'\bnéu\b', 'nếu'),
 ]
+
+def is_garbage_ocr(text: str) -> bool:
+    """Detect and reject random OCR texture noise hallucinated during silent frames (e.g. TL2 L2 t 1, naTLn nL)."""
+    text = text.strip()
+    if not text or len(text) < 2:
+        return True
+    letters = re.findall(r'[a-zA-Zà-ỹÀ-Ỹ]', text)
+    if not letters or len(letters) < 3:
+        return True
+    vowels = re.findall(r'[aeiouyàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵAEIOUYÀ-Ỹ]', text)
+    if len(vowels) / len(letters) < 0.22:
+        return True
+    words = re.findall(r'[a-zA-Zà-ỹÀ-Ỹ0-9]+', text)
+    words_with_vowels = [w for w in words if re.search(r'[aeiouyàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵAEIOUYÀ-Ỹ]', w)]
+    if len(words_with_vowels) == 0 or (len(words) >= 2 and len(words_with_vowels) / len(words) < 0.5):
+        return True
+    if re.search(r'\b[A-Za-z]+[0-9]+\b', text) and len(words) <= 3:
+        return True
+    return False
 
 def repair_vietnamese_ocr(text: str) -> str:
     cleaned = text
@@ -1011,6 +1047,8 @@ async def api_ocr_subtitle(
         raise HTTPException(status_code=503, detail=f"OCR unavailable: {error}")
 
     raw_text = result["text"].strip()
+    if is_garbage_ocr(raw_text):
+        return {"empty": True, **result}
     # Reject anime legal disclaimers and Japanese staff credits (non-dialogue)
     if re.search(r'(?i)(?:登場人物|フィクション|架空|団体|名称等は|この物語は|減\d+a|分\d+人物|監督|脚本|演出|キャラクターデザイン|総作画監督|美術監督|色彩設計|撮影監督|編集|音響監督|音楽|アニメーション制作|製作)', raw_text):
         return {"empty": True, **result}

@@ -748,6 +748,26 @@ test('restorePreferences ensures bilingual subMode default rather than hidden no
   assert.equal(app.currentSubMode, 'bilingual');
 });
 
+test('isGarbageOCR rejects random background noise and accepts valid dialogue', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  // Real noise lines from user anime test logs
+  assert.equal(app.isGarbageOCR('TL2 L2 t 1'), true);
+  assert.equal(app.isGarbageOCR('T2 _mL -Lù'), true);
+  assert.equal(app.isGarbageOCR('naTLn nL'), true);
+  assert.equal(app.isGarbageOCR('A2 L2'), true);
+  assert.equal(app.isGarbageOCR(''), true);
+  assert.equal(app.isGarbageOCR('   '), true);
+
+  // Real dialogue lines from anime fansub
+  assert.equal(app.isGarbageOCR('Dā nhièu tuân ròi, lân dàu tiên'), false);
+  assert.equal(app.isGarbageOCR('Giá mà con cúa Lê Hoa quý phi'), false);
+  assert.equal(app.isGarbageOCR('Bao nhiêu nguòi mà lgi chon'), false);
+  assert.equal(app.isGarbageOCR('Nhân lúc ra ngoài'), false);
+  assert.equal(app.isGarbageOCR('Không khí Té dā láng xuóng'), false);
+  assert.equal(app.isGarbageOCR('minh e néu không có Lão bà bà'), false);
+});
+
+
 
 
 
