@@ -827,6 +827,29 @@ test('handleOCRSubtitle protects active TTS stream from interruption', () => {
   assert.equal(app.liveDubbingQueue.length, 1);
 });
 
+test('handleOCRSubtitle suppresses trailing fragments and isolated noise', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.lastOCRText = 'an vò vira rċi dđā giún phuc kích thành trì';
+  app.recentOCRHistory = [{ text: 'an vò vira rċi dđā giún phuc kích thành trì', time: performance.now() }];
+  app.isDubbingEnabled = true;
+  app.liveDubbingQueue = [];
+  let queuedCount = 0;
+  app.enqueueLiveDubbing = () => { queuedCount++; };
+  app.addHistory = () => ({ id: 'h1' });
+
+  // 1. Single word noise token "kích" -> discarded
+  app.handleOCRSubtitle({ original: 'kích', translated: 'kích' });
+  assert.equal(queuedCount, 0);
+
+  // 2. Trailing fragment "thành trì" -> discarded (subfragment of previous line)
+  app.handleOCRSubtitle({ original: 'thành trì', translated: 'thành trì' });
+  assert.equal(queuedCount, 0);
+
+  // 3. Trailing fragment "e kích thành trì" -> discarded
+  app.handleOCRSubtitle({ original: 'e kích thành trì', translated: 'e kích thành trì' });
+  assert.equal(queuedCount, 0);
+});
+
 
 
 

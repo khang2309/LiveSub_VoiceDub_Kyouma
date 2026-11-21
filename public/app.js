@@ -1392,8 +1392,8 @@ class LiveDubStudio {
           this.handleOCRSubtitle(data);
         } else {
           this.ocrConsecutiveEmpty = (this.ocrConsecutiveEmpty || 0) + 1;
-          if (this.ocrConsecutiveEmpty >= 2) {
-            // After 2 empty frames (~200ms at 100ms interval), reset lastOCRText so fresh subtitle lines or rewound scenes can speak immediately!
+          if (this.ocrConsecutiveEmpty >= 5) {
+            // After 5 empty frames (~600ms), reset lastOCRText so fresh subtitle lines or rewound scenes can speak immediately
             this.lastOCRText = '';
           }
           if (this.ocrConsecutiveEmpty >= 3) {
@@ -1497,47 +1497,69 @@ class LiveDubStudio {
     if (raw.length > 125 || raw.split(/\s+/).length > 25) return;
     // Reject 1-4 character alphanumeric noise (e.g. YA, EREE, TL2, Ta02, JNY, HE, CE)
     if (raw.length <= 4 && /^[A-Za-z0-9\s]+$/.test(raw)) return;
-    // Reject corrupted Vietsub hard subtitle OCR reading (e.g. 'å', 'ä', 'ö', 'ø', 'ß', 'ngvòi', 'thvòng')
-    if (/[åäöøß]|ngv[oò]i|thv[oò]ng|nu[aá]c\s*m[aå]t|lung\s*tr[oò]ng|l[aā]o\s*b[aà]|ky\s*vi[eê]n/i.test(raw)) return;
+    // Reject corrupted Vietsub hard subtitle OCR reading (e.g. 'å', 'ö', 'ø', 'ß', 'ngvòi', 'thvòng')
+    if (/[åöøß]|ngv[oò]i|thv[oò]ng|nu[aá]c\s*m[aå]t|lung\s*tr[oò]ng|ky\s*vi[eê]n/i.test(raw)) return;
     // Reject UI, channel names, and thumbnail junk patterns
     if (/^(?:b[áa]ckinh|bickinh|backinh|truyengoc|lượt xem|\d+[:.]\d+|\d{1,4})$/i.test(raw)) return;
     if (/\b(?:animehay|animevietsub|bit\.ly|citumo|rap\s*citu|hdbet|3bet|chơingay|nổ\s*hũ|lượt xem|views?|người đăng ký|subscribers?|bình luận|comments?|chia sẻ|share|tải xuống|download|bản lồng tiếng|đăng ký)\b/i.test(raw)) return;
+
+    // Strip isolated single-letter leading OCR boundary noise (e.g. "e kích thành trì" -> "kích thành trì")
+    raw = raw.replace(/^[a-zA-Z]\s+(?=[a-zA-Zà-ỹÀ-Ỹ]{3,})/i, '').trim();
+
+    // Reject isolated single-word noise tokens unless recognized conversational exclamation
+    const rawTokens = raw.split(/\s+/).filter(Boolean);
+    const validSingleWords = ['đúng', 'không', 'phải', 'chào', 'sao', 'dạ', 'vâng', 'ừ', 'thật', 'hả', 'này', 'đi', 'được', 'tại', 'cứu', 'chạy', 'mau', 'khoan', 'chết', 'nguy'];
+    if (rawTokens.length === 1 && !validSingleWords.includes(rawTokens[0].toLowerCase()) && raw.length <= 6) {
+      return;
+    }
+
+    const now = performance.now();
+    if (!this.recentOCRHistory) this.recentOCRHistory = [];
+    this.recentOCRHistory = this.recentOCRHistory.filter(item => (now - item.time) < 3500);
+
+    const stripAccents = (s) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'd').toLowerCase().replace(/[^\w]/g, '');
+    const rawNorm = stripAccents(raw);
+
+    // Discard trailing sub-fragments (e.g. "thành trì" after "phục kích thành trì", or "nraà thi trân khác" after "Tôi hán hai chọn một thị trấn khác")
+    const isSubFragment = this.recentOCRHistory.some(item => {
+      const histNorm = stripAccents(item.text);
+      if (histNorm.length >= rawNorm.length && (histNorm.includes(rawNorm) || histNorm.endsWith(rawNorm))) {
+        return true;
+      }
+      return false;
+    });
+    if (isSubFragment) {
+      return;
+    }
+
+    // Merge progressive subtitle expansions (e.g. "Thdi ké" -> "Thôi kệ cả Lão bà bà có biết")
+    // If the new line expands a recently queued item that hasn't played yet, update it in place!
+    if (this.isDubbingEnabled && this.liveDubbingQueue && this.liveDubbingQueue.length > 0) {
+      const lastQueued = this.liveDubbingQueue[this.liveDubbingQueue.length - 1];
+      if (lastQueued) {
+        const queuedNorm = stripAccents(lastQueued.sourceText);
+        if (queuedNorm && queuedNorm.length >= 3 && rawNorm.length > queuedNorm.length && (rawNorm.startsWith(queuedNorm) || (lastQueued.sourceText && this.ocrSimilarity(raw.slice(0, lastQueued.sourceText.length), lastQueued.sourceText) >= 0.60))) {
+          lastQueued.text = data.translated || raw;
+          lastQueued.sourceText = raw;
+          this.lastOCRText = raw;
+          return;
+        }
+      }
+    }
+
+    // Suppress if duplicate or highly similar to recent detections within 3.5s
+    if (
+      (this.lastOCRText && this.ocrSimilarity(raw, this.lastOCRText) >= 0.72) ||
+      this.recentOCRHistory.some(item => this.ocrSimilarity(raw, item.text) >= 0.72)
+    ) {
+      return;
+    }
 
     // Display subtitle immediately if dubbing is disabled
     if (!this.isDubbingEnabled && typeof this.displaySubtitle === 'function') {
       this.displaySubtitle(raw, data.translated || raw);
       if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = data.translated || raw;
       if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = raw;
-    }
-
-    // Merge progressive subtitle expansions (e.g. "I can't" -> "I can't believe")
-    // Update the last queued dubbing item if it hasn't played yet, avoiding duplicate/choppy fragments!
-    if (this.lastOCRText && raw.length > this.lastOCRText.length && raw.toLowerCase().includes(this.lastOCRText.toLowerCase())) {
-      this.lastOCRText = raw;
-      if (this.isDubbingEnabled && this.liveDubbingQueue && this.liveDubbingQueue.length > 0) {
-        const lastQueued = this.liveDubbingQueue[this.liveDubbingQueue.length - 1];
-        if (lastQueued && raw.toLowerCase().startsWith(String(lastQueued.sourceText || '').toLowerCase())) {
-          lastQueued.text = data.translated || raw;
-          lastQueued.sourceText = raw;
-          return;
-        }
-      }
-      if (this.isDubbingEnabled) {
-        this.enqueueLiveDubbing(data.translated || raw, null, raw, performance.now(), performance.now(), data.timings || null);
-      }
-      return;
-    }
-
-    const now = performance.now();
-    if (!this.recentOCRHistory) this.recentOCRHistory = [];
-    this.recentOCRHistory = this.recentOCRHistory.filter(item => (now - item.time) < 1200);
-
-    // Suppress if duplicate or highly similar to recent detections within 1.2s
-    if (
-      (this.lastOCRText && this.ocrSimilarity(raw, this.lastOCRText) >= 0.72) ||
-      this.recentOCRHistory.some(item => this.ocrSimilarity(raw, item.text) >= 0.72)
-    ) {
-      return;
     }
 
     // Preemption on Seek / New Dialogue Line:
@@ -2578,9 +2600,9 @@ class LiveDubStudio {
     this.isProcessingLiveDubbing = true;
     try {
       while (this.liveDubbingQueue.length > 0) {
-        // Backlog management: Drop older intermediate items if queue accumulates > 4 lines
-        // so the system stays synchronized with real-time video without a 2-3 sentence lag!
-        if (this.liveDubbingQueue.length > 4) {
+        // Backlog management: Drop older intermediate items if queue accumulates > 2 lines
+        // so the system stays synchronized with real-time video without falling behind!
+        if (this.liveDubbingQueue.length > 2) {
           const dropped = this.liveDubbingQueue.splice(0, this.liveDubbingQueue.length - 1);
           for (const d of dropped) {
             this.displaySubtitle(d.sourceText, d.text);

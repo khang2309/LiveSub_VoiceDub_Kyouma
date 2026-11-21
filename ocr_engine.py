@@ -69,7 +69,7 @@ class SubtitleOCR:
                     "Global.use_cls": False,
                     "Global.text_score": 0.50,
                     "Det.model_type": ModelType.TINY,
-                    "Rec.model_type": ModelType.TINY,
+                    "Rec.model_type": ModelType.SMALL,
                     "Rec.lang_type": rec_lang,
                     "Det.limit_type": "max",
                     "Det.limit_side_len": 800,
@@ -178,7 +178,7 @@ class SubtitleOCR:
                 continue
 
             # Detect corrupted Vietnamese Vietsub OCR (e.g. missing diacritics / Danish-German Latin glyphs å, ä, ö, ø, ß)
-            if re.search(r'[åäöøß]|ngv[oò]i|thv[oò]ng|nu[aá]c\s*m[aå]t|lung\s*tr[oò]ng|l[aā]o\s*b[aà]|ky\s*vi[eê]n', text, re.IGNORECASE):
+            if re.search(r'[åöøß]|ngv[oò]i|thv[oò]ng|nu[aá]c\s*m[aå]t|lung\s*tr[oò]ng|ky\s*vi[eê]n', text, re.IGNORECASE):
                 continue
 
             xs = [float(point[0]) for point in box]

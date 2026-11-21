@@ -683,10 +683,90 @@ COMMON_VI_OCR_REPAIRS = [
     (r'\bláu\b', 'lâu'),
     (r'\bSaoem\b', 'Sao em'),
     (r'\bCh[aá]cth[eê]\b', 'Chắc thế'),
+    (r'[dD][đĐ]', 'đ'),
+    (r'\bmgi\s*viêc\b', 'mọi việc'),
+    (r'\bmgi\b', 'mọi'),
+    (r'\bviêc\b', 'việc'),
+    (r'\bThdi\s*k[eé]\b', 'Thôi kệ'),
+    (r'\bThôi\s*k[eé]\s*càl[aā]c\b', 'Thôi kệ cả Lão'),
+    (r'\bThôi\s*k[eé]\b', 'Thôi kệ'),
+    (r'\bThi\s*k[eě]\b', 'Thôi kệ'),
+    (r'\bcàl[aā]c\b', 'cả Lão'),
+    (r'\bcáL[aā]o\s*hàbà\b', 'cả Lão bà bà'),
+    (r'\bcáL[aā]o\b', 'cả Lão'),
+    (r'\bL[aā]o\s*bàbà\b', 'Lão bà bà'),
+    (r'\bL[aā]o\s*hàbà\b', 'Lão bà bà'),
+    (r'\bL[aā]o\b', 'Lão'),
+    (r'\bhàbà\b', 'bà bà'),
+    (r'\bbàbà\b', 'bà bà'),
+    (r'\bcébiát\b', 'có biết'),
+    (r'\bvira\s*r[ċdi]+i\b', 'vừa rồi'),
+    (r'\bvira\b', 'vừa'),
+    (r'\br[ċdi]+i\b', 'rồi'),
+    (r'\b(?:dđ|đ)[aā]\s*(?:giúp|giún)\b', 'đã giúp'),
+    (r'\b(?:dđ|đ)[aā]\b', 'đã'),
+    (r'\bđa\s+giúp\b', 'đã giúp'),
+    (r'\bgiún\b', 'giúp'),
+    (r'\ban\s*vò\b', 'anh ấy'),
+    (r'\bHiéu\s*éco\b', 'Hiểu cho'),
+    (r'\bHiéu\b', 'Hiểu'),
+    (r'\bcnón\b', 'chọn'),
+    (r'\bnraà\s*thi\s*trân\b', 'một thị trấn'),
+    (r'\bnraà\b', 'một'),
+    (r'\bthi\s*trân\b', 'thị trấn'),
+    (r'\bTôi\s*hán\s*hai\b', 'Tôi tính toán'),
+    (r'\bsó\s*còn\b', 'Số còn'),
+    (r'\bso\s*còn\b', 'Số còn'),
+    (r'\bsó\s*con\b', 'Số còn'),
+    (r'\bso\s*con\b', 'Số còn'),
+    (r'\b[iIl]+[aá][iI]\s*toi\b', 'lại tôi'),
+    (r'\biai\s*toi\b', 'lại tôi'),
+    (r'\biai\b(?=\s+tôi|\s+toi)', 'lại'),
+    (r'\blai\s*toi\b', 'lại tôi'),
+    (r'\blại\s*toi\b', 'lại tôi'),
+    (r'\bkhong\s*lay\b', 'không lấy'),
+    (r'\bkhong\s*tay\b', 'không lấy'),
+    (r'\bkhông\s*tay\b', 'không lấy'),
+    (r'\bkhong\b', 'không'),
+    (r'\blay\b', 'lấy'),
+    (r'\btoi\b', 'tôi'),
+    (r'\blãe\b', 'Lão'),
+    (r'\bcüna\b', 'cũng'),
+    (r'\bnaâm\s*tin\s*tir[čc]na\b', 'niềm tin tưởng'),
+    (r'\bnaâm\s*tin\b', 'niềm tin'),
+    (r'\bnaâm\b', 'niềm'),
+    (r'\btir[čc]na\b', 'tưởng'),
+    (r'\btir[éè]na\b', 'tưởng'),
+    (r'\banh\s*âv\b', 'anh ấy'),
+    (r'\bâv\b', 'ấy'),
+    (r'\bphuc\s*kích\b', 'phục kích'),
+    (r'\be\s*kích\b', 'kích'),
 ]
 
+EURO_TO_VI_GLYPHS = {
+    'ā': 'a', 'ä': 'a', 'à': 'à', 'á': 'á', 'ả': 'ả', 'ã': 'ã', 'ạ': 'ạ',
+    'č': 'c', 'ć': 'c', 'ċ': 'c',
+    'ď': 'd',
+    'ē': 'e', 'ě': 'e', 'è': 'è', 'é': 'é', 'ẻ': 'ẻ', 'ẽ': 'ẽ', 'ẹ': 'ẹ',
+    'ğ': 'g',
+    'ī': 'i', 'ı': 'i', 'ì': 'ì', 'í': 'í', 'ỉ': 'ỉ', 'ĩ': 'ĩ', 'ị': 'ị',
+    'ľ': 'l', 'ł': 'l',
+    'ň': 'n', 'ñ': 'n',
+    'ō': 'o', 'ö': 'o', 'ò': 'ò', 'ó': 'ó', 'ỏ': 'ỏ', 'õ': 'õ', 'ọ': 'ọ',
+    'ř': 'r',
+    'š': 's',
+    'ť': 't',
+    'ū': 'u', 'ů': 'u', 'ű': 'u', 'ü': 'u', 'ù': 'ù', 'ú': 'ú', 'ủ': 'ủ', 'ũ': 'ũ', 'ụ': 'ụ',
+    'ž': 'z', 'ż': 'z',
+}
+
+VALID_SINGLE_WORDS = {
+    "đúng", "không", "phải", "chào", "sao", "dạ", "vâng", "ừ", "thật", "hả", "này",
+    "đi", "được", "nghe", "tại", "cứu", "chạy", "mau", "khoan", "chết", "nguy"
+}
+
 def is_garbage_ocr(text: str) -> bool:
-    """Detect and reject random OCR texture noise hallucinated during silent frames (e.g. TL2 L2 t 1, naTLn nL)."""
+    """Detect and reject random OCR texture noise hallucinated during silent frames (e.g. TL2 L2 t 1, naTLn nL, nbnina)."""
     text = text.strip()
     if not text or len(text) < 2:
         return True
@@ -694,6 +774,18 @@ def is_garbage_ocr(text: str) -> bool:
     if re.search(r'[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]', text):
         cjk_chars = re.findall(r'[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]', text)
         return len(cjk_chars) < 2
+
+    # Reject illegal consonant clusters and hallucinated background gibberish tokens (e.g. nbnina)
+    raw_words = re.findall(r'[a-zA-Zà-ỹÀ-Ỹ0-9]+', text)
+    if any(re.match(r'^(?:nbn|nra\b|cn[óo]|tl\d|zz)', w, re.I) for w in raw_words):
+        return True
+
+    # Reject isolated single words that are not recognized conversational exclamations
+    if len(raw_words) == 1:
+        w_lower = raw_words[0].lower()
+        if w_lower not in VALID_SINGLE_WORDS and len(w_lower) <= 6:
+            return True
+
     # Reject noise words with mixed letters and numbers (e.g. AA82n, Ta02, 2a, a2)
     raw_tokens = re.findall(r'\S+', text)
     if any(re.search(r'[a-zA-Z]+[0-9]+|[0-9]+[a-zA-Z]+', w) for w in raw_tokens):
@@ -714,8 +806,15 @@ def is_garbage_ocr(text: str) -> bool:
 
 def repair_vietnamese_ocr(text: str) -> str:
     cleaned = text
+    # 1. Apply specific Vietnamese OCR syllable and phrase repairs first
     for pat, rep in COMMON_VI_OCR_REPAIRS:
         cleaned = re.sub(pat, rep, cleaned, flags=re.IGNORECASE)
+    # 2. Strip any remaining European accents that corrupt VieNeu phonetic tokenizer
+    for k, v in EURO_TO_VI_GLYPHS.items():
+        if k in cleaned:
+            cleaned = cleaned.replace(k, v)
+        if k.upper() in cleaned:
+            cleaned = cleaned.replace(k.upper(), v.upper())
     return re.sub(r'\s+', ' ', cleaned).strip()
 
 def fast_translate_to_vi(
@@ -1115,9 +1214,9 @@ async def api_ocr_subtitle(
 
     # Fast bypass for Vietsub: If text is already in Vietnamese, skip Google Translate completely!
     has_vi_markers = bool(
-        source_lang == "vi"
+        (source_lang or "").split("-")[0].lower() == "vi"
         or re.search(r'[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]', original, re.I)
-        or re.search(r'\b(?:không|được|người|chúng|tôi|bạn|của|trong|một|cho|với|như|đã|sẽ|đang|vậy|từ|đó|những|tộc|hoàng|đế|công|nhận|thuở|lập|quốc|ba|vị|về|sau|chữ|khác)\b', original, re.I)
+        or re.search(r'\b(?:không|được|người|chúng|tôi|bạn|của|trong|một|cho|với|như|đã|sẽ|đang|vậy|từ|đó|những|tộc|hoàng|đế|công|nhận|thuở|lập|quốc|ba|vị|về|sau|chữ|khác|lấy|thị|trấn)\b', original, re.I)
     )
     if has_vi_markers:
         translated = original
