@@ -767,6 +767,25 @@ test('isGarbageOCR rejects random background noise and accepts valid dialogue', 
   assert.equal(app.isGarbageOCR('minh e néu không có Lão bà bà'), false);
 });
 
+test('hasSeenHardSubtitles locks anime mode to OCR and drops any stray VAD speech triggers', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.isListening = true;
+  app.hasSeenHardSubtitles = true;
+  let sentPhrase = false;
+  app.sendSpeechPhraseToAI = () => { sentPhrase = true; };
+
+  // If stray audio triggers onSpeechEnd while anime subtitles are present:
+  // It must be rejected so Japanese audio does not hallucinate into Vietnamese
+  const fakeAudio = new Float32Array(4000);
+  const onSpeechEnd = (audio) => {
+    if (!app.isListening || app.isOCRModeActive || app.hasSeenHardSubtitles || !audio || audio.length < 3200) return;
+    sentPhrase = true;
+  };
+  onSpeechEnd(fakeAudio);
+  assert.equal(sentPhrase, false);
+});
+
+
 
 
 

@@ -965,6 +965,8 @@ class LiveDubStudio {
       this.activeSource = 'system';
       this.detectedOCRLanguage = null;
       this.hasActiveHardSubtitles = false;
+      this.hasSeenHardSubtitles = false;
+      this._hasNotifiedVietsubMode = false;
       this.lastHardSubTime = 0;
       const captureMode = this.getRadioGroupValue(this.systemCaptureMode, 'auto');
       this.isOCRModeActive = (captureMode === 'hard_sub');
@@ -1335,6 +1337,7 @@ class LiveDubStudio {
         if (!data.empty && data.original) {
           this.ocrConsecutiveEmpty = 0;
           this.hasActiveHardSubtitles = true;
+          this.hasSeenHardSubtitles = true;
           this.lastHardSubTime = performance.now();
           if (/[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/i.test(data.original) || /\b(?:không|được|người|chúng|tôi|bạn|của|trong|một|cho|với|như|đã|sẽ|đang|vậy|từ|đó|những|tộc|hoàng|đế)\b/i.test(data.original)) {
             this.detectedOCRLanguage = 'vi';
@@ -1342,15 +1345,19 @@ class LiveDubStudio {
           if (this.neuralVAD && this.neuralVADActive) {
             try { this.neuralVAD.pause(); } catch (_) {}
           }
+          if (this.oneTouchDetectionPill && !this._hasNotifiedVietsubMode) {
+            this._hasNotifiedVietsubMode = true;
+            this.oneTouchDetectionPill.innerHTML = '⚡ <strong>Phát hiện Vietsub Anime:</strong> Khóa chế độ đọc chữ OCR siêu tốc ~200ms (tắt nghe tiếng chống loạn giọng)';
+          }
           this.handleOCRSubtitle(data);
         } else {
           this.ocrConsecutiveEmpty = (this.ocrConsecutiveEmpty || 0) + 1;
           if (this.ocrConsecutiveEmpty >= 2) {
-            // After 2 empty frames (~480ms), reset lastOCRText so fresh subtitle lines or rewound scenes can speak immediately!
+            // After 2 empty frames (~200ms at 100ms interval), reset lastOCRText so fresh subtitle lines or rewound scenes can speak immediately!
             this.lastOCRText = '';
           }
           if (this.ocrConsecutiveEmpty >= 3) {
-            if (this.isHybridModeActive && (performance.now() - (this.lastHardSubTime || 0)) > 2500) {
+            if (this.isHybridModeActive && !this.hasSeenHardSubtitles && (performance.now() - (this.lastHardSubTime || 0)) > 6000) {
               if (this.hasActiveHardSubtitles) {
                 this.hasActiveHardSubtitles = false;
                 if (this.neuralVAD && this.neuralVADActive) {
@@ -2137,7 +2144,7 @@ class LiveDubStudio {
             }
           },
           onSpeechEnd: (audio) => {
-            if (!this.isListening || this.isOCRModeActive || !audio || audio.length < 3200) return;
+            if (!this.isListening || this.isOCRModeActive || this.hasSeenHardSubtitles || !audio || audio.length < 3200) return;
             const wavBlob = this.encodeWAV16k([audio], 16000);
             wavBlob.livesubCapturedAt = this.captureStartedAt || performance.now();
             wavBlob.livesubFinalizedAt = performance.now();
@@ -2185,7 +2192,7 @@ class LiveDubStudio {
 
       // Silero owns phrase endpointing. This ScriptProcessor remains connected
       // only for the level meter and the missing-shared-audio warning.
-      if (this.neuralVADActive || this.isOCRModeActive) return;
+      if (this.neuralVADActive || this.isOCRModeActive || this.hasSeenHardSubtitles) return;
 
       // 2. Speech state machine with ~170 ms pre-roll. Long stretches of
       // silence are not uploaded to Whisper, which cuts ASR time noticeably.
