@@ -256,6 +256,7 @@ class LiveDubStudio {
     this.systemIntelligenceHint = document.getElementById('systemIntelligenceHint');
     this.systemSubModeRadios = document.querySelectorAll('input[name="systemSubMode"]');
     this.chkAdaptiveSpeed = document.getElementById('chkAdaptiveSpeed');
+    this.chkEnableWhisper = document.getElementById('chkEnableWhisper');
 
     // Source 2: Local Video File
     this.localVideoDropZone = document.getElementById('localVideoDropZone');
@@ -980,17 +981,15 @@ class LiveDubStudio {
       });
 
       this.showToast('🎬 Đã kết nối video! Hãy phát phim để tự động lồng tiếng.');
-      if (hasAudio) {
+      const enableWhisper = this.chkEnableWhisper ? this.chkEnableWhisper.checked : false;
+      if (hasAudio && enableWhisper) {
         await this.setupVADAndRecording(this.mediaStream);
       }
       this.updateMasterDubUI();
-      if (this.isOCRModeActive) {
-        await this.startHardSubtitleOCR(this.mediaStream);
-      } else if (this.isHybridModeActive) {
-        await this.startHardSubtitleOCR(this.mediaStream);
-        if (hasAudio) {
-          await this.runInitialSubtitleProbe(this.mediaStream);
-        }
+      // Always start OCR for video subtitles (fastest & most accurate for Vietsub)
+      await this.startHardSubtitleOCR(this.mediaStream);
+      if (hasAudio && enableWhisper) {
+        await this.runInitialSubtitleProbe(this.mediaStream);
       }
     } catch (err) {
       if (err.name !== 'NotAllowedError') {
@@ -1279,46 +1278,8 @@ class LiveDubStudio {
       if (this.ocrRequestActive) return;
       if (this.ocrVideo.paused || this.ocrVideo.ended) return;
 
-      // Fast static video / pause detection via downsampled pixel hash
-      try {
-        const sampleW = Math.min(this.ocrCanvas.width, 80);
-        const sampleH = Math.min(this.ocrCanvas.height, 20);
-        const curData = context.getImageData(0, 0, sampleW, sampleH).data;
-        let frameDiff = 0;
-        if (this._prevFrameData && this._prevFrameData.length === curData.length) {
-          for (let i = 0; i < curData.length; i += 16) {
-            frameDiff += Math.abs(curData[i] - this._prevFrameData[i]);
-          }
-        } else {
-          frameDiff = 9999;
-        }
-        this._prevFrameData = curData;
-
-        const isFrameStatic = (frameDiff < 40);
-        if (isFrameStatic) {
-          this._staticFrameCount = (this._staticFrameCount || 0) + 1;
-          // If static for > 2 consecutive scans (~480ms), user has paused the video!
-          if (this._staticFrameCount >= 2) {
-            this.isVideoPaused = true;
-            return; // Skip duplicate OCR request while paused!
-          }
-        } else {
-          // Frame motion detected!
-          if (this.isVideoPaused) {
-            // User just resumed or sought the video! (Bấm tiếp tục / tua)
-            this.isVideoPaused = false;
-            this.lastOCRText = '';
-            this.recentOCRHistory = [];
-            if (this.liveDubbingQueue && this.liveDubbingQueue.length > 0) {
-              this.liveDubbingQueue = [];
-            }
-            if (typeof this.stopDubbingAudio === 'function') {
-              this.stopDubbingAudio(false, true);
-            }
-          }
-          this._staticFrameCount = 0;
-        }
-      } catch (_) {}
+      // Continuous OCR scanning: Do not artificially pause on static backgrounds (e.g. anime character dialogues)
+      this.isVideoPaused = false;
 
       this.ocrRequestActive = true;
       try {
@@ -1489,13 +1450,14 @@ class LiveDubStudio {
       return;
     }
 
-    // Instant Preemption on Seek / New Dialogue Line:
-    // If a brand new subtitle arrives, immediately flush older queued lines and stop
-    // stale playback so the newly seeked or transitioned dialogue starts immediately!
+    // Preemption on Seek / New Dialogue Line:
+    // Only flush stale queue when audio is idle or when user scrubs/pauses,
+    // ensuring the character's current line is spoken completely and clearly without being chopped in half!
     if (this.isDubbingEnabled) {
       if (this.lastOCRText && this.ocrSimilarity(raw, this.lastOCRText) < 0.72) {
+        const isCurrentlySpeaking = Boolean(this.currentActiveAudioSource);
         const elapsedSinceDubStart = this.lastDubbingStartedAt ? (performance.now() - this.lastDubbingStartedAt) : 9999;
-        if (elapsedSinceDubStart > 800 || (this.ocrConsecutiveEmpty || 0) >= 1) {
+        if (!isCurrentlySpeaking || elapsedSinceDubStart > 4000 || this.isSeekPreempt) {
           if (typeof this.stopDubbingAudio === 'function') {
             this.stopDubbingAudio(false, true);
           }

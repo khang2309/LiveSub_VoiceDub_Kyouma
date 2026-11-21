@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Studio phụ đề và lồng tiếng tiếng Việt theo thời gian thực cho video, âm thanh hệ thống và microphone.">
-  <title>LiveSub & VoiceDub AI - Studio Thuyết Minh & Lồng Tiếng Đa Nguồn</title>
+  <meta name="description" content="Studio phụ đề và lồng tiếng tiếng Việt theo thời gian thực cho video, anime và phim.">
+  <title>LiveSub & VoiceDub AI - Studio Thuyết Minh & Phụ Đề Realtime</title>
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23e89486'/%3E%3Cpath d='M32 13a8 8 0 0 0-8 8v17a8 8 0 0 0 16 0V21a8 8 0 0 0-8-8Zm-16 22v3a16 16 0 0 0 32 0v-3h-5v3a11 11 0 0 1-22 0v-3Z' fill='%23170f0b'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css?v=20261121_03">
+  <link rel="stylesheet" href="style.css?v=20261121_streamlined_01">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Roboto+Condensed:ital,wght@0,600;0,700;0,800;0,900;1,700&family=Oswald:wght@600;700&family=Young+Serif&display=swap" rel="stylesheet">
@@ -53,501 +53,216 @@
       </div>
     </header>
 
-    <!-- UNIVERSAL INPUT SOURCE SELECTOR (Tất cả nguồn phát video & âm thanh) -->
-    <nav class="source-nav-bar">
-      <button class="source-tab active" id="tabSourceSystem" data-source="system">
-        <div class="tab-icon"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></div>
-        <div class="tab-info">
-          <strong>Âm Thanh Hệ Thống / Mọi Ứng Dụng</strong>
-          <span>VLC, Netflix, Zoom, Tab Trình duyệt, Game, Phim</span>
-        </div>
+    <!-- 1-TOUCH QUICK CONTROL BAR (Thanh điều khiển 1 chạm tinh gọn) -->
+    <div class="quick-control-bar">
+      <!-- Nút hành động 1 chạm chính -->
+      <button id="btnToggleSystemAudio" class="btn-hero-action" type="button">
+        <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+        <span id="btnSystemAudioText">BẮT ĐẦU ĐỌC & LỒNG TIẾNG SUB</span>
       </button>
 
-      <button class="source-tab" id="tabSourceLocalFile" data-source="local">
-        <div class="tab-icon"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h7l2 2h9v10H3z"/></svg></div>
-        <div class="tab-info">
-          <strong>File Video Máy Tính</strong>
-          <span>Mở file .mp4, .mkv, .webm</span>
-        </div>
+      <!-- Chọn giọng đọc VieNeu -->
+      <div class="control-item" style="max-width: 280px;">
+        <label for="voiceSelect">Giọng Lồng Tiếng (VieNeu AI):</label>
+        <select id="voiceSelect" class="form-control select-highlight">
+          <option value="vieneu:Trúc Ly" selected>🎙️ Trúc Ly (Nữ, Bắc, Tự nhiên - Khuyên dùng)</option>
+          <option value="vieneu:Thái Sơn">🎙️ Thái Sơn (Nam, Nam, Kể chuyện)</option>
+          <option value="vieneu:Thiện Minh">🎙️ Thiện Minh (Nam, Bắc, Phim ảnh)</option>
+          <option value="vieneu:Thùy Dung">🎙️ Thùy Dung (Nữ, Nam, Truyền cảm)</option>
+          <option value="google-vi">⚡ Google Voice Tiếng Việt (Tốc độ siêu nhanh ~0.3s)</option>
+        </select>
+      </div>
+
+      <!-- Chọn ngôn ngữ sub trên video (Mặc định: Tiếng Việt - Đọc ngay không dịch) -->
+      <div class="control-item" style="max-width: 240px;">
+        <label for="sourceLang">Sub Trên Video:</label>
+        <select id="sourceLang" class="form-control">
+          <option value="vi-VN" selected>🇻🇳 Tiếng Việt (Có sẵn sub - Không dịch)</option>
+          <option value="en-US">🇬🇧 Tiếng Anh (Dịch sang Việt)</option>
+          <option value="ja-JP">🇯🇵 Tiếng Nhật (Dịch sang Việt)</option>
+          <option value="zh-CN">🇨🇳 Tiếng Trung (Dịch sang Việt)</option>
+          <option value="ko-KR">🇰🇷 Tiếng Hàn (Dịch sang Việt)</option>
+          <option value="auto">🌐 Tự động nhận diện</option>
+        </select>
+      </div>
+
+      <!-- Checkbox Whisper: Mặc định tắt, chỉ bật khi video không có sub -->
+      <label class="control-item-checkbox" title="Chỉ tích khi video hoàn toàn không có chữ phụ đề để Whisper nghe tiếng">
+        <input type="checkbox" id="chkEnableWhisper">
+        <span>Video không có sub (Dùng Whisper nghe tiếng)</span>
+      </label>
+
+      <!-- Nút Dừng Âm Thanh ngay lập tức -->
+      <button id="btnPanicKill" class="btn btn-secondary" type="button" title="Dừng âm thanh đang phát ngay lập tức" style="padding: 10px 16px;">
+        ⏹ Dừng Âm
       </button>
+    </div>
 
-      <button class="source-tab" id="tabSourceWebUrl" data-source="weburl">
-        <div class="tab-icon"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg></div>
-        <div class="tab-info">
-          <strong>Xem Trực Tiếp Link YouTube</strong>
-          <span>Xem & nhúng trực tiếp video YouTube</span>
-        </div>
-      </button>
-
-      <!-- Tab Mic ẩn nhưng vẫn giữ ID để không gãy DOM handler -->
-      <button class="source-tab" id="tabSourceMic" data-source="mic" style="display: none;" aria-hidden="true">
-        <div class="tab-info">
-          <strong>Microphone</strong>
-        </div>
-      </button>
-    </nav>
-
-    <!-- Main Workspace Grid -->
-    <main class="main-content">
-      <!-- Left Column: Controls & Settings -->
-      <section class="panel control-panel">
-
-        <!-- SOURCE 1: SYSTEM & TAB AUDIO -->
-        <div id="panelSourceSystem" class="source-panel-block">
-          <!-- 1-TOUCH HERO ACTION (Siêu đơn giản, 1 chạm tự tối ưu) -->
-          <div class="one-touch-card">
-            <button id="btnToggleSystemAudio" class="btn btn-primary btn-one-touch w-full" type="button">
-              <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                <polygon points="5 3 19 12 5 21 5 3"/>
-              </svg>
-              <div class="one-touch-label">
-                <strong id="btnSystemAudioText">BẮT ĐẦU XEM & DỊCH TỰ ĐỘNG (1 CHẠM)</strong>
-                <small>Tự nhận diện Vietsub / Phụ đề tiếng gốc (OCR) / Video không sub (Whisper GPU)</small>
-              </div>
+    <!-- MAIN WORKSPACE: 2 CỘT GỌN GÀNG VỪA 1 MÀN HÌNH -->
+    <main class="main-content-streamlined">
+      <!-- Cột Trái: Màn Hình Phụ Đề Realtime (Cinema View) -->
+      <section class="cinema-panel">
+        <div class="cinema-panel-header">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <strong style="font-size: 1.05rem;">Màn Hình Phụ Đề Realtime (Cinema View)</strong>
+            <span id="oneTouchDetectionPill" class="one-touch-status-pill">
+              ⚡ Đang khóa chế độ đọc chữ OCR siêu tốc ~150ms
+            </span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button id="btnCinemaPiP" class="btn btn-primary btn-sm" title="Ghim phụ đề nổi Always-on-Top">
+              📌 Ghim Phụ Đề (PiP)
             </button>
-            <div id="oneTouchDetectionPill" class="one-touch-status-pill">
-              ⚡ <strong>Chế độ 1 Chạm:</strong> Tự động kiểm tra video lần đầu để chọn đọc chữ (OCR) hoặc nghe âm thanh (Whisper GPU)
-            </div>
-            <p class="source-guide-text">
-               💡 <strong>Mẹo 1 chạm:</strong> Khi hộp thoại trình duyệt hiện ra, chọn tab video bạn muốn xem và nhớ <strong>tích chọn “Chia sẻ âm thanh / Share audio”</strong>. Bấm nút <strong>Ghim Phụ Đề (PiP)</strong> ở góc trên để phụ đề nổi đè lên video khi xem toàn màn hình.
-            </p>
-          </div>
-
-          <!-- COLLAPSIBLE ADVANCED SETTINGS (Gom gọn các nút rối vào menu mở rộng) -->
-          <details class="advanced-settings-drawer" id="advancedSettingsDrawer">
-            <summary class="advanced-settings-summary">
-              <span>⚙️ Tùy chỉnh nâng cao (Chọn giọng VieNeu, kiểu phụ đề, tốc độ, đo âm...)</span>
-            </summary>
-            <div class="advanced-settings-content">
-
-              <section class="runtime-config" aria-labelledby="runtimeConfigTitle" style="margin-top: 10px;">
-                <div class="runtime-config-head">
-                  <div>
-                    <span class="runtime-kicker">Cấu hình đang chạy</span>
-                    <strong id="runtimeConfigTitle">Nguồn → nhận dạng → dịch → giọng Việt</strong>
-                  </div>
-                  <span id="settingsApplyState" class="apply-state" data-state="applied" role="status" aria-live="polite">
-                    <span class="apply-state-dot"></span>Đã áp dụng realtime
-                  </span>
-                </div>
-                <div class="runtime-config-body">
-                  <div class="runtime-chip"><span>Nguồn</span><strong id="runtimeSourceValue">Hệ thống / Tab</strong></div>
-                  <div class="runtime-chip"><span>Ngôn ngữ</span><strong id="runtimeLanguageValue">Tự động một lần</strong></div>
-                  <div class="runtime-chip"><span>Phụ đề</span><strong id="runtimeSubtitleValue">Song ngữ</strong></div>
-                  <div class="runtime-chip"><span>Giọng đang dùng</span><strong id="runtimeVoiceValue">VieNeu Local</strong></div>
-                  <div class="runtime-chip runtime-engine-chip"><span>Backend</span><strong id="runtimeEngineValue">Đang kiểm tra…</strong></div>
-                  <button id="btnConfirmSettings" class="btn btn-confirm-settings" type="button" title="Đồng bộ trạng thái backend">Đồng bộ</button>
-                </div>
-              </section>
-
-              <div class="source-intelligence" aria-labelledby="systemIntelligenceTitle" style="margin-top: 12px;">
-                <div class="source-intelligence-heading">
-                  <strong id="systemIntelligenceTitle">Phương thức nhận diện thủ công</strong>
-                  <span id="systemIntelligenceState" class="source-state" data-state="ready">Sẵn sàng</span>
-                </div>
-                <div class="source-intelligence-grid">
-                  <fieldset id="systemCaptureMode" class="choice-group">
-                    <legend>Phương thức nhận dạng</legend>
-                    <label class="choice-option"><input type="radio" name="systemCaptureMode" value="auto" checked><span><strong>⚡ Tự nhận diện thông minh (1 Chạm)</strong><small>Tự động kết hợp nhận diện giọng nói và đọc chữ</small></span></label>
-                    <label class="choice-option"><input type="radio" name="systemCaptureMode" value="audio_only"><span><strong>🎙️ Nghe tiếng trực tiếp (Whisper GPU)</strong><small>Dành cho YouTube, Phim, Livestream không có sub</small></span></label>
-                    <label class="choice-option"><input type="radio" name="systemCaptureMode" value="hard_sub"><span><strong>📷 Đọc chữ trên video (RapidOCR)</strong><small>Dành cho Anime, phim có chữ phụ đề in dính</small></span></label>
-                  </fieldset>
-
-                  <fieldset id="systemSubMode" class="choice-group">
-                    <legend>Kiểu hiển thị phụ đề</legend>
-                    <label class="choice-option"><input type="radio" name="systemSubMode" value="bilingual" checked><span><strong>Song ngữ (Gốc + Việt)</strong><small>Dòng 1 tiếng gốc, dòng 2 tiếng Việt</small></span></label>
-                    <label class="choice-option"><input type="radio" name="systemSubMode" value="vi_only"><span><strong>Chỉ Sub Tiếng Việt</strong><small>Phụ đề tiếng Việt chuẩn, viền đen sắc nét</small></span></label>
-                    <label class="choice-option"><input type="radio" name="systemSubMode" value="source_only"><span><strong>Chỉ Sub Tiếng Gốc</strong><small>Lời thoại tiếng gốc (Anh, Nhật, Hàn, Trung)</small></span></label>
-                    <label class="choice-option"><input type="radio" name="systemSubMode" value="en_only"><span><strong>Sub Tiếng Anh</strong><small>Hiện phụ đề tiếng Anh</small></span></label>
-                    <label class="choice-option"><input type="radio" name="systemSubMode" value="none"><span><strong>Tắt phụ đề (Chỉ nghe)</strong><small>Chỉ nghe giọng lồng tiếng AI</small></span></label>
-                  </fieldset>
-                </div>
-                <p id="systemIntelligenceHint" class="source-intelligence-hint">
-                  Hệ thống đang sẵn sàng ở chế độ 1 chạm tự động tối ưu.
-                </p>
-              </div>
-
-              <!-- DYNAMIC AUDIO LEVEL METER -->
-              <div class="audio-meter-card" style="margin-top: 14px;">
-                <div class="audio-meter-header">
-                  <span>Cường độ âm thanh (VAD):</span>
-                  <span id="meterPercentText" class="meter-val">0%</span>
-                </div>
-                <div class="audio-meter-bar">
-                  <div id="audioMeterFill" class="audio-meter-fill"></div>
-                </div>
-              </div>
-
-              <div class="divider"></div>
-
-              <!-- LANGUAGE SETTINGS -->
-              <div class="setting-group">
-                <label class="group-title">Ngôn Ngữ</label>
-                <div class="form-row-2">
-                  <div class="form-group">
-                    <label for="sourceLang">Nói / Gốc:</label>
-                    <select id="sourceLang" class="form-control">
-                      <option value="auto" selected> Tự động nhận diện</option>
-                      <option value="en-US">Tiếng Anh (English)</option>
-                      <option value="zh-CN">Tiếng Trung (Chinese)</option>
-                      <option value="ja-JP">Tiếng Nhật (Japanese)</option>
-                      <option value="ko-KR">Tiếng Hàn (Korean)</option>
-                      <option value="th-TH">Tiếng Thái (Thai)</option>
-                      <option value="fr-FR">Tiếng Pháp (French)</option>
-                      <option value="de-DE">Tiếng Đức (German)</option>
-                      <option value="es-ES">Tiếng Tây Ban Nha</option>
-                      <option value="ru-RU">Tiếng Nga (Russian)</option>
-                      <option value="vi-VN">Tiếng Việt</option>
-                    </select>
-                  </div>
-
-                  <div class="form-group">
-                    <label for="targetLang">Lồng tiếng:</label>
-                    <select id="targetLang" class="form-control" disabled>
-                      <option value="vi" selected>Tiếng Việt (Chuẩn)</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <!-- REAL VOICE SELECTION WITH INSTANT AUDITION -->
-              <div class="setting-group">
-                <div class="voice-header-row">
-                  <label class="group-title" for="voiceSelect">Giọng Đọc Thuyết Minh Thật</label>
-                  <button id="btnTestVoiceSample" class="btn-audition" title="Bấm để nghe thử ngay giọng này phát âm">
-                     Nghe thử giọng
-                  </button>
-                </div>
-                <select id="voiceSelect" class="form-control select-highlight">
-                  <option value="vieneu:Trúc Ly" selected>🎙️ VieNeu-TTS: Trúc Ly (Nữ, Bắc, Tự nhiên, truyền cảm - Tốt nhất)</option>
-                  <option value="vieneu:Thái Sơn">🎙️ VieNeu-TTS: Thái Sơn (Nam, Nam, Kể chuyện)</option>
-                  <option value="vieneu:Thiện Minh">🎙️ VieNeu-TTS: Thiện Minh (Nam, Bắc, Phim ảnh)</option>
-                  <option value="vieneu:Thùy Dung">🎙️ VieNeu-TTS: Thùy Dung (Nữ, Nam, Truyền cảm)</option>
-                  <option value="google-vi">⚡ Google Voice Tiếng Việt (Tốc độ siêu nhanh ~0.3s)</option>
-                </select>
-              </div>
-
-              <!-- DUBBING AUDIO SLIDERS -->
-              <div class="setting-group">
-                <label class="group-title">Âm Lượng & Tốc Độ</label>
-                <div class="form-row-2">
-                  <div class="form-group">
-                    <div class="range-header">
-                      <label for="rateRange">Tốc độ đọc cơ bản:</label>
-                      <span id="rateValue" class="badge">1.15x</span>
-                    </div>
-                    <input type="range" id="rateRange" min="0.8" max="1.50" step="0.05" value="1.15" class="slider-control">
-                  </div>
-
-                  <div class="form-group">
-                    <div class="range-header">
-                      <label for="volumeRange">Âm lượng:</label>
-                      <span id="volumeValue" class="badge">100%</span>
-                    </div>
-                    <input type="range" id="volumeRange" min="0" max="100" step="5" value="100" class="slider-control">
-                  </div>
-                </div>
-
-                <div class="adaptive-speed-box" style="margin-top: 10px;">
-                  <label class="checkbox-option">
-                    <input type="checkbox" id="chkAdaptiveSpeed" checked>
-                    <span>
-                      <strong>Tốc độ đọc thích ứng theo video (Adaptive Pacing)</strong>
-                      <small>Tự động co giãn tốc độ theo thời lượng câu thoại video: tăng tốc khi đối thoại dồn dập để khớp cảnh phim, chậm lại khi thoại thong thả.</small>
-                    </span>
-                  </label>
-                </div>
-              </div>
-
-              <!-- SUBTITLE TRANSPARENCY & DISPLAY MODE -->
-              <div class="setting-group">
-                <label class="group-title">Kiểu Hiển Thị Phụ Đề</label>
-                <div class="sub-transparency-row">
-                  <label class="radio-pill">
-                    <input type="radio" name="subTransparency" value="transparent" checked>
-                    <span>Trong suốt 100% (Không che video)</span>
-                  </label>
-                  <label class="radio-pill">
-                    <input type="radio" name="subTransparency" value="glass">
-                    <span>Kính mờ</span>
-                  </label>
-                  <label class="radio-pill">
-                    <input type="radio" name="subTransparency" value="dark">
-                    <span>Nền tối</span>
-                  </label>
-                </div>
-
-                <div class="sub-mode-row" style="display: none;" aria-hidden="true">
-                  <label class="radio-pill">
-                    <input type="radio" name="subMode" value="bilingual" checked>
-                    <span>Song ngữ</span>
-                  </label>
-                  <label class="radio-pill">
-                    <input type="radio" name="subMode" value="vi_only">
-                    <span>Có Sub Tiếng Việt</span>
-                  </label>
-                  <label class="radio-pill">
-                    <input type="radio" name="subMode" value="source_only">
-                    <span>Sub Tiếng Gốc</span>
-                  </label>
-                  <label class="radio-pill">
-                    <input type="radio" name="subMode" value="en_only">
-                    <span>Sub Tiếng Anh</span>
-                  </label>
-                  <label class="radio-pill">
-                    <input type="radio" name="subMode" value="none">
-                    <span>Không có sub (Chỉ nghe)</span>
-                  </label>
-                </div>
-              </div>
-
-              <!-- QUICK TEST BOX -->
-              <div class="setting-group">
-                <label class="group-title" for="testTextInput">Kiểm Tra Dịch & Phát Âm Thử:</label>
-                <div class="input-with-button">
-                  <input type="text" id="testTextInput" class="form-control" placeholder="Nhập câu tiếng Anh hoặc tiếng Việt...">
-                  <button id="btnSendTestText" class="btn btn-secondary">Đọc Thử</button>
-                </div>
-              </div>
-
-            </div>
-          </details>
-        </div>
-
-        <!-- SOURCE 2: LOCAL VIDEO FILE -->
-        <div id="panelSourceLocalFile" class="source-panel-block" style="display: none;">
-          <div class="block-header">
-            <span class="badge-tag">File Video Máy Tính</span>
-            <span class="block-hint">Hỗ trợ MP4, MKV, WebM, AVI</span>
-          </div>
-
-          <div class="drop-zone" id="localVideoDropZone">
-            <svg aria-hidden="true" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="drop-icon">
-              <polygon points="23 7 16 12 23 17 23 7"/>
-              <rect width="14" height="14" x="1" y="5" rx="2" ry="2"/>
-            </svg>
-            <div class="drop-text">
-              <strong>Kéo thả file video vào đây</strong>
-              <span>hoặc bấm để chọn file từ máy tính</span>
-            </div>
-            <input type="file" id="localVideoFileInput" accept="video/*,audio/*" style="display: none;">
-          </div>
-          <div id="localVideoFileInfo" class="file-loaded-info" style="display: none;">
-            <span id="loadedFileName">filename.mp4</span>
-            <button id="btnStartLocalDubbing" class="btn btn-primary btn-sm">Bắt Đầu Thuyết Minh</button>
+            <button id="btnSubtitleFontMinus" class="btn-icon" title="Giảm cỡ chữ">A-</button>
+            <button id="btnSubtitleFontPlus" class="btn-icon" title="Tăng cỡ chữ">A+</button>
           </div>
         </div>
 
-        <!-- SOURCE 3: MICROPHONE -->
-        <div id="panelSourceMic" class="source-panel-block" style="display: none;">
-          <div class="block-header">
-            <span class="badge-tag">Microphone</span>
-            <span class="block-hint">Thu giọng nói từ mic máy tính</span>
+        <div class="cinema-screen" id="subtitleViewport">
+          <div class="subtitle-container" id="subtitleContainer">
+            <div class="sub-line sub-source" id="subSourceDisplay" style="display: none;"></div>
+            <div class="sub-line sub-vi" id="subViDisplay">
+              Đang chờ phụ đề video... Hãy bấm "BẮT ĐẦU ĐỌC & LỒNG TIẾNG SUB" ở trên!
+            </div>
           </div>
 
-          <button id="btnToggleMic" class="btn btn-primary btn-large w-full">
-            <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-              <line x1="12" y1="19" x2="12" y2="22"/>
-            </svg>
-            <span id="btnMicText">Bật Microphone</span>
-          </button>
+          <div class="dubbing-indicator" id="dubbingIndicator" style="margin-top: 20px;">
+            <div class="waveform">
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+            <span id="dubbingStatusText">VieNeu AI đang lồng tiếng…</span>
+          </div>
         </div>
-
-        <!-- SOURCE 4: WEB URL -->
-        <div id="panelSourceWebUrl" class="source-panel-block" style="display: none;">
-          <div class="block-header">
-            <span class="badge-tag">Link YouTube</span>
-            <span class="block-hint">Nhúng và xem trực tiếp video YouTube</span>
-          </div>
-
-          <div class="source-intelligence" aria-labelledby="sourceIntelligenceTitle">
-            <div class="source-intelligence-heading">
-              <strong id="sourceIntelligenceTitle">Nguồn lời thoại của video</strong>
-              <span id="sourceIntelligenceState" class="source-state" data-state="ready">Sẵn sàng</span>
-            </div>
-            <div class="source-intelligence-grid">
-              <fieldset id="webCaptionMode" class="choice-group">
-                <legend>Nguồn lời thoại</legend>
-                <label class="choice-option"><input type="radio" name="webCaptionMode" value="auto"><span><strong>Tự nhận diện</strong><small>Ưu tiên phụ đề, thiếu thì hướng dẫn dùng Whisper</small></span></label>
-                <label class="choice-option"><input type="radio" name="webCaptionMode" value="has_captions" checked><span><strong>Có phụ đề / CC</strong><small>Dùng đúng track phụ đề của video</small></span></label>
-                <label class="choice-option"><input type="radio" name="webCaptionMode" value="hard_sub"><span><strong>Phụ đề đóng cứng / OCR</strong><small>Đọc chữ đã dính trong khung hình</small></span></label>
-                <label class="choice-option"><input type="radio" name="webCaptionMode" value="audio_only"><span><strong>Chỉ có tiếng</strong><small>Nghe trực tiếp bằng Whisper</small></span></label>
-              </fieldset>
-              <fieldset id="webCaptionLanguage" class="choice-group">
-                <legend>Ngôn ngữ phụ đề có sẵn</legend>
-                <label class="choice-option"><input type="radio" name="webCaptionLanguage" value="auto"><span><strong>Tự động</strong><small>Chọn track phù hợp nhất</small></span></label>
-                <label class="choice-option"><input type="radio" name="webCaptionLanguage" value="original" checked><span><strong>Tiếng gốc</strong><small>Ưu tiên CC thủ công của video</small></span></label>
-                <label class="choice-option"><input type="radio" name="webCaptionLanguage" value="en"><span><strong>Tiếng Anh</strong><small>Chỉ nhận track English</small></span></label>
-                <label class="choice-option"><input type="radio" name="webCaptionLanguage" value="vi"><span><strong>Tiếng Việt</strong><small>Chỉ nhận track Việt</small></span></label>
-                <label class="choice-option"><input type="radio" name="webCaptionLanguage" value="zh"><span><strong>Tiếng Trung</strong><small>CC/OCR chữ Trung</small></span></label>
-                <label class="choice-option"><input type="radio" name="webCaptionLanguage" value="ja"><span><strong>Tiếng Nhật</strong><small>CC/OCR chữ Nhật</small></span></label>
-                <label class="choice-option"><input type="radio" name="webCaptionLanguage" value="ko"><span><strong>Tiếng Hàn</strong><small>CC/OCR chữ Hàn</small></span></label>
-              </fieldset>
-            </div>
-            <p id="sourceIntelligenceHint" class="source-intelligence-hint">
-              Hệ thống sẽ ưu tiên CC gốc để đồng bộ chính xác; nếu không có, bạn có thể chuyển sang Whisper.
-            </p>
-          </div>
-
-          <form id="webVideoForm" class="web-url-form">
-            <label for="webUrlInput">Link video YouTube</label>
-            <div class="input-with-button">
-              <input type="url" id="webUrlInput" name="videoUrl" class="form-control" placeholder="https://www.youtube.com/watch?v=..." inputmode="url" autocomplete="url" autocapitalize="none" autocorrect="off" spellcheck="false" aria-describedby="webUrlHint">
-              <button type="submit" id="btnLoadWebUrl" class="btn btn-primary">Mở video YouTube</button>
-            </div>
-            <p id="webUrlHint" class="field-hint">Chức năng này dùng để nhúng trực tiếp video YouTube. Nếu bạn xem phim trên AnimeHay, Netflix, Bilibili... hãy mở phim ở tab bên cạnh và chọn tab đầu tiên <strong>"Âm Thanh Hệ Thống / Mọi Ứng Dụng"</strong>.</p>
-          </form>
-
-          <div class="quick-links-hint">
-            <span> Video mẫu:</span>
-            <button class="btn-sample-link" data-url="https://www.youtube.com/watch?v=q6fgVVmdpgY">MrBeast ($250k)</button>
-            <button class="btn-sample-link" data-url="https://www.youtube.com/watch?v=UF8uR6Z6KLc">Steve Jobs</button>
-          </div>
-          <p class="source-desc-hint">
-             <strong>Video YouTube có phụ đề (CC):</strong> Đồng bộ 100% khớp từng mili-giây, tua dừng tức thì, lồng tiếng Hoài My!<br>
-             <strong>Video không có phụ đề (Livestream):</strong> Nhấn nút <em>“Bắt Âm Thanh Tab”</em> để Whisper GPU dịch trực tiếp.
-          </p>
-        </div>
-
       </section>
 
-      <!-- Right Column: Cinema Screen & Live Script -->
-      <section class="panel display-panel">
-
-        <!-- 1. LOCAL VIDEO PLAYER (Shown when user loads a local video file) -->
-        <div id="localVideoContainer" class="local-video-wrapper" style="display: none;">
-          <div class="video-top-bar">
-            <span id="videoTitleDisplay">Video Máy Tính</span>
-            <button id="btnCloseLocalVideo" class="btn-icon" title="Đóng video"></button>
+      <!-- Cột Phải: Lịch Sử Thoại & Xuất File -->
+      <section class="history-panel">
+        <div class="history-panel-header">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 3v5h5"/>
+              <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/>
+              <path d="M12 7v5l4 2"/>
+            </svg>
+            <strong style="font-size: 1.05rem;">Lịch Sử Thoại (<span id="historyCount">0</span> câu)</strong>
           </div>
-          <div class="video-element-container">
-            <video id="localVideoPlayer" controls playsinline></video>
-            <!-- In-Video 100% Transparent Subtitle Overlay (Never covers actors) -->
-            <div class="invideo-subtitle-overlay" id="invideoSubtitleOverlay">
-              <div class="invideo-sub-source" id="invideoSubSource"></div>
-              <div class="invideo-sub-vi" id="invideoSubVi"></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 2. WEB VIDEO EMBED (Shown when user inputs a web/youtube URL) -->
-        <div id="webVideoContainer" class="web-video-wrapper" style="display: none;">
-          <div class="video-top-bar">
-            <div class="video-title-group">
-              <span class="live-dot"></span>
-              <span id="webVideoTitle">Trình Phát Web Video Trực Tiếp</span>
-            </div>
-            <div class="video-top-actions">
-              <button id="btnMasterDubToggle" class="btn-master-dub-toggle active" title="Bấm để Bật hoặc Tắt Lồng Tiếng Hoài My">
-                <span class="toggle-indicator-dot"></span>
-                <span id="btnMasterDubText"> ĐÃ BẬT LỒNG TIẾNG (Hoài My)</span>
-              </button>
-              <button id="btnFullscreenWebVideo" class="btn btn-secondary btn-sm" title="Phóng to toàn màn hình (Luôn hiện phụ đề và thuyết minh)">
-                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
-                </svg>
-                <span id="btnFullscreenWebVideoText">⛶ Toàn Màn Hình</span>
-              </button>
-              <button id="btnWebLiveCapture" class="btn btn-secondary btn-sm" title="Bắt âm thanh tab trực tiếp nếu video livestream không có phụ đề sẵn"> Bắt Âm Thanh Tab</button>
-              <button id="btnCloseWebVideo" class="btn-icon" title="Đóng video"></button>
-            </div>
-          </div>
-          <div class="iframe-element-container" style="position: relative;">
-            <div id="webVideoPlayer"></div>
-            <!-- In-Video Subtitle Overlay (100% Transparent, No black borders, Cinema yellow font) -->
-            <div id="invideoWebSubOverlay" class="invideo-subtitle-overlay" style="display: block;">
-              <div id="invideoWebSubSource" class="invideo-sub-source"></div>
-              <div id="invideoWebSubVi" class="invideo-sub-vi"></div>
-            </div>
-          </div>
-          <div id="webSyncNotice" class="web-sync-notice"></div>
-        </div>
-
-        <!-- 3. LIVE SUBTITLE CINEMA BOX (For System Audio, Mic, and Live Dubbing) -->
-        <div class="cinema-box transparent-mode" id="cinemaBox">
-          <div class="cinema-header">
-            <div class="cinema-title">
-              <span class="live-dot"></span>
-              <span>Màn Hình Phụ Đề Realtime (Cinema View)</span>
-            </div>
-            <div class="cinema-controls">
-              <button id="btnCinemaMasterDubToggle" class="btn-master-dub-toggle active" title="Bật hoặc Tắt Lồng Tiếng Hoài My">
-                <span class="toggle-indicator-dot"></span>
-                <span id="btnCinemaMasterDubText"> ĐÃ BẬT LỒNG TIẾNG (Hoài My)</span>
-              </button>
-              <button id="btnCinemaPiP" class="btn btn-primary btn-sm" title="Ghim phụ đề nổi Always-on-Top (Luôn hiện trên video toàn màn hình, YouTube, VLC, Netflix)">
-                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect width="20" height="14" x="2" y="5" rx="2"/>
-                  <rect width="8" height="6" x="12" y="11" rx="1" fill="currentColor"/>
-                </svg>
-                <span>📌 Ghim Phụ Đề (PiP)</span>
-              </button>
-              <button id="btnToggleBoxTransparent" class="btn-icon-label" title="Bật/Tắt chế độ nền trong suốt">
-                Tắt Trong Suốt
-              </button>
-              <button id="btnSubtitleFontMinus" class="btn-icon" title="Giảm cỡ chữ">A-</button>
-              <button id="btnSubtitleFontPlus" class="btn-icon" title="Tăng cỡ chữ">A+</button>
-              <button id="btnPanicKill" class="btn-danger-pill" title="Dừng âm thanh ngay lập tức">
-                 Dừng Âm Thanh
-              </button>
-            </div>
-          </div>
-
-          <div class="subtitle-viewport" id="subtitleViewport">
-            <div class="subtitle-container" id="subtitleContainer">
-              <div class="sub-line sub-source" id="subSourceDisplay">
-                Waiting for audio or video speech…
-              </div>
-              <div class="sub-line sub-vi" id="subViDisplay">
-                Đang chờ phụ đề hoặc âm thanh video…
-              </div>
-            </div>
-
-            <div class="dubbing-indicator" id="dubbingIndicator">
-              <div class="waveform">
-                <span></span><span></span><span></span><span></span><span></span>
-              </div>
-              <span id="dubbingStatusText">AI đang thuyết minh…</span>
-            </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button id="btnExportSRT" class="btn btn-sm btn-secondary" title="Xuất file phụ đề chuẩn .SRT">Xuất .SRT</button>
+            <button id="btnExportTXT" class="btn btn-sm btn-secondary" title="Xuất kịch bản text .TXT">Xuất .TXT</button>
+            <button id="btnClearHistory" class="btn btn-sm btn-danger" title="Xóa toàn bộ lịch sử">Xóa Hết</button>
           </div>
         </div>
 
-        <!-- 4. TRANSCRIPT & SCRIPT HISTORY -->
-        <div class="history-box">
-          <div class="history-header">
-            <div class="history-title">
-              <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M3 3v5h5"/>
-                <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/>
-                <path d="M12 7v5l4 2"/>
-              </svg>
-              <span>Lịch Sử Thoại (<span id="historyCount">0</span> câu)</span>
-            </div>
-            <div class="history-actions">
-              <button id="btnExportSRT" class="btn btn-sm btn-secondary" title="Xuất file phụ đề chuẩn .SRT">
-                Xuất .SRT
-              </button>
-              <button id="btnExportTXT" class="btn btn-sm btn-secondary" title="Xuất kịch bản text .TXT">
-                Xuất .TXT
-              </button>
-              <button id="btnClearHistory" class="btn btn-sm btn-danger" title="Xóa toàn bộ lịch sử">Xóa Hết</button>
-            </div>
-          </div>
-
-          <div class="history-list" id="historyList">
-            <div class="history-empty" id="historyEmpty">
-              <p>👉 Chưa kết nối video hoặc tab trình duyệt.</p>
-              <button type="button" class="btn btn-primary" onclick="document.getElementById('btnToggleSystemAudio').click()" style="margin-top: 10px; font-size: 14px; padding: 10px 20px; cursor: pointer; border-radius: 8px;">
-                ▶ BẮT ĐẦU XEM & DỊCH TỰ ĐỘNG (1 CHẠM)
-              </button>
-            </div>
+        <div class="history-list" id="historyList">
+          <div class="history-empty" id="historyEmpty">
+            <p>👉 Chưa có câu thoại nào. Bấm <strong>BẮT ĐẦU ĐỌC & LỒNG TIẾNG SUB</strong> để bắt đầu xem phim!</p>
           </div>
         </div>
-
       </section>
     </main>
+
+    <!-- HIDDEN LEGACY CONTAINER: Giữ toàn bộ elements cho test_frontend.js và tương thích ngược -->
+    <div id="legacyHiddenContainer" style="display: none;" aria-hidden="true">
+      <nav class="source-nav-bar">
+        <button class="source-tab active" id="tabSourceSystem" data-source="system"></button>
+        <button class="source-tab" id="tabSourceLocalFile" data-source="local"></button>
+        <button class="source-tab" id="tabSourceWebUrl" data-source="weburl"></button>
+        <button class="source-tab" id="tabSourceMic" data-source="mic"></button>
+      </nav>
+
+      <section class="runtime-config" aria-labelledby="runtimeConfigTitle">
+        <strong id="runtimeConfigTitle">Nguồn → nhận dạng → dịch → giọng Việt</strong>
+        <span id="settingsApplyState" class="apply-state" data-state="applied"><span class="apply-state-dot"></span>Đã áp dụng</span>
+        <strong id="runtimeSourceValue">Hệ thống / Tab</strong>
+        <strong id="runtimeLanguageValue">Tự động</strong>
+        <strong id="runtimeSubtitleValue">Song ngữ</strong>
+        <strong id="runtimeVoiceValue">VieNeu Local</strong>
+        <strong id="runtimeEngineValue">Whisper CUDA</strong>
+        <button id="btnConfirmSettings" type="button">Đồng bộ</button>
+      </section>
+
+      <div id="panelSourceSystem">
+        <strong id="systemIntelligenceTitle">Phương thức</strong>
+        <span id="systemIntelligenceState">Sẵn sàng</span>
+        <p id="systemIntelligenceHint"></p>
+        <fieldset id="systemCaptureMode">
+          <input type="radio" name="systemCaptureMode" value="auto" checked>
+          <input type="radio" name="systemCaptureMode" value="audio_only">
+          <input type="radio" name="systemCaptureMode" value="hard_sub">
+        </fieldset>
+        <fieldset id="systemSubMode">
+          <input type="radio" name="systemSubMode" value="bilingual" checked>
+          <input type="radio" name="systemSubMode" value="vi_only">
+          <input type="radio" name="systemSubMode" value="source_only">
+          <input type="radio" name="systemSubMode" value="en_only">
+          <input type="radio" name="systemSubMode" value="none">
+        </fieldset>
+        <div id="audioMeterFill"></div>
+        <span id="meterPercentText">0%</span>
+      </div>
+
+      <select id="targetLang" disabled><option value="vi" selected>Tiếng Việt</option></select>
+      <button id="btnTestVoiceSample">Nghe thử</button>
+      <input type="range" id="rateRange" min="0.8" max="1.50" step="0.05" value="1.15">
+      <span id="rateValue">1.15x</span>
+      <input type="range" id="volumeRange" min="0" max="100" step="5" value="100">
+      <span id="volumeValue">100%</span>
+      <input type="checkbox" id="chkAdaptiveSpeed" checked>
+      <input type="radio" name="subTransparency" value="transparent" checked>
+      <input type="radio" name="subTransparency" value="glass">
+      <input type="radio" name="subTransparency" value="dark">
+      <input type="radio" name="subMode" value="bilingual" checked>
+      <input type="radio" name="subMode" value="vi_only">
+      <input type="radio" name="subMode" value="source_only">
+      <input type="radio" name="subMode" value="en_only">
+      <input type="radio" name="subMode" value="none">
+      <input type="text" id="testTextInput">
+      <button id="btnSendTestText">Đọc</button>
+
+      <div id="panelSourceLocalFile">
+        <div id="localVideoDropZone"></div>
+        <input type="file" id="localVideoFileInput">
+        <div id="localVideoFileInfo"><span id="loadedFileName"></span><button id="btnStartLocalDubbing"></button></div>
+      </div>
+
+      <div id="panelSourceMic">
+        <button id="btnToggleMic"><span id="btnMicText">Bật Mic</span></button>
+      </div>
+
+      <div id="panelSourceWebUrl">
+        <strong id="sourceIntelligenceTitle"></strong>
+        <span id="sourceIntelligenceState"></span>
+        <fieldset id="webCaptionMode">
+          <input type="radio" name="webCaptionMode" value="auto">
+          <input type="radio" name="webCaptionMode" value="has_captions" checked>
+          <input type="radio" name="webCaptionMode" value="hard_sub">
+          <input type="radio" name="webCaptionMode" value="audio_only">
+        </fieldset>
+        <fieldset id="webCaptionLanguage">
+          <input type="radio" name="webCaptionLanguage" value="auto">
+          <input type="radio" name="webCaptionLanguage" value="original" checked>
+          <input type="radio" name="webCaptionLanguage" value="en">
+          <input type="radio" name="webCaptionLanguage" value="vi">
+          <input type="radio" name="webCaptionLanguage" value="zh">
+          <input type="radio" name="webCaptionLanguage" value="ja">
+          <input type="radio" name="webCaptionLanguage" value="ko">
+        </fieldset>
+        <p id="sourceIntelligenceHint"></p>
+        <input type="url" id="webUrlInput">
+        <button id="btnLoadWebUrl"></button>
+        <div id="webVideoContainer">
+          <div id="webVideoPlayer"></div>
+          <span id="webVideoTitle"></span>
+          <div id="webSyncNotice"></div>
+          <div id="invideoWebSubVi"></div>
+          <div id="invideoWebSubSource"></div>
+        </div>
+      </div>
+
+      <button id="btnToggleBoxTransparent"></button>
+    </div>
 
     <!-- Hidden Native Audio for Realtime Dubbing -->
     <audio id="dubbingAudio" preload="auto"></audio>
@@ -555,6 +270,6 @@
 
   <script src="/vendor/ort/ort.min.js?v=1.31.1"></script>
   <script src="/vendor/vad/bundle.min.js?v=0.0.31"></script>
-  <script src="app.js?v=20261121_instant_seek_v9"></script>
+  <script src="app.js?v=20261121_streamlined_v2"></script>
 </body>
 </html>
