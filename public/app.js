@@ -1032,21 +1032,21 @@ class LiveDubStudio {
       }
     }
     if (mode === 'ocr') {
-      const savedLang = this.sourceLangSelect ? this.sourceLangSelect.value : (localStorage.getItem('livesub_sourcelang') || 'vi-VN');
+      const savedLang = this.sourceLangSelect ? this.sourceLangSelect.value : (localStorage.getItem('livesub_sourcelang') || 'auto');
       if (this.btnModeSub) this.btnModeSub.classList.add('active');
       if (this.btnModeAudio) this.btnModeAudio.classList.remove('active');
       if (this.btnModeHybrid) this.btnModeHybrid.classList.remove('active');
       if (this.lblSourceLang) this.lblSourceLang.textContent = 'Ngôn Ngữ Phụ Đề:';
       if (this.sourceLangSelect) {
         this.sourceLangSelect.innerHTML = `
-          <option value="vi-VN">🇻🇳 Tiếng Việt (Không dịch)</option>
+          <option value="auto">🌐 Tự động nhận diện</option>
           <option value="en-US">🇬🇧 Tiếng Anh (Dịch sang Việt)</option>
           <option value="ja-JP">🇯🇵 Tiếng Nhật (Dịch sang Việt)</option>
           <option value="zh-CN">🇨🇳 Tiếng Trung (Dịch sang Việt)</option>
           <option value="ko-KR">🇰🇷 Tiếng Hàn (Dịch sang Việt)</option>
-          <option value="auto">🌐 Tự động nhận diện</option>
+          <option value="vi-VN">🇻🇳 Tiếng Việt (Không dịch)</option>
         `;
-        this.sourceLangSelect.value = savedLang || 'vi-VN';
+        this.sourceLangSelect.value = savedLang || 'auto';
       }
       if (!this.isListening) {
         if (this.btnSystemAudioText) this.btnSystemAudioText.textContent = 'BẮT ĐẦU ĐỌC & LỒNG TIẾNG SUB';
@@ -1376,8 +1376,9 @@ class LiveDubStudio {
       const data = await res.json();
 
       const raw = String(data.original || '').trim();
-      const hasViMarkers = /[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớờỡợùúủũụưừứửữựỳýỷỹỵđ]/i.test(raw) ||
-        /\b(?:không|được|người|chúng|tôi|bạn|của|trong|một|cho|với|như|đã|sẽ|đang)\b/i.test(raw);
+      const viMarkersCount = (raw.match(/[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/gi) || []).length;
+      const hasCommonViWord = /\b(?:không|được|người|chúng|tôi|bạn|của|trong|một|cho|với|như|đã|sẽ|đang)\b/i.test(raw);
+      const hasViMarkers = viMarkersCount >= 2 || (viMarkersCount >= 1 && hasCommonViWord);
 
       const currentSelected = this.sourceLangSelect ? this.sourceLangSelect.value : 'auto';
       if (currentSelected === 'auto' && raw && hasViMarkers) {
@@ -1552,8 +1553,12 @@ class LiveDubStudio {
           this.hasActiveHardSubtitles = true;
           this.hasSeenHardSubtitles = true;
           this.lastHardSubTime = performance.now();
-          if (/[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/i.test(data.original) || /\b(?:không|được|người|chúng|tôi|bạn|của|trong|một|cho|với|như|đã|sẽ|đang|vậy|từ|đó|những|tộc|hoàng|đế)\b/i.test(data.original)) {
+          const viCount = (data.original.match(/[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/gi) || []).length;
+          const hasViWord = /\b(?:không|được|người|chúng|tôi|bạn|của|trong|một|cho|với|như|đã|sẽ|đang|vậy|từ|đó|những|tộc|hoàng|đế)\b/i.test(data.original);
+          if (viCount >= 2 || (viCount >= 1 && hasViWord)) {
             this.detectedOCRLanguage = 'vi';
+          } else if (/[a-zA-Z]/.test(data.original)) {
+            this.detectedOCRLanguage = 'en';
           }
           if (this.neuralVAD && this.neuralVADActive) {
             try { this.neuralVAD.pause(); } catch (_) {}
@@ -1709,7 +1714,8 @@ class LiveDubStudio {
     }
 
     const currentLang = this.resolveOCRLanguage();
-    const isForeignLatin = currentLang.startsWith('en') || currentLang.startsWith('ja') || currentLang.startsWith('zh') || currentLang.startsWith('ko') || currentLang.startsWith('th');
+    const isVietsub = currentLang === 'vi' || (currentLang === 'auto' && this.detectedOCRLanguage === 'vi');
+    const isForeignLatin = !isVietsub;
 
     const cleanNorm = trimmed.replace(/^[^\wÀ-ỹ]+|[^\wÀ-ỹ]+$/gu, '').toLowerCase();
     if (!cleanNorm) return true;
@@ -1725,8 +1731,8 @@ class LiveDubStudio {
       const rawTokens = trimmed.match(/\S+/g) || [];
       if (rawTokens.some(w => /[a-zA-Z]+[0-9]{2,}|[0-9]{2,}[a-zA-Z]+/.test(w))) return true;
       if (/^[^\w\s]*\d+\s+[A-Za-z]{1,2}$/.test(trimmed)) return true;
-      const letters = trimmed.match(/[a-zA-Z]/g);
-      if (!letters || letters.length === 0) return true;
+      const hasValid = /[a-zA-Z0-9\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/.test(trimmed);
+      if (!hasValid) return true;
       return false;
     }
 
@@ -1805,60 +1811,54 @@ class LiveDubStudio {
     // NEVER strip CJK if source language is Japanese, Chinese, or contains native CJK subtitles!
     const currentLang = this.resolveOCRLanguage();
     const isVietsubMode = currentLang === 'vi' || (currentLang === 'auto' && this.detectedOCRLanguage === 'vi');
-    if (isVietsubMode && /[a-zA-Zà-ỹÀ-Ỹ]/.test(raw)) {
-      raw = raw.replace(/[\u4e00-\u9fff\u3040-\u30ff]+/g, ' ').replace(/\s+/g, ' ').trim();
-    }
+    // Cleanups specific to Vietsub fansub videos (AnimeHay, web player UI, gambling ads)
+    if (isVietsubMode) {
+      if (/[a-zA-Zà-ỹÀ-Ỹ]/.test(raw)) {
+        raw = raw.replace(/[\u4e00-\u9fff\u3040-\u30ff]+/g, ' ').replace(/\s+/g, ' ').trim();
+      }
 
-    // Strip gambling site watermark banners (Sunwin, Hobet, Kèo bóng lăn, 3bet, Nohu, Tip2>...)
-    raw = raw.replace(/\s*(?:Tip\d*|Tapi\d*|Tip\d+>|Tapi\d+>|Ráp chi[a-z]*|Lenkeobonglan|Hobet|Sunwin|Santuithantai|Nohuthethao|Nohu|3bet|Thuonghieusunwin|Napdau|Nhanngay).*$/i, '').trim();
+      // Strip gambling site watermark banners (Sunwin, Hobet, Kèo bóng lăn, 3bet, Nohu, Tip2>...)
+      raw = raw.replace(/\s*(?:Tip\d*|Tapi\d*|Tip\d+>|Tapi\d+>|Ráp chi[a-z]*|Lenkeobonglan|Hobet|Sunwin|Santuithantai|Nohuthethao|Nohu|3bet|Thuonghieusunwin|Napdau|Nhanngay).*$/i, '').trim();
+
+      // Strip video titles, channel watermark tags and web fansub junk leaking into subtitle
+      const junkTailRegex = /(?:^|\s+)(?:animehay|animevietsub|bit\.ly|citumo|rap\s*citu|hdbet|3bet|ch[oơ]ingay|n[oổ]\s*h[uũ]|b[áa]ckinh|bickinh|backinh|truyengoc).*$/i;
+      raw = raw.replace(junkTailRegex, '').trim().replace(/^[,.\-:;]+|[,.\-:;]+$/g, '').trim();
+
+      // Strip trailing video player UI buttons (e.g. "On O Ép On", "Ổn Áp On", "On Cx Oy", "Cài đặt Ơ On")
+      raw = raw.replace(/(?:\b(?:On|Ổn|Ổn Áp|Cài đặt|Cài đăt|Cd|Oy|Cx|Ép On|Ép|Em|Cào Cào|Cư Pui)\b[\s\wÀ-ỹ]{0,15})+$/i, '').trim();
+      raw = raw.replace(/\b(?:On\s+Cx\s+Oy|On\s+O\s+Ép\s+On|Ổn\s+Áp\s+On|Oy\s+Em|Cài\s+đặt\s+Ơ\s+On)\b/gi, '').trim();
+      if (!raw) return;
+
+      // Reject corrupted Vietsub hard subtitle OCR reading
+      if (/[åöøß]|ngv[oò]i|thv[oò]ng|nu[aá]c\s*m[aå]t|lung\s*tr[oò]ng|ky\s*vi[eê]n/i.test(raw)) return;
+      if (/\b(?:animehay|animevietsub|bit\.ly|citumo|rap\s*citu|hdbet|3bet|chơingay|nổ\s*hũ|bản lồng tiếng)\b/i.test(raw)) return;
+
+      // Strip isolated single-letter leading OCR boundary noise (e.g. "e kích thành trì" -> "kích thành trì")
+      raw = raw.replace(/^[a-zA-Z]\s+(?=[a-zA-Zà-ỹÀ-Ỹ]{3,})/i, '').trim();
+    } else {
+      // For foreign languages (English, Japanese, Chinese, French, German, Spanish, etc.):
+      // Keep natural words like 'on', 'subscribers', 'views', 'six', 'share', 'comment'
+      raw = raw.replace(/^[b-hj-zB-HJ-Z]\s+(?=[a-zA-Z]{3,})/i, '').trim();
+    }
 
     // Strip video player OSD timecodes (e.g. "09:15/23:58", "5 09:20 / 23:50", "Dù 0 09:23 / 23:59", "23:56", "3 09:54/ 23:5")
     raw = raw.replace(/(?:\b(?:Dù\s*\d*|\b[a-zA-Z]?\s*\d*)\s*)?\b\d{1,2}[:.]\d{2}\s*(?:[/|\\]\s*\d{1,2}[:.]\d{1,2})?\s*\d*\b/gi, '').trim();
     raw = raw.replace(/\s*\b\d+\s*$/, '').trim();
 
-    // Strip video titles, channel watermark tags and web fansub junk leaking into subtitle
-    const junkTailRegex = /(?:^|\s+)(?:animehay|animevietsub|bit\.ly|citumo|rap\s*citu|hdbet|3bet|ch[oơ]ingay|n[oổ]\s*h[uũ]|b[áa]ckinh|bickinh|backinh|truyengoc).*$/i;
-    raw = raw.replace(junkTailRegex, '').trim().replace(/^[,.\-:;]+|[,.\-:;]+$/g, '').trim();
-
-    // Strip trailing video player UI buttons (e.g. "On O Ép On", "Ổn Áp On", "On Cx Oy", "Cài đặt Ơ On")
-    raw = raw.replace(/(?:\b(?:On|Ổn|Ổn Áp|Cài đặt|Cài đăt|Cd|Oy|Cx|Ép On|Ép|Em|Cào Cào|Cư Pui)\b[\s\wÀ-ỹ]{0,15})+$/i, '').trim();
-    raw = raw.replace(/\b(?:On\s+Cx\s+Oy|On\s+O\s+Ép\s+On|Ổn\s+Áp\s+On|Oy\s+Em|Cài\s+đặt\s+Ơ\s+On)\b/gi, '').trim();
-    if (!raw) return;
-
     // Dialogue subtitles: allow long sentences, monologues and multi-speaker dialogues up to 1000 chars or 200 words
     if (raw.length > 1000 || raw.split(/\s+/).length > 200) return;
-    // Reject 1-4 character alphanumeric noise (e.g. YA, EREE, TL2, Ta02, JNY, HE, CE)
-    // Reject corrupted Vietsub hard subtitle OCR reading (e.g. 'å', 'ö', 'ø', 'ß', 'ngvòi', 'thvòng')
-    if (isVietsubMode && /[åöøß]|ngv[oò]i|thv[oò]ng|nu[aá]c\s*m[aå]t|lung\s*tr[oò]ng|ky\s*vi[eê]n/i.test(raw)) return;
-    // Reject UI, channel names, and thumbnail junk patterns
-    if (/^(?:b[áa]ckinh|bickinh|backinh|truyengoc|lượt xem|\d+[:.]\d+|\d{1,4})$/i.test(raw)) return;
-    if (/\b(?:animehay|animevietsub|bit\.ly|citumo|rap\s*citu|hdbet|3bet|chơingay|nổ\s*hũ|lượt xem|views?|người đăng ký|subscribers?|bình luận|comments?|chia sẻ|share|tải xuống|download|bản lồng tiếng|đăng ký)\b/i.test(raw)) return;
 
-    // Strip isolated single-letter leading OCR boundary noise (e.g. "e kích thành trì" -> "kích thành trì")
-    // Giữ nguyên các đại từ và mạo từ cốt lõi 'I' và 'A' trong tiếng Anh ("I know", "A person")
-    if (isVietsubMode) {
-      raw = raw.replace(/^[a-zA-Z]\s+(?=[a-zA-Zà-ỹÀ-Ỹ]{3,})/i, '').trim();
-    } else {
-      raw = raw.replace(/^[b-hj-zB-HJ-Z]\s+(?=[a-zA-Z]{3,})/i, '').trim();
-    }
-
-    // Reject isolated single-word noise tokens unless recognized conversational exclamation
+    // Single-word check:
     const rawTokens = raw.split(/\s+/).filter(Boolean);
-    const validSingleWords = [
-      // Tiếng Việt
-      'cha', 'ba', 'mẹ', 'bố', 'con', 'anh', 'em', 'ông', 'bà', 'chị', 'cô', 'chú', 'bác', 'cháu', 'hắn', 'nó', 'họ', 'ta', 'mình',
-      'đúng', 'không', 'phải', 'chào', 'sao', 'dạ', 'vâng', 'ừ', 'thật', 'hả', 'này', 'vậy', 'hở', 'ôi', 'ơ', 'chứ', 'rồi', 'xong',
-      'đi', 'được', 'nghe', 'tại', 'cứu', 'chạy', 'mau', 'khoan', 'chết', 'nguy', 'bắn', 'tránh', 'cút', 'dừng', 'đứng', 'buông', 'đợi', 'thôi', 'im', 'rõ',
-      'ai', 'gì', 'đâu', 'nào', 'có', 'biết', 'hiểu', 'nhớ', 'quên', 'xem', 'nói', 'thấy', 'chắc', 'kìa', 'đây', 'đó', 'lại', 'ngay',
-      // Tiếng Anh
-      'yes', 'no', 'why', 'what', 'who', 'how', 'when', 'where', 'stop', 'wait', 'run', 'help', 'look', 'see', 'listen', 'hear', 'come', 'go', 'stay', 'leave',
-      'fast', 'slow', 'quick', 'hurry', 'hide', 'jump', 'shoot', 'fire', 'duck', 'kill', 'die', 'dead', 'fine', 'good', 'bad', 'great', 'cool', 'sure',
-      'right', 'wrong', 'true', 'false', 'okay', 'ok', 'please', 'thanks', 'thank', 'sorry', 'hello', 'hi', 'bye', 'hey', 'yo', 'ready', 'done',
-      'never', 'always', 'maybe', 'again', 'enough', 'now', 'here', 'there', 'well', 'damn', 'shit', 'cool'
-    ];
     const isCjkText = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/.test(raw);
-    if (!isCjkText && rawTokens.length === 1 && !validSingleWords.includes(raw.toLowerCase().replace(/[.!?…,]+$/u, '')) && raw.length <= 6) {
-      return;
+    if (!isCjkText && rawTokens.length === 1) {
+      const cleanWord = raw.toLowerCase().replace(/[.!?…,;:"']+/gu, '');
+      // Numbers, digits or words with >= 2 characters (e.g. "six", "100", "car", "ten", "oui", "ja") are ALWAYS valid!
+      const isValidForeignOrDigit = /^\d+$/.test(cleanWord) || /^[a-zA-Z0-9]{2,}$/.test(cleanWord);
+      const validViWords = ['cha', 'ba', 'mẹ', 'bố', 'con', 'anh', 'em', 'ông', 'bà', 'chị', 'cô', 'chú', 'bác', 'cháu', 'hắn', 'nó', 'họ', 'ta', 'mình', 'đúng', 'không', 'phải', 'chào', 'sao', 'dạ', 'vâng', 'ừ', 'thật', 'hả', 'này', 'vậy', 'hở', 'ôi', 'ơ', 'chứ', 'rồi', 'xong', 'đi', 'được', 'nghe', 'tại', 'cứu', 'chạy', 'mau', 'khoan', 'chết', 'nguy', 'bắn', 'tránh', 'cút', 'dừng', 'đứng', 'buông', 'đợi', 'thôi', 'im', 'rõ', 'ai', 'gì', 'đâu', 'nào', 'có', 'biết', 'hiểu', 'nhớ', 'quên', 'xem', 'nói', 'thấy', 'chắc', 'kìa', 'đây', 'đó', 'lại', 'ngay'];
+      if (!isValidForeignOrDigit && !validViWords.includes(cleanWord)) {
+        return;
+      }
     }
 
     // Instant Preemption on Seek / New Dialogue Line:

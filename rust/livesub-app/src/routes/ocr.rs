@@ -1,6 +1,6 @@
 use crate::{
     services::{ocr::is_blank_subtitle, translate::fetch_online_translation},
-    state::{get_re_vi, AppState},
+    state::AppState,
 };
 use axum::{
     body::Bytes,
@@ -22,11 +22,7 @@ pub async fn api_dub_subtitle(
     State(state): State<AppState>,
     Json(req): Json<DubRequest>,
 ) -> Json<serde_json::Value> {
-    let target_text = if crate::state::get_re_vi().is_match(&req.text) {
-        req.text.trim().to_string()
-    } else {
-        state.ocr.restore_vietnamese(&req.text)
-    };
+    let target_text = req.text.trim().to_string();
     let mut audio_b64 = String::new();
     let url = format!(
         "https://translate.google.com/translate_tts?ie=UTF-8&tl=vi&client=tw-ob&q={}",
@@ -180,8 +176,12 @@ pub async fn api_ocr_subtitle(
         "en" | "ja" | "zh" | "ko" | "th" | "fr" | "de" | "es" | "ru"
     );
 
-    // Lọc bỏ rác video player UI buttons (On O Ép On, Ổn Áp On, Oy Em, Cài đặt...)
-    let rec_trimmed = clean_foreign_ocr_noise(&recognized);
+    // Chỉ lọc bỏ rác video player UI buttons (On O Ép On, Ổn Áp On, Oy Em, Cài đặt...) khi ở chế độ Vietsub
+    let rec_trimmed = if norm_lang == "vi" {
+        clean_foreign_ocr_noise(&recognized)
+    } else {
+        recognized.trim().to_string()
+    };
     if rec_trimmed.is_empty() {
         return Ok(Json(serde_json::json!({
             "empty": true,
@@ -203,8 +203,15 @@ pub async fn api_ocr_subtitle(
         (restored.clone(), restored)
     } else {
         // Tự động nhận diện (Auto):
-        let has_vi = get_re_vi().is_match(&rec_trimmed);
-        if has_vi && (rec_trimmed.contains(' ') || rec_trimmed.chars().count() > 3) {
+        // Chỉ coi là Vietsub nếu có tối thiểu 2 dấu tiếng Việt rõ rệt hoặc từ vựng tiếng Việt phổ biến
+        let vi_markers_count = rec_trimmed
+            .chars()
+            .filter(|c| "àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ".contains(*c))
+            .count();
+        let has_common_vi_word = crate::state::get_re_vi().is_match(&rec_trimmed);
+        let is_genuine_vi = vi_markers_count >= 2 || (vi_markers_count >= 1 && has_common_vi_word);
+
+        if is_genuine_vi && (rec_trimmed.contains(' ') || rec_trimmed.chars().count() > 3) {
             let restored = state.ocr.restore_vietnamese(&rec_trimmed);
             (restored.clone(), restored)
         } else {
@@ -212,8 +219,7 @@ pub async fn api_ocr_subtitle(
             if !trans.is_empty() {
                 (rec_trimmed, trans)
             } else {
-                let restored = state.ocr.restore_vietnamese(&rec_trimmed);
-                (restored.clone(), restored)
+                (rec_trimmed.clone(), rec_trimmed)
             }
         }
     };
