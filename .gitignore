@@ -11,6 +11,7 @@ ENV/
 target/
 rust/**/target/
 rust/target/
+src-tauri/target/
 *.pdb
 livesub.exe
 bin/
@@ -22,6 +23,11 @@ models/**/*.rten
 models/**/*.onnx
 models/**/*.dll
 models/whisper/cuda/
+models/vieneu/
+models/moss_codec/
+models/vieneu_heads/
+models/**/*.data
+models/**/*.npz
 graphify-out/
 *.old
 LiveSub-Desktop.exe

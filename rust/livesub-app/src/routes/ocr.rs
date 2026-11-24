@@ -1,5 +1,5 @@
 use crate::{
-    services::{ocr::is_blank_subtitle, translate::fetch_online_translation},
+    services::{ocr::is_blank_subtitle, translate::fetch_online_translation, tts::synthesize_tts_bytes},
     state::AppState,
 };
 use axum::{
@@ -23,28 +23,22 @@ pub async fn api_dub_subtitle(
     Json(req): Json<DubRequest>,
 ) -> Json<serde_json::Value> {
     let target_text = req.text.trim().to_string();
+    let voice_name = req.voice.as_deref().unwrap_or("Trúc Ly");
     let mut audio_b64 = String::new();
-    let url = format!(
-        "https://translate.google.com/translate_tts?ie=UTF-8&tl=vi&client=tw-ob&q={}",
-        urlencoding::encode(&target_text)
-    );
-    if let Ok(resp) = state.http_client.get(&url).send().await {
-        if resp.status().is_success() {
-            if let Ok(bytes) = resp.bytes().await {
-                use base64::{engine::general_purpose::STANDARD, Engine as _};
-                audio_b64 = STANDARD.encode(&bytes);
-            }
-        }
+
+    if let Some(wav_bytes) = synthesize_tts_bytes(&state, &target_text, Some(voice_name)).await {
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        audio_b64 = STANDARD.encode(&wav_bytes);
     }
 
     Json(serde_json::json!({
-        "success": true,
+        "success": !audio_b64.is_empty(),
         "prompt": target_text,
         "audio_base64": audio_b64,
-        "audio_mime": "audio/mpeg",
-        "voice": req.voice.unwrap_or_else(|| "google-vi".to_string()),
+        "audio_mime": "audio/wav",
+        "voice": voice_name,
         "duration_ms": 1100.0,
-        "provider": "google-vi"
+        "provider": "vieneu-tts-rs"
     }))
 }
 

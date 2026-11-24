@@ -12,6 +12,7 @@ use std::{
     time::Duration,
 };
 use translation_router_rs::TranslationRouter;
+use vieneu_tts_rs::{VieneuEngine, VieneuEngineConfig};
 
 pub static OVERLAY_CHANNEL: OnceLock<tokio::sync::broadcast::Sender<bool>> = OnceLock::new();
 
@@ -30,11 +31,22 @@ pub async fn run_server(config: AppConfig) {
     println!("   Architecture: 100% Native Rust | Zero Python | Port 3000");
     println!("   GPU Acceleration: NVIDIA GeForce RTX 3050 Laptop GPU (CUDA)");
     println!("   OCR Engine: VietOCR Native Full Diacritics Model (229 Characters | Pure Rust)");
+    println!("   TTS Engine: VieNeu-TTS v3 Turbo Pure Rust ONNX (25 Authentic Voices)");
     println!("============================================================");
 
     let ocr = Arc::new(DiacriticEngine::new());
     let ocr_pool = services::ocr::load_all_ocr_models(&config);
     let ppocr = ocr_pool.vietnamese.clone();
+
+    println!("🧠 Initializing VieNeu-TTS v3 Turbo pure Rust native inference engine...");
+    let vieneu = Arc::new(
+        VieneuEngine::new(VieneuEngineConfig::default())
+            .expect("Failed to initialize VieNeu-TTS pure Rust engine"),
+    );
+    println!("✅ VieNeu-TTS initialized successfully with 25 authentic voices (100% offline).");
+
+    let (key_tx, _key_rx) = tokio::sync::broadcast::channel::<String>(32);
+
     let whisper_child = None;
     let whisper_en_child = None;
     let router = Arc::new(TranslationRouter::new());
@@ -50,42 +62,17 @@ pub async fn run_server(config: AppConfig) {
         ocr,
         ppocr,
         ocr_pool,
+        vieneu,
         whisper_server_url: config.whisper_url.clone(),
         whisper_en_server_url: config.whisper_en_url.clone(),
         router,
         http_client,
         audio_cache: Arc::new(RwLock::new(HashMap::with_capacity(1024))),
         trans_cache: Arc::new(RwLock::new(HashMap::with_capacity(1024))),
+        key_tx,
         _whisper_child: Arc::new(Mutex::new(whisper_child)),
         _whisper_en_child: Arc::new(Mutex::new(whisper_en_child)),
     };
-
-    // Tự động khởi chạy LiveSub Edge TTS Neural Server nếu port 3005 chưa kích hoạt
-    let node_path = if std::path::Path::new(r"C:\Program Files\nodejs\node.exe").exists() {
-        r"C:\Program Files\nodejs\node.exe"
-    } else {
-        "node"
-    };
-    let script_path = std::path::Path::new(r"C:\dich\scripts\edge_tts_server.js");
-    if script_path.exists() && std::net::TcpStream::connect("127.0.0.1:3005").is_err() {
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x08000000;
-            let _ = std::process::Command::new(node_path)
-                .arg(script_path)
-                .current_dir(r"C:\dich")
-                .creation_flags(CREATE_NO_WINDOW)
-                .spawn();
-        }
-        #[cfg(not(windows))]
-        {
-            let _ = std::process::Command::new(node_path)
-                .arg(script_path)
-                .current_dir(r"C:\dich")
-                .spawn();
-        }
-    }
 
     let app = routes::build_router(state, &config.public_dir);
 

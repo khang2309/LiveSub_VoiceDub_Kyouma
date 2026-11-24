@@ -16,7 +16,7 @@ pub async fn synthesize_tts_bytes(state: &AppState, text: &str, voice: Option<&s
         state.ocr.restore_vietnamese(&cleaned)
     };
 
-    let selected_voice = voice.unwrap_or("vi-VN-HoaiMyNeural");
+    let selected_voice = voice.unwrap_or("Trúc Ly");
     let cache_key = format!("tts:{}:{}", selected_voice, target_text);
 
     // 1. Check in-memory audio cache
@@ -26,55 +26,27 @@ pub async fn synthesize_tts_bytes(state: &AppState, text: &str, voice: Option<&s
         }
     }
 
-    // 2. Try Edge TTS local service for authentic high-fidelity neural voices (Hoai My / Nam Minh)
-    let edge_payload = serde_json::json!({
-        "text": target_text,
-        "voice": selected_voice
-    });
+    // 2. Pure Rust native offline VieNeu-TTS synthesis (torch-free, python-free)
+    let vieneu = state.vieneu.clone();
+    let text_clone = target_text.clone();
+    let voice_clone = selected_voice.to_string();
 
-    if let Ok(resp) = state
-        .http_client
-        .post("http://127.0.0.1:3005/tts")
-        .timeout(std::time::Duration::from_millis(3500))
-        .json(&edge_payload)
-        .send()
-        .await
-    {
-        if resp.status().is_success() {
-            if let Ok(bytes) = resp.bytes().await {
-                if bytes.len() > 100 {
-                    let audio_vec = bytes.to_vec();
-                    if let Ok(mut c) = state.audio_cache.write() {
-                        if c.len() < 4096 {
-                            c.insert(cache_key.clone(), audio_vec.clone());
-                        }
-                    }
-                    return Some(audio_vec);
+    let wav_res = tokio::task::spawn_blocking(move || {
+        vieneu.infer(&text_clone, &voice_clone)
+    })
+    .await;
+
+    if let Ok(Ok(wav_bytes)) = wav_res {
+        if !wav_bytes.is_empty() {
+            if let Ok(mut c) = state.audio_cache.write() {
+                if c.len() < 4096 {
+                    c.insert(cache_key, wav_bytes.clone());
                 }
             }
+            return Some(wav_bytes);
         }
-    }
-
-    // 3. Fallback to Google TTS endpoint if Edge TTS is unreachable
-    let url = format!(
-        "https://translate.google.com/translate_tts?ie=UTF-8&tl=vi&client=tw-ob&q={}",
-        urlencoding::encode(&target_text)
-    );
-
-    if let Ok(resp) = state.http_client.get(&url).send().await {
-        if resp.status().is_success() {
-            if let Ok(bytes) = resp.bytes().await {
-                if bytes.len() > 100 {
-                    let audio_vec = bytes.to_vec();
-                    if let Ok(mut c) = state.audio_cache.write() {
-                        if c.len() < 4096 {
-                            c.insert(cache_key, audio_vec.clone());
-                        }
-                    }
-                    return Some(audio_vec);
-                }
-            }
-        }
+    } else if let Ok(Err(e)) = wav_res {
+        eprintln!("VieNeu-TTS synthesis error: {:?}", e);
     }
 
     None
@@ -84,7 +56,7 @@ pub async fn synthesize_tts(state: &AppState, text: &str, voice: Option<&str>) -
     if let Some(audio_vec) = synthesize_tts_bytes(state, text, voice).await {
         let mut res = audio_vec.into_response();
         res.headers_mut()
-            .insert(header::CONTENT_TYPE, HeaderValue::from_static("audio/mpeg"));
+            .insert(header::CONTENT_TYPE, HeaderValue::from_static("audio/wav"));
         res.headers_mut().insert(
             header::CACHE_CONTROL,
             HeaderValue::from_static("public, max-age=86400"),
@@ -93,7 +65,7 @@ pub async fn synthesize_tts(state: &AppState, text: &str, voice: Option<&str>) -
     } else {
         (
             StatusCode::BAD_GATEWAY,
-            "No real TTS provider produced audio",
+            "VieNeu-TTS native engine did not produce audio",
         )
             .into_response()
     }

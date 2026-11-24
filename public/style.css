@@ -1151,8 +1151,7 @@ select:focus-visible {
 }
 
 .web-video-wrapper:fullscreen.show-controls .video-top-bar,
-.web-video-wrapper:-webkit-full-screen.show-controls .video-top-bar,
-.web-video-wrapper.show-controls .video-top-bar {
+.web-video-wrapper:-webkit-full-screen.show-controls .video-top-bar {
   opacity: 1 !important;
   transform: translateX(-50%) translateY(0) !important;
   pointer-events: auto !important;

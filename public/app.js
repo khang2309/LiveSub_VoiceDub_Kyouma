@@ -377,6 +377,25 @@ class LiveDubStudio {
     }
 
     this.initOverlayChannel();
+    this.startControlPolling();
+  }
+
+  startControlPolling() {
+    if (this._controlPollingActive) return;
+    this._controlPollingActive = true;
+    const poll = async () => {
+      try {
+        const res = await fetch('/api/control/poll');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.key) {
+            this.handleKeyCommand(data.key.toLowerCase());
+          }
+        }
+      } catch (_) {}
+      setTimeout(poll, 120);
+    };
+    poll();
   }
 
   initOverlayChannel() {
@@ -414,8 +433,8 @@ class LiveDubStudio {
 
   handleKeyCommand(key) {
     const now = Date.now();
-    if (this._lastKeyCmd === key && (now - (this._lastKeyCmdTime || 0)) < 300) {
-      return; // Khử lặp khi nhận đồng thời từ BroadcastChannel và storage event
+    if (this._lastKeyCmd === key && (now - (this._lastKeyCmdTime || 0)) < 250) {
+      return; // Khử lặp khi nhận đồng thời từ BroadcastChannel, storage event và polling
     }
     this._lastKeyCmd = key;
     this._lastKeyCmdTime = now;
@@ -424,6 +443,20 @@ class LiveDubStudio {
       this.toggleScanningPause();
     } else if (key === 'm') {
       this.toggleDubbingMute();
+    } else if (key === 't') {
+      const modes = ['transparent', 'glass', 'dark'];
+      const nextIdx = (modes.indexOf(this.currentTransparency) + 1) % modes.length;
+      this.currentTransparency = modes[nextIdx];
+      const targetRadio = document.querySelector(`input[name="subTransparency"][value="${this.currentTransparency}"]`);
+      if (targetRadio) targetRadio.checked = true;
+      this.applyTransparencyUI();
+      this.updateAppliedSettings();
+      this.broadcastOverlayState();
+      this.showToast(`Phông nền phụ đề: ${this.currentTransparency === 'transparent' ? 'Trong suốt' : (this.currentTransparency === 'glass' ? 'Kính mờ' : 'Tối màu')}`);
+    } else if (key === '+' || key === '=') {
+      this.adjustFontSize(1);
+    } else if (key === '-') {
+      this.adjustFontSize(-1);
     }
   }
 
@@ -957,30 +990,57 @@ class LiveDubStudio {
     }
 
     if (isFs && this.webVideoContainer) {
+      const topBar = this.webVideoContainer.querySelector('.video-top-bar');
+      const resetFsTimer = () => {
+        const currentlyFs = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+        if (!currentlyFs || !this.webVideoContainer) return;
+        this.webVideoContainer.classList.add('show-controls');
+        if (this._fsHideTimer) clearTimeout(this._fsHideTimer);
+        this._fsHideTimer = setTimeout(() => {
+          if (this.webVideoContainer && !this._isTopBarHovered) {
+            this.webVideoContainer.classList.remove('show-controls');
+          }
+        }, 2500);
+      };
+
       if (!this._fsMouseMoveBound && isDoc) {
         this._fsMouseMoveBound = true;
-        const resetFsTimer = () => {
+        document.addEventListener('mousemove', (e) => {
           const currentlyFs = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
-          if (!currentlyFs || !this.webVideoContainer) return;
-          this.webVideoContainer.classList.add('show-controls');
-          if (this._fsHideTimer) clearTimeout(this._fsHideTimer);
-          this._fsHideTimer = setTimeout(() => {
-            if (this.webVideoContainer) {
-              this.webVideoContainer.classList.remove('show-controls');
-            }
-          }, 2500);
-        };
-        document.addEventListener('mousemove', resetFsTimer);
+          if (!currentlyFs) return;
+          if (e.clientY <= 100) {
+            this.webVideoContainer.classList.add('show-controls');
+          }
+          resetFsTimer();
+        });
       }
+
+      if (topBar && !this._topBarHoverBound) {
+        this._topBarHoverBound = true;
+        topBar.addEventListener('mouseenter', () => {
+          this._isTopBarHovered = true;
+          if (this._fsHideTimer) clearTimeout(this._fsHideTimer);
+          if (this.webVideoContainer) this.webVideoContainer.classList.add('show-controls');
+        });
+        topBar.addEventListener('mouseleave', () => {
+          this._isTopBarHovered = false;
+          resetFsTimer();
+        });
+      }
+
       // Enter fullscreen: reveal controls and schedule auto-hide after 2.5s of idle
       this.webVideoContainer.classList.add('show-controls');
       this._fsHideTimer = setTimeout(() => {
-        if (this.webVideoContainer) {
+        if (this.webVideoContainer && !this._isTopBarHovered) {
           this.webVideoContainer.classList.remove('show-controls');
         }
       }, 2500);
     } else if (this.webVideoContainer) {
       this.webVideoContainer.classList.remove('show-controls');
+      if (this._fsHideTimer) {
+        clearTimeout(this._fsHideTimer);
+        this._fsHideTimer = null;
+      }
     }
   }
 
@@ -1064,6 +1124,10 @@ class LiveDubStudio {
     }
     if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = '';
     if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = '';
+    this.lastOCRText = '';
+    this.lastCleanText = '';
+    this.recentOCRHistory = [];
+    this.ocrConsecutiveEmpty = 0;
   }
 
   switchSourceTab(source) {
@@ -2643,31 +2707,13 @@ class LiveDubStudio {
     }
   }
 
-  duckYouTubeVolume(targetVol = 18) {
-    if (!this.isAudioDuckingEnabled) return;
-    if (!this.ytPlayer || typeof this.ytPlayer.setVolume !== 'function') return;
-    if (this.ytRestoreVolumeTimer) {
-      clearTimeout(this.ytRestoreVolumeTimer);
-      this.ytRestoreVolumeTimer = null;
-    }
-    if (!this.isYtDucked) {
-      if (typeof this.ytPlayer.getVolume === 'function' && (this.originalYtVol === null || this.originalYtVol <= 0)) {
-        const v = this.ytPlayer.getVolume();
-        this.originalYtVol = (typeof v === 'number' && v > 0) ? v : 100;
-      }
-      try {
-        this.ytPlayer.setVolume(targetVol);
-        this.isYtDucked = true;
-      } catch (_) {}
-    }
+  duckYouTubeVolume(_targetVol = 18) {
+    // Completely disabled per user request: keep video audio 100% at its original level
+    return;
   }
 
-  scheduleRestoreYouTubeVolume(delayMs = 4500) {
-    if (!this.isAudioDuckingEnabled) return;
-    if (this.ytRestoreVolumeTimer) clearTimeout(this.ytRestoreVolumeTimer);
-    this.ytRestoreVolumeTimer = setTimeout(() => {
-      this.restoreYouTubeVolumeNow();
-    }, delayMs);
+  scheduleRestoreYouTubeVolume(_delayMs = 4500) {
+    return;
   }
 
   restoreYouTubeVolumeNow() {

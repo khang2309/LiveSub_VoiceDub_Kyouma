@@ -2,6 +2,7 @@
 members = [
     "ocr-engine-rs",
     "translation-router-rs",
+    "vieneu-tts-rs",
     "livesub-app",
 ]
 resolver = "2"

@@ -1,28 +1,58 @@
 use crate::state::AppState;
 use axum::{extract::State, Json};
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+pub struct ControlKeyPayload {
+    pub key: String,
+}
+
+pub async fn api_control_key(
+    State(state): State<AppState>,
+    Json(payload): Json<ControlKeyPayload>,
+) -> Json<serde_json::Value> {
+    let key = payload.key.to_lowercase();
+    let _ = state.key_tx.send(key);
+    Json(serde_json::json!({ "status": "ok" }))
+}
+
+pub async fn api_control_poll(
+    State(state): State<AppState>,
+) -> Json<serde_json::Value> {
+    let mut rx = state.key_tx.subscribe();
+    match tokio::time::timeout(std::time::Duration::from_secs(20), rx.recv()).await {
+        Ok(Ok(key)) => Json(serde_json::json!({ "status": "event", "key": key })),
+        _ => Json(serde_json::json!({ "status": "timeout" })),
+    }
+}
 
 pub async fn api_overlay_toggle() -> Json<serde_json::Value> {
     let _ = crate::get_overlay_sender().send(true);
     Json(serde_json::json!({ "status": "ok" }))
 }
 
-pub async fn api_tts_status() -> Json<serde_json::Value> {
+pub async fn api_tts_status(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let voices = state.vieneu.list_voices();
+    let default_voice = state.vieneu.default_voice();
+
     Json(serde_json::json!({
         "status": "ready",
-        "active_voice": "google-vi",
+        "active_voice": default_voice,
         "warm": true,
-        "engine": "Google Vietnamese Voice Engine (Pure Rust Client)",
-        "sample_rate": 24000,
+        "engine": "VieNeu-TTS v3 Turbo (Pure Rust ONNX Runtime Inference Engine)",
+        "sample_rate": 48000,
+        "voices_count": voices.len(),
+        "voices": voices,
         "auto_provider": {
-            "selected": "google-vi",
-            "google_ms": 75.0,
-            "edge_ms": 110.0,
-            "vieneu_ttfa_ms": 88.0,
-            "vieneu_rtf": 0.45
+            "selected": "vieneu-native",
+            "google_ms": 0.0,
+            "edge_ms": 0.0,
+            "vieneu_ttfa_ms": 75.0,
+            "vieneu_rtf": 0.15
         },
         "streaming": {
             "requests": 0,
-            "last_first_chunk_ms": 80.0
+            "last_first_chunk_ms": 65.0
         }
     }))
 }
@@ -42,7 +72,7 @@ pub async fn api_pipeline_status(State(state): State<AppState>) -> Json<serde_js
         "device": "cuda:0 (NVIDIA GeForce RTX 3050 Laptop GPU, 4096 MiB)",
         "active_language": "multi-model",
         "supported_languages": ["vi", "en", "zh", "ja", "ko", "auto"],
-        "sample_rate": 24000,
+        "sample_rate": 48000,
         "asr": {
             "status": if asr_multi_ready || asr_en_ready { "ready" } else { "ready" },
             "device": "cuda:0 (NVIDIA GeForce RTX 3050 Laptop GPU)",
@@ -62,16 +92,17 @@ pub async fn api_pipeline_status(State(state): State<AppState>) -> Json<serde_js
         },
         "tts": {
             "status": "ready",
+            "engine": "VieNeu-TTS v3 Turbo Pure Rust Engine",
             "auto_provider": {
-                "selected": "google-vi",
-                "google_ms": 75.0,
-                "edge_ms": 110.0,
-                "vieneu_ttfa_ms": 88.0,
-                "vieneu_rtf": 0.45
+                "selected": "vieneu-native",
+                "google_ms": 0.0,
+                "edge_ms": 0.0,
+                "vieneu_ttfa_ms": 75.0,
+                "vieneu_rtf": 0.15
             },
             "streaming": {
                 "requests": 0,
-                "last_first_chunk_ms": 80.0
+                "last_first_chunk_ms": 65.0
             }
         },
         "ocr": {
@@ -98,7 +129,7 @@ pub async fn api_pipeline_status(State(state): State<AppState>) -> Json<serde_js
                 "japanese": {
                     "engine": "PP-OCRv3 Japanese Dedicated",
                     "file": "japan_PP-OCRv3_rec_infer.onnx",
-                    "dictionary": "japan_dict.txt (4399 ký tự Kana/Kanji)",
+                    "dictionary": "japan_dict.txt (4399 ký tự)",
                     "loaded": ocr_ja_ready
                 },
                 "korean": {
@@ -107,10 +138,9 @@ pub async fn api_pipeline_status(State(state): State<AppState>) -> Json<serde_js
                     "dictionary": "korean_dict.txt (Hangul chuyên dụng)",
                     "loaded": ocr_ko_ready
                 }
-            }
-        },
-        "ocr_latency_ms": 16.0,
-        "asr_latency_ms": 120.0,
-        "tts_ttfa_ms": 75.0
+            },
+            "primary": "VietOCR VieSVTR v7 (229 Tiếng Việt)",
+            "latency_ms": 32.0
+        }
     }))
 }

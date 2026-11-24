@@ -7,6 +7,7 @@ use std::{
     sync::{Arc, Mutex, OnceLock, RwLock},
 };
 use translation_router_rs::TranslationRouter;
+use vieneu_tts_rs::VieneuEngine;
 
 static RE_VI_MARKERS: OnceLock<Regex> = OnceLock::new();
 static RE_WHITESPACE: OnceLock<Regex> = OnceLock::new();
@@ -67,12 +68,14 @@ pub struct AppState {
     pub ocr: Arc<DiacriticEngine>,
     pub ppocr: Option<Arc<PpOcrEngine>>,
     pub ocr_pool: OcrEnginePool,
+    pub vieneu: Arc<VieneuEngine>,
     pub whisper_server_url: String,
     pub whisper_en_server_url: String,
     pub router: Arc<TranslationRouter>,
     pub http_client: reqwest::Client,
     pub audio_cache: Arc<RwLock<HashMap<String, Vec<u8>>>>,
     pub trans_cache: Arc<RwLock<HashMap<String, String>>>,
+    pub key_tx: tokio::sync::broadcast::Sender<String>,
     pub _whisper_child: Arc<Mutex<Option<Child>>>,
     pub _whisper_en_child: Arc<Mutex<Option<Child>>>,
 }

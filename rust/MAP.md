@@ -51,6 +51,10 @@
     - Whisper ASR configuration, audio chunk feeding, and language detection coordinator.
     - VieNeu-TTS neural speech normalization (48kHz sample rate, punctuation formatting, tone smoothing).
     - Latency tracking and stream chunk preparation.
+- [ ] `vieneu-tts-rs`:
+  - **Claimed by**: session `2026-11-24` (pure Rust port of VieNeu-TTS v3 Turbo via `ort` & `sea-g2p-rs`)
+  - **Status**: In progress
+  - **Target**: Pure Rust execution of ONNX graphs (`vieneu_prefill`, `vieneu_decode_step`, `vieneu_acoustic_cached`, `moss_audio_tokenizer_decode_full`) with `sea-g2p-rs` G2P and preset voices.
 
 ---
 

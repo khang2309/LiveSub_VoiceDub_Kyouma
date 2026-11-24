@@ -1,0 +1,22 @@
+[package]
+name = "vieneu-tts-rs"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Pure Rust native inference engine for VieNeu-TTS v3 Turbo via ONNX Runtime & sea-g2p"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+ort = { version = "2.0.0-rc.15", features = ["download-binaries", "tls-rustls", "ndarray"] }
+ndarray = "0.17"
+tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
+sea-g2p-rs = { path = "../../tools/sea-g2p", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hound = "3.5"
+rand = "0.8"
+tracing = "0.1"
+regex = "1"
+dirs = "5"

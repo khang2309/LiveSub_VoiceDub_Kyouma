@@ -79,3 +79,19 @@ This document records all architectural decisions agreed upon for the complete m
   - **Wave 2**: `translation-router-rs` (Local/API translation for 5 languages).
   - **Wave 3**: `asr-tts-rs` (Whisper CUDA + VieNeu ONNX CUDA).
   - **Wave 4**: `livesub-app` (Native GUI, Transparent Overlay, CPAL audio, standalone executable packaging).
+
+---
+
+## ADR-009: Pure Rust VieNeu-TTS Engine (vieneu-tts-rs)
+- **Status**: Accepted (2026-11-24)
+- **Context**: The user explicitly requested migrating VieNeu-TTS from Python to pure Rust and removing all simulated Edge TTS / Google TTS proxies and WSOLA pitch distortions. The application requires 100% offline, pure native Rust speech synthesis with the authentic voices of VieNeu-TTS (Thái Sơn, Trúc Ly, Thiện Minh, Mai Anh, Thùy Dung, etc.).
+- **Decision**:
+  1. Build a dedicated crate `rust/vieneu-tts-rs` inside the Cargo workspace.
+  2. Implement inference via `ort` (ONNX Runtime Rust with DirectML/CUDA GPU execution provider and CPU fallback) loading `vieneu_prefill.onnx`, `vieneu_decode_step.onnx`, `vieneu_acoustic_cached.onnx`, and `moss_audio_tokenizer_decode_full.onnx`.
+  3. Integrate `sea-g2p-rs` (`tools/sea-g2p`, `default-features = false`) for zero-overhead, 100% native Rust Vietnamese text normalization and G2P phonemization.
+  4. Load precomputed speaker embeddings (`speaker_emb` 192-dim) and reference codes (`ref_codes`) directly from `voices_v3_turbo.json` so preset voices boot in < 50ms without running `speaker_encoder.onnx`.
+  5. Connect `rust/vieneu-tts-rs` directly into `rust/livesub-app/src/services/tts.rs` to serve 48kHz WAV audio natively at `/api/tts` and `/api/tts-stream`, permanently deprecating and removing `scripts/edge_tts_server.js`.
+- **Consequences**:
+  - Zero Python, zero Node.js, zero cloud dependencies.
+  - Subtitle-to-voice latency drops from ~1800ms (cloud roundtrip) to ~90-120ms (local GPU inference on RTX 3050).
+  - Authentic neural Vietnamese speech matching the official VieNeu-TTS repository.

@@ -301,14 +301,23 @@
         if (body && typeof body.focus === 'function') body.focus();
       } catch (_) {}
     }
-    window.addEventListener('pointerdown', ensurePipFocus);
-    window.addEventListener('click', ensurePipFocus);
+    window.addEventListener('pointerdown', ensurePipFocus, true);
+    window.addEventListener('mousedown', ensurePipFocus, true);
+    window.addEventListener('click', ensurePipFocus, true);
     window.addEventListener('DOMContentLoaded', ensurePipFocus);
 
-    function sendKeyCommand(key) {
+    async function sendKeyCommand(key) {
       const k = key.toLowerCase();
+      try {
+        fetch('/api/control/key', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: k })
+        }).catch(() => {});
+      } catch (_) {}
+
       if (overlayChannel) {
-        overlayChannel.postMessage({ type: 'KEY_COMMAND', key: k });
+        try { overlayChannel.postMessage({ type: 'KEY_COMMAND', key: k }); } catch (_) {}
       }
       try {
         localStorage.setItem('livesub_key_command', JSON.stringify({ key: k, time: Date.now() }));
@@ -322,6 +331,8 @@
         isDubbingEnabled = !isDubbingEnabled;
         updateButtonsUI();
         showHudToast(isDubbingEnabled ? '🔊 ĐÃ BẬT ÂM LỒNG TIẾNG (M)' : '🔇 ĐÃ TẮT ÂM LỒNG TIẾNG (M)');
+      } else if (k === 't') {
+        cycleTransparency();
       }
     }
 
@@ -332,7 +343,7 @@
           btnPipMute.classList.add('active-warn');
           btnPipMute.classList.remove('active-ok');
         } else {
-          btnPipMute.innerHTML = '🔊 Âm: ĐANG BẬT (M)';
+          btnPipMute.innerHTML = '🔊 Âm: BẬT (M)';
           btnPipMute.classList.remove('active-warn');
           btnPipMute.classList.add('active-ok');
         }
@@ -343,7 +354,7 @@
           btnPipPause.classList.add('active-warn');
           btnPipPause.classList.remove('active-ok');
         } else {
-          btnPipPause.innerHTML = '🟢 Quét: ĐANG BẬT (P)';
+          btnPipPause.innerHTML = '▶️ Quét: CHẠY (P)';
           btnPipPause.classList.remove('active-warn');
           btnPipPause.classList.add('active-ok');
         }
@@ -382,25 +393,35 @@
     }
 
     // 3. Xử lý phím tắt trực tiếp trên cửa sổ PiP (P, M, T, + / -)
-    window.addEventListener('keydown', (e) => {
+    function onKeyDownCapture(e) {
+      if (['INPUT', 'TEXTAREA'].includes(e.target?.tagName)) return;
       const key = e.key.toLowerCase();
       if (key === 'p') {
         e.preventDefault();
+        e.stopPropagation();
         sendKeyCommand('p');
       } else if (key === 'm') {
         e.preventDefault();
+        e.stopPropagation();
         sendKeyCommand('m');
       } else if (key === 't') {
         e.preventDefault();
+        e.stopPropagation();
         cycleTransparency();
       } else if (key === '+' || key === '=') {
         e.preventDefault();
+        e.stopPropagation();
         changeFontSize(2);
       } else if (key === '-' || key === '_') {
         e.preventDefault();
+        e.stopPropagation();
         changeFontSize(-2);
       }
-    });
+    }
+
+    window.addEventListener('keydown', onKeyDownCapture, true);
+    document.addEventListener('keydown', onKeyDownCapture, true);
+    if (document.body) document.body.addEventListener('keydown', onKeyDownCapture, true);
 
     // Sự kiện nút bấm
     if (btnPipBg) btnPipBg.addEventListener('click', cycleTransparency);
