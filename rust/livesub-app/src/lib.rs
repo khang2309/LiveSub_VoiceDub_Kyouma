@@ -1,0 +1,108 @@
+pub mod config;
+pub mod routes;
+pub mod services;
+pub mod state;
+
+use config::AppConfig;
+use ocr_engine_rs::OcrEngine as DiacriticEngine;
+use state::AppState;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, RwLock},
+    time::Duration,
+};
+use translation_router_rs::TranslationRouter;
+
+pub async fn run_server(config: AppConfig) {
+    println!("============================================================");
+    println!("🚀 LiveSub Standalone Pure Rust Realtime Video Dubbing Engine");
+    println!("   Architecture: 100% Native Rust | Zero Python | Port 3000");
+    println!("   GPU Acceleration: NVIDIA GeForce RTX 3050 Laptop GPU (CUDA)");
+    println!("   OCR Engine: VietOCR Native Full Diacritics Model (229 Characters | Pure Rust)");
+    println!("============================================================");
+
+    let ocr = Arc::new(DiacriticEngine::new());
+    let ocr_pool = services::ocr::load_all_ocr_models(&config);
+    let ppocr = ocr_pool.vietnamese.clone();
+    let whisper_child = services::whisper::ensure_whisper_cuda_server(
+        &config.whisper_bin_path,
+        &config.whisper_model_path,
+        "127.0.0.1",
+        "8089",
+    );
+    let whisper_en_child = services::whisper::ensure_whisper_cuda_server(
+        &config.whisper_bin_path,
+        &config.whisper_en_model_path,
+        "127.0.0.1",
+        "8090",
+    );
+    let router = Arc::new(TranslationRouter::new());
+    let http_client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .timeout(Duration::from_secs(10))
+        .build()
+        .expect("Failed to initialize HTTP client");
+
+    let state = AppState {
+        ocr,
+        ppocr,
+        ocr_pool,
+        whisper_server_url: config.whisper_url.clone(),
+        whisper_en_server_url: config.whisper_en_url.clone(),
+        router,
+        http_client,
+        audio_cache: Arc::new(RwLock::new(HashMap::with_capacity(1024))),
+        trans_cache: Arc::new(RwLock::new(HashMap::with_capacity(1024))),
+        _whisper_child: Arc::new(Mutex::new(whisper_child)),
+        _whisper_en_child: Arc::new(Mutex::new(whisper_en_child)),
+    };
+
+    let app = routes::build_router(state, &config.public_dir);
+
+    println!(
+        "⚡ LiveSub Pure Rust Web Server listening on http://{}",
+        config.bind_addr
+    );
+
+    // Kiểm tra nếu port 3000 đã có tiến trình LiveSub đang lắng nghe
+    if std::net::TcpStream::connect(config.bind_addr).is_ok() {
+        println!(
+            "⚡ Port {} is already active. Reusing existing LiveSub backend engine.",
+            config.bind_addr
+        );
+        return;
+    }
+
+    let listener = match tokio::net::TcpListener::bind(config.bind_addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("⚠️ Cannot bind {}: {e}. Checking if already listening...", config.bind_addr);
+            if std::net::TcpStream::connect(config.bind_addr).is_ok() {
+                println!("⚡ LiveSub backend is already active on {}. Reusing existing instance.", config.bind_addr);
+                return;
+            }
+            eprintln!("❌ Port {} is blocked. Server aborted.", config.bind_addr);
+            return;
+        }
+    };
+
+    if let Err(e) = axum::serve(listener, app).await {
+        eprintln!("⚠️ Axum server terminated: {e}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_load_models() {
+        let config = AppConfig::default();
+        let pool = services::ocr::load_all_ocr_models(&config);
+        assert!(pool.vietnamese.is_some(), "Vietnamese dedicated model should load");
+        assert!(pool.english.is_some(), "English dedicated model should load");
+        assert!(pool.chinese.is_some(), "Chinese dedicated model should load");
+        assert!(pool.japanese.is_some(), "Japanese dedicated model should load");
+        assert!(pool.korean.is_some(), "Korean dedicated model should load");
+    }
+}

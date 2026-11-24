@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "node --test --test-force-exit tests/test_frontend.js && .venv\\Scripts\\python.exe -m unittest tests.test_server"
+    "test": "node --test --test-force-exit tests/test_frontend.js && cd rust && cargo test --no-default-features"
   },
   "keywords": [],
   "author": "",

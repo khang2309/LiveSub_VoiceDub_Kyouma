@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "ocr-engine-rs",
+    "translation-router-rs",
+    "livesub-app",
+]
+resolver = "2"

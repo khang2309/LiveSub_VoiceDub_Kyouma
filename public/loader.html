@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LiveSub & VoiceDub AI Studio</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #111318;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+    }
+    .splash-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      padding: 40px;
+      max-width: 480px;
+    }
+    .logo-container {
+      position: relative;
+      width: 72px;
+      height: 72px;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .spinner {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border: 3px solid rgba(232, 148, 134, 0.15);
+      border-top-color: #e89486;
+      border-right-color: #e89486;
+      border-radius: 50%;
+      animation: spin 0.9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      color: #e89486;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: #94a3b8;
+      margin-bottom: 24px;
+      letter-spacing: 0.02em;
+    }
+    .status-box {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 9999px;
+      padding: 8px 18px;
+      font-size: 12.5px;
+      color: #cbd5e1;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: #e89486;
+      border-radius: 50%;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.4; transform: scale(0.9); }
+      50% { opacity: 1; transform: scale(1.15); }
+    }
+    .btn-retry {
+      display: none;
+      margin-top: 18px;
+      padding: 8px 18px;
+      background: #e89486;
+      color: #111318;
+      font-weight: 600;
+      font-size: 13px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .btn-retry:hover { background: #f0a395; }
+  </style>
+</head>
+<body>
+  <div class="splash-card">
+    <div class="logo-container">
+      <div class="spinner"></div>
+      <svg class="brand-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" y1="19" x2="12" y2="22"/>
+        <path d="m5 8 3 3"/>
+        <path d="m19 8-3 3"/>
+      </svg>
+    </div>
+    <h1>LiveSub Studio</h1>
+    <p class="subtitle">100% Native Pure Rust Realtime VoiceDub &amp; OCR Engine</p>
+    <div class="status-box">
+      <span class="status-dot"></span>
+      <span id="statusLabel">Đang khởi động Pure Rust Engine &amp; GPU...</span>
+    </div>
+    <button id="btnRetry" class="btn-retry" onclick="checkBackend()">Thử kết nối lại</button>
+  </div>
+
+  <script>
+    let attempts = 0;
+    const maxAttempts = 150; // 15 giây
+
+    async function checkBackend() {
+      attempts++;
+      try {
+        const res = await fetch('http://127.0.0.1:3000/api/pipeline-status', {
+          cache: 'no-store'
+        });
+        if (res.ok) {
+          document.getElementById('statusLabel').innerText = 'Kết nối thành công! Đang tải Studio...';
+          window.location.replace('http://localhost:3000');
+          return;
+        }
+      } catch (err) {
+        // Server chưa sẵn sàng, tiếp tục chờ
+      }
+
+      if (attempts < maxAttempts) {
+        setTimeout(checkBackend, 100);
+      } else {
+        document.getElementById('statusLabel').innerText = 'Không thể kết nối LiveSub Engine (port 3000)';
+        document.getElementById('btnRetry').style.display = 'inline-block';
+      }
+    }
+
+    // Bắt đầu thăm dò ngay khi splash render
+    checkBackend();
+  </script>
+</body>
+</html>

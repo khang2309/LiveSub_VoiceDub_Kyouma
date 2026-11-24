@@ -1,61 +1,53 @@
 @echo off
-title Cai dat LiveSub & VoiceDub AI Studio
+title Cai dat LiveSub & VoiceDub AI Studio (100%% Pure Rust)
 color 0A
 echo ========================================================
 echo       CAI DAT LIVESUB & VOICEDUB AI STUDIO
 echo   He Thong Thuyet Minh & Long Tieng Realtime Da Nguon
+echo   Kien Truc: 100%% Pure Rust Standalone Engine (Zero Python)
 echo ========================================================
 echo.
 
 cd /d "%~dp0"
 
-echo [1/5] Kiem tra Python...
-python --version >nul 2>&1
+echo [1/3] Kiem tra Rust & Cargo...
+cargo --version >nul 2>&1
 if errorlevel 1 (
-    echo [LOI] Khong tim thay Python tren he thong!
-    echo Vui long cai dat Python 3.10 tro len va tich vao "Add Python to PATH".
+    echo [LOI] Khong tim thay Rust/Cargo tren he thong!
+    echo Vui long cai dat Rust tu https://rustup.rs/
     pause
-    exit /b
+    exit /b 1
 )
 
-echo [2/5] Tao moi truong Python ao .venv...
-if not exist ".venv" (
-    python -m venv .venv
+echo [2/3] Build binary Rust LiveSub Engine Release...
+cargo build --release --manifest-path rust/livesub-app/Cargo.toml
+if errorlevel 1 (
+    echo [LOI] Build Rust that bai!
+    pause
+    exit /b 1
 )
 
-echo [3/5] Cai dat CUDA PyTorch va cac thu vien can thiet...
-".venv\Scripts\python.exe" -m pip install --upgrade pip
-".venv\Scripts\python.exe" -m pip install torch==2.8.0+cu128 torchaudio==2.8.0+cu128 --index-url https://download.pytorch.org/whl/cu128
-if errorlevel 1 goto :install_error
-".venv\Scripts\python.exe" -m pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu128
-if errorlevel 1 goto :install_error
+if not exist "bin" mkdir "bin" >nul 2>&1
+copy /y "rust\target\release\livesub.exe" "livesub.exe" >nul 2>&1
+copy /y "rust\target\release\livesub.exe" "bin\livesub.exe" >nul 2>&1
 
-echo [4/5] Tai va toi uu model dich VinAI EN-VI local INT8...
-if not exist "models\vinai-translate-en2vi-v2-int8\model.bin" (
-    ".venv\Scripts\ct2-transformers-converter.exe" --model vinai/vinai-translate-en2vi-v2 --output_dir models\vinai-translate-en2vi-v2-int8 --quantization int8 --copy_files sentencepiece.bpe.model
-    if errorlevel 1 goto :install_error
-) else (
-    echo Model VinAI INT8 da co, bo qua tai lai.
+echo [3/3] Kiem tra mo hinh Whisper CUDA va VietOCR...
+if not exist "models\whisper\ggml-tiny.bin" (
+    echo [CANH BAO] Chua tim thay models\whisper\ggml-tiny.bin
 )
-
-echo [5/5] Tai model NLLB-200 da ngon ngu local INT8...
-if not exist "models\nllb-200-distilled-600M-int8\model.bin" (
-    ".venv\Scripts\ct2-transformers-converter.exe" --model facebook/nllb-200-distilled-600M --output_dir models\nllb-200-distilled-600M-int8 --quantization int8 --copy_files sentencepiece.bpe.model tokenizer.json tokenizer_config.json special_tokens_map.json
-    if errorlevel 1 goto :install_error
-) else (
-    echo Model NLLB-200 INT8 da co, bo qua tai lai.
+if not exist "models\ocr\ch_PP-OCRv4_det_infer.onnx" (
+    echo [CANH BAO] Chua tim thay models\ocr\ch_PP-OCRv4_det_infer.onnx
+)
+if not exist "models\ocr\vietocr_viesvtr_v7.onnx" (
+    echo [CANH BAO] Chua tim thay models\ocr\vietocr_viesvtr_v7.onnx
+)
+if not exist "models\ocr\vietocr_keys.txt" (
+    echo [CANH BAO] Chua tim thay models\ocr\vietocr_keys.txt
 )
 
 echo.
 echo ========================================================
-echo   CAI DAT HOAN TAT!
-echo   Hay khoi dong bang cach chay file start.bat
+echo   CAI DAT HOAN TAT THANH CONG!
+echo   Ban co the chay start.bat de khoi dong LiveSub Studio.
 echo ========================================================
 pause
-exit /b 0
-
-:install_error
-echo.
-echo [LOI] Cai dat khong hoan tat. Kiem tra ket noi mang va dung luong dia.
-pause
-exit /b 1

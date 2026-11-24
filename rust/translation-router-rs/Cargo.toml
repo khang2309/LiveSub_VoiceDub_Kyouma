@@ -1,0 +1,13 @@
+[package]
+name = "translation-router-rs"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Real-time multilingual translation router (JA, ZH, TH, EN -> VI)"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+hashbrown = "0.15"

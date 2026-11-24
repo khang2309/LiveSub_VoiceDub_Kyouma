@@ -7,6 +7,26 @@ venv/
 env/
 ENV/
 
+# Rust
+target/
+rust/**/target/
+rust/target/
+*.pdb
+livesub.exe
+bin/
+
+# Downloaded native build tools and neural model weights
+tools/
+models/**/*.bin
+models/**/*.rten
+models/**/*.onnx
+models/**/*.dll
+models/whisper/cuda/
+graphify-out/
+*.old
+LiveSub-Desktop.exe
+LiveSub-Studio-Setup.exe
+
 # Python
 __pycache__/
 *.py[cod]

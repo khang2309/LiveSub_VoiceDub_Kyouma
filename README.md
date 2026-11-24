@@ -72,16 +72,20 @@ LiveSub_VoiceDub_Kyouma/
 │   ├── style.css              # Giao diện phụ đề nổi trực tiếp đáy video
 │   └── icon.png
 ├── models/                    # Thư mục chứa mô hình AI
-│   └── piper/                 # Config & Onnx mô hình Piper offline tiếng Việt
+│   ├── ocr/                   # Mô hình PP-OCRv4 tiếng Việt (ONNX)
+│   └── whisper/               # Whisper CUDA native GPU server & GGML model
 ├── public/                    # Giao diện Web Studio Frontend
-│   ├── index.html             # Dashboard Studio 4 nguồn phát
+│   ├── index.html             # Dashboard Cinema Studio 4 nguồn phát
 │   ├── overlay.html           # Cửa sổ phụ đề nổi mỏng trong suốt
 │   ├── app.js                 # Bộ xử lý Web Audio API, VAD, MediaStream, Sync
 │   └── style.css              # Giao diện Studio Dark Cinema
-├── server.py                  # Backend FastAPI + Faster-Whisper GPU + Edge-TTS + Piper
-├── requirements.txt           # Danh sách thư viện Python cần thiết
-├── setup.bat                  # File cài đặt tự động 1-click
-├── start.bat                  # File khởi động ứng dụng nhanh
+├── rust/                      # Backend 100% Pure Rust Native Workspace
+│   ├── livesub-app/           # Axum HTTP/WS Server binary (`livesub.exe`)
+│   ├── ocr-engine-rs/         # Thuật toán Viterbi khôi phục dấu & PP-OCRv4
+│   ├── asr-tts-rs/            # Whisper GPU & TTS client
+│   └── translation-router-rs/ # Bộ định tuyến dịch thuật
+├── setup.bat                  # Script cài đặt / build binary tự động
+├── start.bat                  # Script khởi động LiveSub Studio 1-click
 └── README.md
 ```
 
@@ -91,15 +95,15 @@ LiveSub_VoiceDub_Kyouma/
 
 ### Yêu Cầu Hệ Thống:
 * Hệ điều hành: Windows 10 / 11 (64-bit).
-* Python 3.10 hoặc 3.11 (đã tích hợp vào PATH).
-* GPU: Khuyên dùng NVIDIA GeForce (RTX 3050, 3060, 4060...) để đạt độ trễ $\le$ 0.5s (Hệ thống vẫn tự động chạy trên CPU nếu máy không có GPU).
+* Rust & Cargo toolchain (tải từ https://rustup.rs).
+* GPU: Khuyên dùng NVIDIA GeForce (RTX 3050, 3060, 4060...) có CUDA để đạt độ trễ $\le$ 0.15s cho Whisper ASR.
 
-### Bước 1: Cài Đặt Môi Trường
+### Bước 1: Build Binary
 Chỉ cần nhấp đúp vào file:
 ```cmd
 setup.bat
 ```
-*(Script sẽ tự tạo môi trường ảo `.venv` và cài đặt đầy đủ các thư viện từ `requirements.txt`).*
+*(Script sẽ tự động build binary `rust\target\release\livesub.exe` tối ưu hóa tốc độ thực thi).*
 
 ### Bước 2: Khởi Động Ứng Dụng
 Nhấp đúp vào file:

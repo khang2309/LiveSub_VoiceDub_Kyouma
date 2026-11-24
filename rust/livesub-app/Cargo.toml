@@ -1,0 +1,29 @@
+[package]
+name = "livesub-app"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "LiveSub Standalone Native Realtime Video Dubbing Application in Pure Rust"
+
+[lib]
+name = "livesub_app"
+path = "src/lib.rs"
+
+[[bin]]
+name = "livesub"
+path = "src/main.rs"
+
+[dependencies]
+ocr-engine-rs = { path = "../ocr-engine-rs", default-features = false }
+translation-router-rs = { path = "../translation-router-rs", default-features = false }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+axum = { version = "0.8", features = ["multipart"] }
+tower-http = { version = "0.7", features = ["fs", "cors"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "multipart"] }
+regex = "1"
+urlencoding = "2"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+pure-onnx-ocr = "0.3.2"
+

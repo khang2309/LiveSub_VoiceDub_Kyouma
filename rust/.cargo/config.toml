@@ -1,0 +1,4 @@
+[env]
+# Portable build tools downloaded under the repository root.
+CMAKE = { value = "../../tools/cmake-tar/cmake-4.5.1-windows-x86_64/bin/cmake.exe", relative = true }
+LIBCLANG_PATH = { value = "../../tools/libclang-win/runtimes/win-x64/native", relative = true }
