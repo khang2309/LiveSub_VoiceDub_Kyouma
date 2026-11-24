@@ -967,6 +967,50 @@ test('getSafeStreamingPlaybackRate accelerates on fast dialogue queue backlog up
   assert.ok(rateBacklog >= 1.15 && rateBacklog <= 1.25, `Rate ${rateBacklog} should be between 1.15x and 1.25x`);
 });
 
+test('toggleDubbingMute toggles isDubbingEnabled and stops active audio', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.isDubbingEnabled = true;
+  let stopped = false;
+  app.stopDubbingAudio = () => { stopped = true; };
+  app.showToast = () => {};
+  app.updateMasterDubUI = () => {};
+
+  app.toggleDubbingMute();
+  assert.equal(app.isDubbingEnabled, false);
+  assert.equal(stopped, true);
+
+  app.toggleDubbingMute();
+  assert.equal(app.isDubbingEnabled, true);
+});
+
+test('toggleScanningPause toggles isScanningPaused and pauses OCR scanning', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.isScanningPaused = false;
+  let stopped = false;
+  app.stopDubbingAudio = () => { stopped = true; };
+  app.showToast = () => {};
+
+  app.toggleScanningPause();
+  assert.equal(app.isScanningPaused, true);
+  assert.equal(stopped, true);
+
+  app.toggleScanningPause();
+  assert.equal(app.isScanningPaused, false);
+});
+
+test('handleOCRSubtitle ignores musical notes and OST songs', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.isScanningPaused = false;
+  app.isGarbageOCR = () => false;
+  let displayed = null;
+  app.displaySubtitle = (orig, trans) => { displayed = { orig, trans }; };
+
+  app.handleOCRSubtitle({ original: '♪ I will always love you ♪', translated: 'Tôi sẽ luôn yêu em' });
+  assert.ok(displayed, 'Music subtitle should be displayed');
+  assert.ok(displayed.trans.includes('Nhạc nền / OST'), 'Should mark as OST/Music');
+});
+
+
 
 
 

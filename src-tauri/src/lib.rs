@@ -22,10 +22,19 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
-        .on_window_event(|_window, event| {
-            if let tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed = event {
-                kill_background_services();
-                std::process::exit(0);
+        .on_window_event(|window, event| {
+            if window.label() == "overlay" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    let _ = window.hide();
+                    api.prevent_close();
+                    return;
+                }
+            }
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed = event {
+                    kill_background_services();
+                    std::process::exit(0);
+                }
             }
         })
         .setup(|app| {
@@ -41,6 +50,43 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 let config = livesub_app::config::AppConfig::default();
                 livesub_app::run_server(config).await;
+            });
+
+            // Lắng nghe tín hiệu toggle cửa sổ phụ đề nổi (Always-on-Top OS window)
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut rx = livesub_app::get_overlay_sender().subscribe();
+                while let Ok(_) = rx.recv().await {
+                    if let Some(win) = app_handle.get_webview_window("overlay") {
+                        let is_vis = win.is_visible().unwrap_or(false);
+                        if is_vis {
+                            let _ = win.hide();
+                        } else {
+                            let _ = win.show();
+                            let _ = win.unminimize();
+                            let _ = win.set_focus();
+                            let _ = win.set_always_on_top(true);
+                        }
+                    } else {
+                        let win = tauri::WebviewWindowBuilder::new(
+                            &app_handle,
+                            "overlay",
+                            tauri::WebviewUrl::External("http://localhost:3000/overlay".parse().unwrap()),
+                        )
+                        .title("LiveSub - Phụ Đề Nổi (PiP Always-on-Top)")
+                        .inner_size(840.0, 130.0)
+                        .min_inner_size(400.0, 80.0)
+                        .always_on_top(true)
+                        .decorations(true)
+                        .resizable(true)
+                        .build();
+
+                        if let Ok(w) = win {
+                            let _ = w.show();
+                            let _ = w.set_always_on_top(true);
+                        }
+                    }
+                }
             });
 
             Ok(())

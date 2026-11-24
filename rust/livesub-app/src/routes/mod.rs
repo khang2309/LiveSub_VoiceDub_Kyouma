@@ -28,6 +28,7 @@ pub fn build_router(state: AppState, public_dir: &Path) -> Router {
     Router::new()
         .route("/api/tts-status", get(pipeline::api_tts_status))
         .route("/api/tts/status", get(pipeline::api_tts_status))
+        .route("/api/overlay/toggle", post(pipeline::api_overlay_toggle))
         .route("/api/pipeline-status", get(pipeline::api_pipeline_status))
         .route("/api/translate", post(translate::api_translate))
         .route("/api/ocr-subtitle", post(ocr::api_ocr_subtitle))

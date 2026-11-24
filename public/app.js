@@ -44,6 +44,7 @@ class LiveDubStudio {
     this.currentTransparency = 'transparent';
     this.isDubbingEnabled = true;
     this.isAdaptiveSpeedEnabled = true;
+    this.isScanningPaused = false;
     this.isHybridModeActive = false;
     // Local VieNeu is the safe zero-cost default. The server benchmarks all
     // warmed providers once at startup and this value is refreshed once.
@@ -57,6 +58,8 @@ class LiveDubStudio {
     this.ytSyncInterval = null;
     this.currentYtSegmentIdx = -1;
     this.originalYtVol = null;
+    this.isYtDucked = false;
+    this.ytRestoreVolumeTimer = null;
     this.audioPreCache = new Map();
     this.isFetchingPreCache = new Set();
     this.voiceGeneration = 0;
@@ -346,6 +349,7 @@ class LiveDubStudio {
     this.btnSubtitleFontPlus = document.getElementById('btnSubtitleFontPlus');
     this.btnSubtitleFontMinus = document.getElementById('btnSubtitleFontMinus');
     this.btnPanicKill = document.getElementById('btnPanicKill');
+    this.btnPauseScan = document.getElementById('btnPauseScan');
 
     // History
     this.historyList = document.getElementById('historyList');
@@ -397,7 +401,7 @@ class LiveDubStudio {
 
   getSafePlaybackRate(extra = 0, originalDuration = 0, textLength = 0) {
     const selected = parseFloat(this.rateRange && this.rateRange.value) || 1.15;
-    let rate = Math.min(2.0, Math.max(0.8, selected + extra));
+    let rate = Math.min(1.50, Math.max(0.8, selected + extra));
     if (this.isAdaptiveSpeedEnabled && textLength > 0) {
       const estimatedSyllables = Math.max(1, textLength / 3.8);
       const estimatedSpeechSeconds = estimatedSyllables * 0.21;
@@ -410,37 +414,35 @@ class LiveDubStudio {
     return rate;
   }
 
-  getSafeStreamingPlaybackRate(queueDepth = 0, serverCap = 2.0, originalDuration = 0, textLength = 0, queueLagMs = 0) {
+  getSafeStreamingPlaybackRate(queueDepth = 0, serverCap = 1.20, originalDuration = 0, textLength = 0, queueLagMs = 0) {
     // Dynamic Speed Overdrive: Tự động ép xung tốc độ đọc khi phụ đề ra nhanh hoặc nhân vật nói dồn dập (MrBeast style)
     let rate = (typeof this.getSafePlaybackRate === 'function')
       ? this.getSafePlaybackRate(0)
       : (parseFloat(this.rateRange && this.rateRange.value) || 1.15);
 
-    // 1. Cadence Overdrive: Nhịp độ nói dồn dập giữa các câu liên tiếp (khoảng cách câu < 2.5s)
-    if (this.lastSentenceArrivalGapMs && this.lastSentenceArrivalGapMs < 1400) {
-      rate = Math.max(rate, 1.65);
-    } else if (this.lastSentenceArrivalGapMs && this.lastSentenceArrivalGapMs < 2400) {
-      rate = Math.max(rate, 1.45);
-    }
+    // Only apply backlog / lag overdrive when there is actual backlog or fast dialogue
+    if (queueLagMs > 0 || (queueDepth > 0 && queueDepth <= 5) || (this.lastSentenceArrivalGapMs && this.lastSentenceArrivalGapMs < 2500)) {
+      if (this.lastSentenceArrivalGapMs && this.lastSentenceArrivalGapMs < 1400) {
+        rate = Math.max(rate, 1.65);
+      } else if (this.lastSentenceArrivalGapMs && this.lastSentenceArrivalGapMs < 2400) {
+        rate = Math.max(rate, 1.45);
+      }
 
-    // 2. Queue Lag Overdrive: Phản hồi siêu nhạy với độ trễ tích lũy trong hàng đợi
-    if (queueLagMs > 1800) {
-      rate = Math.max(rate, 1.95);
-    } else if (queueLagMs > 1000) {
-      rate = Math.max(rate, 1.70);
-    } else if (queueLagMs > 450) {
-      rate = Math.max(rate, 1.50);
-    } else if (queueLagMs > 200) {
-      rate = Math.max(rate, 1.35);
-    }
+      if (queueLagMs > 1800) {
+        rate = Math.max(rate, 1.95);
+      } else if (queueLagMs > 1000) {
+        rate = Math.max(rate, 1.70);
+      } else if (queueLagMs > 450) {
+        rate = Math.max(rate, 1.50);
+      } else if (queueLagMs > 200) {
+        rate = Math.max(rate, 1.35);
+      }
 
-    // 3. Queue Depth Boost: Mỗi câu dồn lại phía sau đẩy tốc độ lên một nấc
-    if (queueDepth >= 3) {
-      rate = Math.max(rate, 2.0);
-    } else if (queueDepth >= 2) {
-      rate = Math.max(rate, 1.75);
-    } else if (queueDepth >= 1) {
-      rate = Math.max(rate, 1.45);
+      if (queueDepth >= 3 && queueDepth <= 5) {
+        rate = Math.max(rate, 1.25);
+      } else if (queueDepth >= 1 && queueDepth <= 2) {
+        rate = Math.max(rate, 1.18);
+      }
     }
 
     // 4. Adaptive Speech Pacing: Ép tốc độ đọc để vừa khít với thời lượng thoại
@@ -456,7 +458,7 @@ class LiveDubStudio {
       }
     }
 
-    return Math.min(serverCap || 2.0, Math.max(0.8, rate));
+    return Math.min(serverCap !== undefined ? serverCap : 1.20, Math.max(0.8, rate));
   }
 
   setSubMode(mode) {
@@ -805,13 +807,17 @@ class LiveDubStudio {
       document.documentElement.style.setProperty('--sub-font-size', `${this.fontSizePx}px`);
     });
 
-    // 10. Panic Kill Switch
-    this.btnPanicKill.addEventListener('click', () => {
-      this.stopAllAudio();
-      this.subSourceDisplay.textContent = '';
-      this.subViDisplay.textContent = 'Đã dừng và làm sạch âm thanh.';
-      this.showToast(' Đã dừng âm thanh khẩn cấp');
-    });
+    // 10. Panic Kill Switch & Shortcuts
+    if (this.btnPanicKill) {
+      this.btnPanicKill.addEventListener('click', () => {
+        this.toggleDubbingMute();
+      });
+    }
+    if (this.btnPauseScan) {
+      this.btnPauseScan.addEventListener('click', () => {
+        this.toggleScanningPause();
+      });
+    }
 
     // 11. Floating Window & Picture-in-Picture
     if (this.btnFloatingWindow) {
@@ -827,11 +833,19 @@ class LiveDubStudio {
       document.addEventListener('fullscreenchange', () => this.handleFullscreenChange());
       document.addEventListener('webkitfullscreenchange', () => this.handleFullscreenChange());
       document.addEventListener('keydown', (e) => {
-        if ((e.key === 'f' || e.key === 'F') && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) {
+        if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+
+        if (e.key === 'f' || e.key === 'F') {
           if (this.webVideoContainer && this.webVideoContainer.style.display !== 'none') {
             e.preventDefault();
             this.toggleWebVideoFullscreen();
           }
+        } else if (e.key === 'm' || e.key === 'M') {
+          e.preventDefault();
+          this.toggleDubbingMute();
+        } else if (e.key === 'p' || e.key === 'P') {
+          e.preventDefault();
+          this.toggleScanningPause();
         }
       });
     }
@@ -921,6 +935,35 @@ class LiveDubStudio {
     if (this.btnCinemaMasterDubToggle) {
       this.btnCinemaMasterDubToggle.className = `btn-master-dub-toggle ${this.isDubbingEnabled ? 'active' : 'paused'}`;
       this.btnCinemaMasterDubToggle.innerHTML = statusHtml;
+    }
+  }
+
+  toggleDubbingMute() {
+    this.isDubbingEnabled = !this.isDubbingEnabled;
+    if (!this.isDubbingEnabled) {
+      this.stopDubbingAudio(true, false);
+      this.showToast('🔇 Đã TẮT ÂM lồng tiếng (Bấm M để bật lại)');
+    } else {
+      this.showToast('🔊 Đã BẬT LẠI âm lồng tiếng (Phím M)');
+      if (this.ytSegments && this.ytSegments.length > 0 && this.currentYtSegmentIdx >= 0) {
+        this.prefetchUpcomingAudio(this.currentYtSegmentIdx);
+      }
+    }
+    this.updateMasterDubUI();
+  }
+
+  toggleScanningPause() {
+    this.isScanningPaused = !this.isScanningPaused;
+    if (this.isScanningPaused) {
+      this.stopDubbingAudio(false, false);
+      this.showToast('⏸️ Đã TẠM DỪNG quét & lồng tiếng (Tránh dịch nhầm nhạc OST/Credit. Bấm P để tiếp tục)');
+    } else {
+      this.showToast('▶️ Đã TIẾP TỤC quét & lồng tiếng (Phím P)');
+    }
+    if (this.runtimeSubtitleValue) {
+      this.runtimeSubtitleValue.textContent = this.isScanningPaused
+        ? '⏸️ Tạm dừng quét (P)'
+        : (this.currentSubMode || 'Song ngữ');
     }
   }
 
@@ -1316,8 +1359,10 @@ class LiveDubStudio {
   resolveOCRLanguage() {
     const selectedSpeech = this.sourceLangSelect ? this.sourceLangSelect.value : 'auto';
     if (selectedSpeech && selectedSpeech !== 'auto') return selectedSpeech;
-    const selectedCaption = this.getRadioGroupValue(this.webCaptionLanguage, 'auto');
-    if (selectedCaption && !['original', 'auto'].includes(selectedCaption)) return selectedCaption;
+    if (typeof this.getRadioGroupValue === 'function') {
+      const selectedCaption = this.getRadioGroupValue(this.webCaptionLanguage, 'auto');
+      if (selectedCaption && !['original', 'auto'].includes(selectedCaption)) return selectedCaption;
+    }
     return 'auto';
   }
 
@@ -1445,7 +1490,7 @@ class LiveDubStudio {
     this.ocrCanvas = document.createElement('canvas');
 
     const scan = async () => {
-      if (!this.isListening || !this.isOCRModeActive || this.ocrRequestActive || !this.ocrVideo) return;
+      if (!this.isListening || !this.isOCRModeActive || this.isScanningPaused || this.ocrRequestActive || !this.ocrVideo) return;
       const width = this.ocrVideo.videoWidth;
       const height = this.ocrVideo.videoHeight;
       if (!width || !height) return;
@@ -1717,8 +1762,13 @@ class LiveDubStudio {
       return false;
     }
 
-    const currentLang = this.resolveOCRLanguage();
-    const isVietsub = currentLang === 'vi' || (currentLang === 'auto' && this.detectedOCRLanguage === 'vi');
+    let currentLang = 'vi';
+    try {
+      if (typeof this.resolveOCRLanguage === 'function') {
+        currentLang = this.resolveOCRLanguage() || 'vi';
+      }
+    } catch (_) {}
+    const isVietsub = currentLang === 'vi' || (currentLang === 'auto' && this.detectedOCRLanguage === 'vi') || currentLang === 'auto';
     const isForeignLatin = !isVietsub;
 
     const cleanNorm = trimmed.replace(/^[^\wÀ-ỹ]+|[^\wÀ-ỹ]+$/gu, '').toLowerCase();
@@ -1796,8 +1846,17 @@ class LiveDubStudio {
   }
 
   handleOCRSubtitle(data) {
+    if (this.isScanningPaused) return;
     let raw = String(data.original || '').replace(/\s+/g, ' ').trim();
     if (!raw) return;
+
+    // Check if subtitle line is music/OST
+    const isMusic = /[\u266a\u266b\u2669\u266c\uD83C\uDFB5\uD83C\uDFB6~～♪♫♬♩]/u.test(raw) ||
+                    /^\s*\[(music|applause|cheering|laughter|sound track|ost|bgm)\]\s*$/i.test(raw);
+    if (isMusic) {
+      this.displaySubtitle(raw, `🎵 [Nhạc nền / OST] ${data.translated || raw}`);
+      return;
+    }
 
     // Defragment single-consonant split words (e.g. "X em" -> "Xem", "x em" -> "xem", "t ôi" -> "tôi", "đ i" -> "đi")
     const defrag = (s) => (s || '').replace(/\b([bcdfghjklmnpqrstvwxyzđBCDFGHJKLMNPQRSTVWXYZĐ]|(?:ch|gh|kh|nh|ph|th|tr|ng|ngh|Ch|Gh|Kh|Nh|Ph|Th|Tr|Ng|Ngh))\s+([a-zA-Zà-ỹÀ-Ỹ]{1,6})\b/g, (match, c, rest) => {
@@ -1813,8 +1872,13 @@ class LiveDubStudio {
 
     // Strip stray CJK characters ONLY if we are in Vietnamese subtitle mode (Vietsub)
     // NEVER strip CJK if source language is Japanese, Chinese, or contains native CJK subtitles!
-    const currentLang = this.resolveOCRLanguage();
-    const isVietsubMode = currentLang === 'vi' || (currentLang === 'auto' && this.detectedOCRLanguage === 'vi');
+    let currentLang = 'auto';
+    try {
+      if (typeof this.resolveOCRLanguage === 'function') {
+        currentLang = this.resolveOCRLanguage() || 'auto';
+      }
+    } catch (_) {}
+    const isVietsubMode = currentLang === 'vi' || currentLang === 'auto' || (this.detectedOCRLanguage === 'vi');
     // Cleanups specific to Vietsub fansub videos (AnimeHay, web player UI, gambling ads)
     if (isVietsubMode) {
       if (/[a-zA-Zà-ỹÀ-Ỹ]/.test(raw)) {
@@ -1927,6 +1991,10 @@ class LiveDubStudio {
           return true;
         }
       }
+      const rawTailNorm = (rawTokens.length > 2 && rawTokens[0].length === 1) ? stripAccents(rawTokens.slice(1).join(' ')) : '';
+      if (rawTailNorm && histNorm.includes(rawTailNorm) && rawTailNorm.length <= histNorm.length * 0.65) {
+        return true;
+      }
       if (cleanNorm && histCleanNorm.length >= cleanNorm.length && cleanNorm.length >= 3 && (histCleanNorm.includes(cleanNorm) || histCleanNorm.endsWith(cleanNorm))) {
         if (cleanNorm.length <= histCleanNorm.length * 0.65) {
           return true;
@@ -2013,14 +2081,18 @@ class LiveDubStudio {
   }
 
   buildYouTubeSubtitleRequest(url) {
-    const el = this.sourceLangSelect || this.sourceLang || document.getElementById('sourceLang');
-    const rawLang = el ? el.value : 'auto';
-    const langCode = (rawLang === 'auto') ? null : rawLang.split(/[-_]/)[0];
+    const mode = this.webCaptionMode ? (this.webCaptionMode.value || (typeof this.getRadioGroupValue === 'function' && this.getRadioGroupValue(this.webCaptionMode)) || 'has_captions') : 'has_captions';
+    let lang = this.webCaptionLanguage ? (this.webCaptionLanguage.value || (typeof this.getRadioGroupValue === 'function' && this.getRadioGroupValue(this.webCaptionLanguage)) || null) : null;
+    if (!lang) {
+      const el = this.sourceLangSelect || this.sourceLang || (typeof document !== 'undefined' && document.getElementById ? document.getElementById('sourceLang') : null);
+      const rawLang = el ? el.value : 'auto';
+      lang = (rawLang === 'auto') ? null : rawLang.split(/[-_]/)[0];
+    }
     return {
       url,
       target_lang: 'vi',
-      caption_mode: 'has_captions',
-      caption_language: langCode
+      caption_mode: mode,
+      caption_language: lang
     };
   }
 
@@ -2157,6 +2229,7 @@ class LiveDubStudio {
       if (event.data === 2 || event.data === 0) {
         // A dubbing hold is an intentional pause used to avoid dropping speech.
         if (!this.isHoldingYtForDubbing) this.stopAllAudio();
+        this.restoreYouTubeVolumeNow();
       } else if (event.data === 1) { // PLAYING
         if (this.currentYtSegmentIdx >= 0) {
           this.prefetchUpcomingAudio(this.currentYtSegmentIdx);
@@ -2189,6 +2262,45 @@ class LiveDubStudio {
       setTimeout(attachYT, 120);
     } else {
       window.onYouTubeIframeAPIReady = attachYT;
+    }
+  }
+
+  duckYouTubeVolume(targetVol = 18) {
+    if (!this.ytPlayer || typeof this.ytPlayer.setVolume !== 'function') return;
+    if (this.ytRestoreVolumeTimer) {
+      clearTimeout(this.ytRestoreVolumeTimer);
+      this.ytRestoreVolumeTimer = null;
+    }
+    if (!this.isYtDucked) {
+      if (typeof this.ytPlayer.getVolume === 'function' && (this.originalYtVol === null || this.originalYtVol <= 0)) {
+        const v = this.ytPlayer.getVolume();
+        this.originalYtVol = (typeof v === 'number' && v > 0) ? v : 100;
+      }
+      try {
+        this.ytPlayer.setVolume(targetVol);
+        this.isYtDucked = true;
+      } catch (_) {}
+    }
+  }
+
+  scheduleRestoreYouTubeVolume(delayMs = 4500) {
+    if (this.ytRestoreVolumeTimer) clearTimeout(this.ytRestoreVolumeTimer);
+    this.ytRestoreVolumeTimer = setTimeout(() => {
+      this.restoreYouTubeVolumeNow();
+    }, delayMs);
+  }
+
+  restoreYouTubeVolumeNow() {
+    if (this.ytRestoreVolumeTimer) {
+      clearTimeout(this.ytRestoreVolumeTimer);
+      this.ytRestoreVolumeTimer = null;
+    }
+    if (this.isYtDucked && this.ytPlayer && typeof this.ytPlayer.setVolume === 'function') {
+      try {
+        const target = (this.originalYtVol !== null && this.originalYtVol > 0) ? this.originalYtVol : 100;
+        this.ytPlayer.setVolume(target);
+      } catch (_) {}
+      this.isYtDucked = false;
     }
   }
 
@@ -2241,12 +2353,12 @@ class LiveDubStudio {
         this.addHistory(seg.original, seg.translated, 'cc');
 
         // 3. Dubbing Audio: Instant Start via Pre-cached AudioBuffer
-        if (this.isDubbingEnabled) {
+        const isMusic = /[\u266a\u266b\u2669\u266c\uD83C\uDFB5\uD83C\uDFB6~～♪♫♬♩]/u.test(seg.original || '') ||
+                        /^\s*\[(music|applause|cheering|laughter|sound track|ost|bgm)\]\s*$/i.test(seg.original || '');
+
+        if (this.isDubbingEnabled && !this.isScanningPaused && !isMusic) {
           try {
-            if (this.ytPlayer.getVolume && this.originalYtVol === null) {
-              this.originalYtVol = this.ytPlayer.getVolume();
-            }
-            if (this.ytPlayer.setVolume) this.ytPlayer.setVolume(12);
+            this.duckYouTubeVolume(18);
 
             const timing = this.getYtSegmentTiming(idx, curTime);
             this.playSegmentAudio(idx, timing.slotDuration, revealSubtitle).catch(err => {
@@ -2413,7 +2525,7 @@ class LiveDubStudio {
       // Smart adaptive speech pacing
       const userRate = this.getSafePlaybackRate();
       let effectiveRate = userRate;
-      if (expectedSlotDuration > 0 && audioBuffer.duration > expectedSlotDuration) {
+      if (this.isAdaptiveSpeedEnabled && expectedSlotDuration > 0 && audioBuffer.duration > expectedSlotDuration) {
         const fitRate = audioBuffer.duration / expectedSlotDuration;
         effectiveRate = Math.min(2.0, Math.max(userRate, fitRate));
       }
@@ -2438,13 +2550,7 @@ class LiveDubStudio {
       this.dubbingIndicator.classList.remove('active');
     }
         this.releaseYouTubeDubbingHold();
-        if (this.ytPlayer && this.ytPlayer.setVolume && this.originalYtVol !== null) {
-          setTimeout(() => {
-            if (!this.currentActiveAudioSource && this.ytPlayer && this.ytPlayer.setVolume) {
-              this.ytPlayer.setVolume(this.originalYtVol || 100);
-            }
-          }, 350);
-        }
+        this.scheduleRestoreYouTubeVolume(4500);
       };
 
       if (typeof onStart === 'function') onStart();
@@ -3257,6 +3363,8 @@ class LiveDubStudio {
     let startCallbackTimer = null;
     let safetyTimeout = null;
     const ended = new Promise(resolve => { resolveEnded = resolve; });
+    let pendingChunks = [];
+    let pendingBytesLen = 0;
 
     try {
       let prefetchedData = null;
@@ -3325,8 +3433,8 @@ class LiveDubStudio {
       const bufferPolicy = this.getLivePcmBufferPolicy(text);
       const INITIAL_PREBUFFER_BYTES = bufferPolicy.initialBytes;
       const MIN_SLICE_BYTES = bufferPolicy.sliceBytes;
-      let pendingChunks = [];
-      let pendingBytesLen = 0;
+      pendingChunks = [];
+      pendingBytesLen = 0;
 
       const finishIfDone = (force = false) => {
         if (force || (readingDone && localSources.size === 0)) {
@@ -3541,8 +3649,8 @@ class LiveDubStudio {
     if (this.dubbingIndicator && this.dubbingIndicator.classList) {
       this.dubbingIndicator.classList.remove('active');
     }
-    if (restoreOriginalVolume && this.ytPlayer && this.ytPlayer.setVolume && this.originalYtVol !== null) {
-      this.ytPlayer.setVolume(this.originalYtVol);
+    if (restoreOriginalVolume) {
+      this.restoreYouTubeVolumeNow();
     }
   }
 
@@ -3803,9 +3911,11 @@ class LiveDubStudio {
   // Opens ultra-slim Picture-in-Picture window or Always-on-Top overlay
   async openFloatingOverlay() {
     this.ensureAudioUnlocked();
+    const currentSource = this.subSourceDisplay ? this.subSourceDisplay.textContent : '';
+    const currentVi = this.subViDisplay ? this.subViDisplay.textContent || 'Đang chờ phụ đề…' : 'Đang chờ phụ đề…';
 
     // 1. If currently active in Picture-in-Picture, exit
-    if (document.pictureInPictureElement) {
+    if (typeof document !== 'undefined' && document.pictureInPictureElement) {
       try {
         await document.exitPictureInPicture();
         this.isNativePipActive = false;
@@ -3820,7 +3930,7 @@ class LiveDubStudio {
       return;
     }
 
-    // 2. Try Document Picture-in-Picture (Chrome 116+)
+    // 2. Try Document Picture-in-Picture (Chrome 116+ standalone browser)
     if (typeof window !== 'undefined' && 'documentPictureInPicture' in window && typeof window.documentPictureInPicture.requestWindow === 'function') {
       try {
         const pip = await window.documentPictureInPicture.requestWindow({
@@ -3852,9 +3962,24 @@ class LiveDubStudio {
         this.showToast('📌 Đã bật Phụ Đề Ghim Nổi (Always-on-Top trên video toàn màn hình)!');
         return;
       } catch (err) {
-        console.warn('Document PiP request error, falling back to Native Video PiP:', err);
+        console.warn('Document PiP request error, falling back to Native Desktop PiP:', err);
       }
     }
+
+    // 3. Desktop Native OS PiP Window via Backend Signal (Detached Always-on-Top Window)
+    try {
+      const res = await fetch('/api/overlay/toggle', { method: 'POST' });
+      if (res && res.ok) {
+        this.broadcastOverlay({
+          type: 'UPDATE_SUBTITLE',
+          sourceText: currentSource,
+          viText: currentVi,
+          subMode: this.currentSubMode
+        });
+        this.showToast('📌 Đã bật/tắt Cửa Sổ Phụ Đề Nổi (OS Always-on-Top)!');
+        return;
+      }
+    } catch (_) {}
 
     // 3. Try Native Video Picture-in-Picture (OS Always-on-Top, 100% works in WebView2 & modern browsers)
     try {

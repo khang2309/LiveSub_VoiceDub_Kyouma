@@ -8,10 +8,21 @@ use ocr_engine_rs::OcrEngine as DiacriticEngine;
 use state::AppState;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex, OnceLock, RwLock},
     time::Duration,
 };
 use translation_router_rs::TranslationRouter;
+
+pub static OVERLAY_CHANNEL: OnceLock<tokio::sync::broadcast::Sender<bool>> = OnceLock::new();
+
+pub fn get_overlay_sender() -> tokio::sync::broadcast::Sender<bool> {
+    OVERLAY_CHANNEL
+        .get_or_init(|| {
+            let (tx, _rx) = tokio::sync::broadcast::channel(16);
+            tx
+        })
+        .clone()
+}
 
 pub async fn run_server(config: AppConfig) {
     println!("============================================================");

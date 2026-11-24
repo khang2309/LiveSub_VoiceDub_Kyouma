@@ -14,16 +14,15 @@ use serde::Deserialize;
 pub struct TtsRequest {
     pub text: String,
     #[serde(default)]
-    #[allow(dead_code)]
     pub voice: Option<String>,
 }
 
 pub async fn api_tts(State(state): State<AppState>, Json(req): Json<TtsRequest>) -> Response {
-    synthesize_tts(&state, &req.text).await
+    synthesize_tts(&state, &req.text, req.voice.as_deref()).await
 }
 
 pub async fn api_tts_stream(State(state): State<AppState>, Json(req): Json<TtsRequest>) -> Response {
-    synthesize_tts(&state, &req.text).await
+    synthesize_tts(&state, &req.text, req.voice.as_deref()).await
 }
 
 pub async fn api_tts_batch(
@@ -31,6 +30,7 @@ pub async fn api_tts_batch(
     Json(payload): Json<serde_json::Value>,
 ) -> Json<serde_json::Value> {
     let b64_engine = base64::engine::general_purpose::STANDARD;
+    let voice = payload.get("voice").and_then(|v| v.as_str());
 
     let texts: Vec<String> = payload
         .get("texts")
@@ -44,7 +44,7 @@ pub async fn api_tts_batch(
 
     let mut items = Vec::with_capacity(texts.len());
     for text in &texts {
-        if let Some(bytes) = synthesize_tts_bytes(&state, text).await {
+        if let Some(bytes) = synthesize_tts_bytes(&state, text, voice).await {
             items.push(serde_json::json!({
                 "text": text,
                 "audio_base64": b64_engine.encode(&bytes),

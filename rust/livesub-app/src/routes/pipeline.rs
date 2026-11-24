@@ -1,6 +1,11 @@
 use crate::state::AppState;
 use axum::{extract::State, Json};
 
+pub async fn api_overlay_toggle() -> Json<serde_json::Value> {
+    let _ = crate::get_overlay_sender().send(true);
+    Json(serde_json::json!({ "status": "ok" }))
+}
+
 pub async fn api_tts_status() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "status": "ready",
