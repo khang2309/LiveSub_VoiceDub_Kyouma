@@ -1358,7 +1358,7 @@ class LiveDubStudio {
         sourceY = Math.floor(height * 0.70);
         sourceHeight = Math.max(1, Math.floor(height * 0.24));
       }
-      // Giữ nguyên độ phân giải gốc 1:1 (lên tới 1080p/1920px) để không làm mờ hoặc mất các dấu phụ nhỏ
+      // Giữ nguyên độ phân giải gốc 1:1 (lên tới 1080p/1920px) từ Math.min(1, 960 / width) để không làm mờ hoặc mất các dấu phụ nhỏ
       const scale = Math.min(1, 1920 / width);
       const probeCanvas = document.createElement('canvas');
       probeCanvas.width = Math.max(1, Math.round(sourceWidth * scale));
@@ -3645,6 +3645,17 @@ class LiveDubStudio {
       } catch (_) {}
     }
 
+    if (this.isNativePipActive) {
+      this.renderPipCanvas(sourceText, viText);
+    }
+
+    if (typeof document !== 'undefined') {
+      const floatingSrc = document.getElementById('inAppPipSource');
+      const floatingVi = document.getElementById('inAppPipVi');
+      if (floatingSrc) floatingSrc.textContent = sourceText || '';
+      if (floatingVi) floatingVi.textContent = viText || '';
+    }
+
     const payload = {
       type: 'UPDATE_SUBTITLE',
       sourceText,
@@ -3723,24 +3734,101 @@ class LiveDubStudio {
     this.statusText.textContent = text;
   }
 
-  // Opens ultra-slim Picture-in-Picture window or borderless bottom overlay window
+  async startNativeVideoPip() {
+    if (!this.pipCanvas) {
+      this.pipCanvas = document.createElement('canvas');
+      this.pipCanvas.width = 960;
+      this.pipCanvas.height = 140;
+    }
+    if (!this.pipVideo) {
+      this.pipVideo = document.createElement('video');
+      this.pipVideo.muted = true;
+      this.pipVideo.playsInline = true;
+      this.pipVideo.autoplay = true;
+      this.pipVideo.style.position = 'fixed';
+      this.pipVideo.style.opacity = '0';
+      this.pipVideo.style.pointerEvents = 'none';
+      this.pipVideo.style.zIndex = '-9999';
+      document.body.appendChild(this.pipVideo);
+      this.pipVideo.addEventListener('leavepictureinpicture', () => {
+        this.isNativePipActive = false;
+      });
+    }
+
+    const currentSource = this.subSourceDisplay ? this.subSourceDisplay.textContent : '';
+    const currentVi = this.subViDisplay ? this.subViDisplay.textContent || 'Đang chờ phụ đề…' : 'Đang chờ phụ đề…';
+    this.renderPipCanvas(currentSource, currentVi);
+
+    if (typeof this.pipCanvas.captureStream === 'function') {
+      this.pipVideo.srcObject = this.pipCanvas.captureStream(20);
+      await this.pipVideo.play().catch(() => {});
+      if (typeof this.pipVideo.requestPictureInPicture === 'function') {
+        await this.pipVideo.requestPictureInPicture();
+        this.isNativePipActive = true;
+        return true;
+      }
+    }
+    throw new Error('Canvas Video PictureInPicture not supported');
+  }
+
+  renderPipCanvas(sourceText, viText) {
+    if (!this.pipCanvas) return;
+    const ctx = this.pipCanvas.getContext('2d');
+    if (!ctx) return;
+    const w = this.pipCanvas.width;
+    const h = this.pipCanvas.height;
+
+    ctx.fillStyle = '#0b0d13';
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.fillStyle = '#e89486';
+    ctx.fillRect(0, 0, w, 3);
+
+    if (sourceText) {
+      ctx.font = '600 18px "Instrument Sans", sans-serif';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.72)';
+      ctx.textAlign = 'center';
+      ctx.fillText(sourceText, w / 2, 38, w - 40);
+    }
+
+    ctx.font = '800 32px "Roboto Condensed", "Instrument Sans", sans-serif';
+    ctx.fillStyle = '#FFE600';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
+    ctx.shadowBlur = 8;
+    ctx.fillText(viText || 'Đang chờ phụ đề...', w / 2, sourceText ? 96 : 78, w - 40);
+    ctx.shadowBlur = 0;
+  }
+
+  // Opens ultra-slim Picture-in-Picture window or Always-on-Top overlay
   async openFloatingOverlay() {
     this.ensureAudioUnlocked();
-    // 1. Prefer Document Picture-in-Picture (OS Always-on-Top over Fullscreen video/apps)
+
+    // 1. If currently active in Picture-in-Picture, exit
+    if (document.pictureInPictureElement) {
+      try {
+        await document.exitPictureInPicture();
+        this.isNativePipActive = false;
+        this.showToast('📌 Đã tắt Phụ Đề PiP');
+        return;
+      } catch (_) {}
+    }
+    if (this.pipWindow && !this.pipWindow.closed) {
+      this.pipWindow.close();
+      this.pipWindow = null;
+      this.showToast('📌 Đã tắt Phụ Đề PiP');
+      return;
+    }
+
+    // 2. Try Document Picture-in-Picture (Chrome 116+)
     if (typeof window !== 'undefined' && 'documentPictureInPicture' in window && typeof window.documentPictureInPicture.requestWindow === 'function') {
       try {
-        if (this.pipWindow && !this.pipWindow.closed) {
-          this.pipWindow.close();
-          this.pipWindow = null;
-          return;
-        }
         const pip = await window.documentPictureInPicture.requestWindow({
           width: 820,
           height: 100
         });
         this.pipWindow = pip;
 
-        // Copy styles
         if (typeof document !== 'undefined') {
           document.querySelectorAll('link[rel="stylesheet"], style').forEach(node => {
             try { pip.document.head.appendChild(node.cloneNode(true)); } catch (_) {}
@@ -3764,31 +3852,53 @@ class LiveDubStudio {
         this.showToast('📌 Đã bật Phụ Đề Ghim Nổi (Always-on-Top trên video toàn màn hình)!');
         return;
       } catch (err) {
-        console.warn('Document PiP request error, falling back to popup overlay:', err);
+        console.warn('Document PiP request error, falling back to Native Video PiP:', err);
       }
     }
 
-    // 2. Fallback to popup overlay window
-    const screenWidth = typeof screen !== 'undefined' ? screen.availWidth : 1280;
-    const screenHeight = typeof screen !== 'undefined' ? screen.availHeight : 720;
-    const width = 760;
-    const height = 65;
-    const left = Math.round((screenWidth - width) / 2);
-    const top = screenHeight - height - 35;
-
-    const win = window.open(
-      '/overlay',
-      'LiveSubFloatingWindow',
-      `width=${width},height=${height},top=${top},left=${left},resizable=yes,alwaysRaised=yes,scrollbars=no,toolbar=no,menubar=no,location=no,status=no`
-    );
-
-    if (!win) {
-      alert('Trình duyệt đã chặn cửa sổ pop-up. Vui lòng cho phép Pop-up để mở Phụ Đề Nổi.');
+    // 3. Try Native Video Picture-in-Picture (OS Always-on-Top, 100% works in WebView2 & modern browsers)
+    try {
+      await this.startNativeVideoPip();
+      this.showToast('📌 Đã bật Phụ Đề Nổi Always-on-Top (PiP)!');
       return;
+    } catch (err) {
+      console.warn('Native Video PiP error, falling back to in-app overlay:', err);
     }
 
-    this.floatingWindow = win;
-    this.showToast('📌 Đã mở cửa sổ Phụ Đề Nổi!');
+    // 4. In-App Floating Overlay bar (Safe fallback, NO browser alert!)
+    let overlayBar = document.getElementById('inAppFloatingBar');
+    if (!overlayBar) {
+      overlayBar = document.createElement('div');
+      overlayBar.id = 'inAppFloatingBar';
+      overlayBar.className = 'in-app-floating-bar';
+      overlayBar.innerHTML = `
+        <div class="in-app-pip-content">
+          <div id="inAppPipSource" class="in-app-pip-source"></div>
+          <div id="inAppPipVi" class="in-app-pip-vi">Đang chờ phụ đề...</div>
+        </div>
+        <button type="button" class="btn-close-inapp-pip" id="btnCloseInAppPip">✕</button>
+      `;
+      document.body.appendChild(overlayBar);
+      const closeBtn = document.getElementById('btnCloseInAppPip');
+      if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+          overlayBar.classList.remove('active');
+        });
+      }
+    }
+
+    const isActive = overlayBar.classList.toggle('active');
+    if (isActive) {
+      const currentSource = this.subSourceDisplay ? this.subSourceDisplay.textContent : '';
+      const currentVi = this.subViDisplay ? this.subViDisplay.textContent || 'Đang chờ phụ đề…' : 'Đang chờ phụ đề…';
+      const s = document.getElementById('inAppPipSource');
+      const v = document.getElementById('inAppPipVi');
+      if (s) s.textContent = currentSource;
+      if (v) v.textContent = currentVi;
+      this.showToast('📌 Đã ghim thanh Phụ Đề Nổi!');
+    } else {
+      this.showToast('📌 Đã đóng thanh Phụ Đề Nổi');
+    }
   }
 
   async handleTestText() {

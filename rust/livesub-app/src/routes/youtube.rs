@@ -378,13 +378,23 @@ pub async fn api_youtube_subtitles(
     let is_vi = lang_code == "vi";
     let total = segments.len();
 
-    // If not Vietnamese, translate the first 25 segments immediately so playback & dubbing can begin
+    // If not Vietnamese, translate the first 6 segments in parallel immediately so playback & dubbing can begin instantly
     if !is_vi {
-        let initial_count = total.min(25);
+        let initial_count = total.min(6);
+        let mut set = tokio::task::JoinSet::new();
         for i in 0..initial_count {
+            let state_clone = state.clone();
             let orig = segments[i].original.clone();
-            let trans = fetch_online_translation(&state, &orig, &lang_code).await;
-            segments[i].translated = trans;
+            let lang = lang_code.clone();
+            set.spawn(async move {
+                let trans = fetch_online_translation(&state_clone, &orig, &lang).await;
+                (i, trans)
+            });
+        }
+        while let Some(res) = set.join_next().await {
+            if let Ok((i, trans)) = res {
+                segments[i].translated = trans;
+            }
         }
         for i in initial_count..total {
             segments[i].translated = String::new();
@@ -396,7 +406,7 @@ pub async fn api_youtube_subtitles(
         cache.insert(video_id.clone(), segments.clone());
     }
 
-    let has_more = !is_vi && total > 25;
+    let has_more = !is_vi && total > 6;
 
     Json(serde_json::json!({
         "success": true,
@@ -459,15 +469,26 @@ pub async fn api_youtube_subtitles_sync(
         }));
     }
 
-    // Translate batch
-    let mut translated_batch = Vec::new();
-    for mut seg in segments_to_translate {
-        if seg.translated.is_empty() || seg.translated == seg.original {
-            let trans = fetch_online_translation(&state, &seg.original, "auto").await;
-            seg.translated = trans;
-        }
-        translated_batch.push(seg);
+    // Translate batch in parallel using JoinSet
+    let mut set = tokio::task::JoinSet::new();
+    for (i, mut seg) in segments_to_translate.into_iter().enumerate() {
+        let state_clone = state.clone();
+        set.spawn(async move {
+            if seg.translated.is_empty() || seg.translated == seg.original {
+                seg.translated = fetch_online_translation(&state_clone, &seg.original, "auto").await;
+            }
+            (i, seg)
+        });
     }
+
+    let mut translated_indexed = Vec::new();
+    while let Some(res) = set.join_next().await {
+        if let Ok((i, seg)) = res {
+            translated_indexed.push((i, seg));
+        }
+    }
+    translated_indexed.sort_by_key(|(i, _)| *i);
+    let translated_batch: Vec<SubtitleSegment> = translated_indexed.into_iter().map(|(_, s)| s).collect();
 
     // Update cache
     if let Ok(mut cache) = YOUTUBE_CACHE.write() {

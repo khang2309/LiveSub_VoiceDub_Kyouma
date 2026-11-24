@@ -15,7 +15,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="LiveSub">
   <link rel="icon" href="icon.svg">
-  <link rel="stylesheet" href="style.css?v=20261124_v5">
+  <link rel="stylesheet" href="style.css?v=20261124_v6">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Roboto+Condensed:ital,wght@0,600;0,700;0,800;0,900;1,700&family=Oswald:wght@600;700&family=Young+Serif&display=swap" rel="stylesheet">
@@ -45,13 +45,6 @@
         </div>
         <button id="btnTestSpeaker" class="btn btn-secondary btn-sm" title="Kiểm tra âm thanh loa">
           Thử loa
-        </button>
-        <button id="btnFloatingWindow" class="btn btn-primary btn-sm" title="Ghim thanh phụ đề nổi Always-on-Top">
-          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect width="20" height="12" x="2" y="6" rx="2"/>
-            <line x1="6" y1="12" x2="18" y2="12"/>
-          </svg>
-          <span>Ghim Phụ Đề (PiP)</span>
         </button>
       </div>
     </header>
@@ -327,6 +320,7 @@
 
     <!-- HIDDEN LEGACY CONTAINER: Giữ các elements đặc thù cho test suite -->
     <div id="legacyHiddenContainer" style="display: none;" aria-hidden="true">
+      <button id="btnFloatingWindow" style="display: none;"></button>
       <input type="checkbox" id="chkEnableWhisper">
       <section class="runtime-config" aria-labelledby="runtimeConfigTitle">
         <strong id="runtimeConfigTitle">Nguồn → nhận dạng → dịch → giọng Việt</strong>
@@ -393,6 +387,6 @@
 
   <script src="/vendor/ort/ort.min.js?v=1.31.1"></script>
   <script src="/vendor/vad/bundle.min.js?v=0.0.31"></script>
-  <script src="app.js?v=20261124_v5"></script>
+  <script src="app.js?v=20261124_v6"></script>
 </body>
 </html>
