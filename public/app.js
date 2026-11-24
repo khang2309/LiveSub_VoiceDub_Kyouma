@@ -16,6 +16,7 @@ class LiveDubStudio {
     this.ocrTimer = null;
     this.ocrRequestActive = false;
     this.lastOCRText = '';
+    this.lastCleanText = '';
     this.currentActiveAudioSource = null;
     this.streamingAudioSources = new Set();
     this.streamingAbortController = null;
@@ -679,6 +680,7 @@ class LiveDubStudio {
         this.detectedOCRLanguage = null;
         this.autoDetectedSourceLang = null;
         this.lastOCRText = '';
+    this.lastCleanText = '';
         this._hasNotifiedVietsubMode = false;
         if (this.oneTouchDetectionPill) {
           if (val === 'vi') {
@@ -987,6 +989,7 @@ class LiveDubStudio {
     this.detectedOCRLanguage = null;
     this.autoDetectedSourceLang = null;
     this.lastOCRText = '';
+    this.lastCleanText = '';
     if (this.chkEnableWhisper) {
       this.chkEnableWhisper.checked = (mode === 'whisper' || mode === 'auto');
     }
@@ -1402,6 +1405,7 @@ class LiveDubStudio {
     if (this.activeAbortController) this.activeAbortController.abort();
     while (this.speechQueue.length) this.speechQueue.shift().resolve();
     this.lastOCRText = '';
+    this.lastCleanText = '';
     this.ocrVideo = document.createElement('video');
     this.ocrVideo.muted = true;
     this.ocrVideo.playsInline = true;
@@ -1441,11 +1445,16 @@ class LiveDubStudio {
         sourceY = Math.floor(height * 0.62);
         sourceHeight = Math.max(1, Math.floor(height * 0.36));
       }
-      // Giữ nguyên độ phân giải gốc 1:1 (lên tới 1080p/1920px) để không làm mờ hoặc mất các dấu phụ nhỏ
-      const scale = Math.min(1, 1920 / width);
-      this.ocrCanvas.width = Math.max(1, Math.round(sourceWidth * scale));
+      // Tăng pixel siêu nét (Supersampling 1.5x - 2.0x với High-Quality interpolation):
+      // Đảm bảo chữ phụ đề nhỏ có mật độ điểm ảnh dày dặn, nét chữ rõ ràng cho detector & recognizer
+      const upscaleFactor = width <= 1280 ? 2.0 : (width <= 1920 ? 1.5 : 1.25);
+      const targetWidth = Math.min(2560, Math.round(sourceWidth * upscaleFactor));
+      const scale = targetWidth / sourceWidth;
+      this.ocrCanvas.width = targetWidth;
       this.ocrCanvas.height = Math.max(1, Math.round(sourceHeight * scale));
       const context = this.ocrCanvas.getContext('2d', { alpha: false, willReadFrequently: true });
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = 'high';
       context.drawImage(
         this.ocrVideo,
         sourceX, sourceY, sourceWidth, sourceHeight,
@@ -1550,6 +1559,7 @@ class LiveDubStudio {
           if (this.ocrConsecutiveEmpty >= 6) {
             // After 6 empty frames (~720ms), reset lastOCRText so fresh subtitle lines can speak immediately
             this.lastOCRText = '';
+    this.lastCleanText = '';
           }
           if (this.ocrConsecutiveEmpty >= 3) {
             if (this.isHybridModeActive && !this.hasSeenHardSubtitles && (performance.now() - (this.lastHardSubTime || 0)) > 6000) {
@@ -1585,12 +1595,17 @@ class LiveDubStudio {
 
   ocrSimilarity(s1, s2) {
     if (!s1 || !s2) return 0;
-    // Strip stray CJK kanji/kana that occasionally leak from anime backgrounds into subtitles
-    const c1 = String(s1).replace(/[\u4e00-\u9fff\u3040-\u30ff]/g, '');
-    const c2 = String(s2).replace(/[\u4e00-\u9fff\u3040-\u30ff]/g, '');
+    let c1 = String(s1);
+    let c2 = String(s2);
+    // Chỉ loại bỏ CJK nếu chuỗi là thuần chữ Latinh (Vietsub tránh dính watermark nền anime)
+    const isCjk = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/.test(c1 + c2);
+    if (!isCjk) {
+      c1 = c1.replace(/[\u4e00-\u9fff\u3040-\u30ff]/g, '');
+      c2 = c2.replace(/[\u4e00-\u9fff\u3040-\u30ff]/g, '');
+    }
     const strip = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'd');
-    const a = strip(c1).toLowerCase().replace(/[^\w]/g, '');
-    const b = strip(c2).toLowerCase().replace(/[^\w]/g, '');
+    const a = strip(c1).toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+    const b = strip(c2).toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
     if (a === b) return 1.0;
     if (!a || !b) return 0;
     const maxLen = Math.max(a.length, b.length);
@@ -1619,7 +1634,12 @@ class LiveDubStudio {
 
   isDuplicateOCR(text, candidate) {
     if (!text || !candidate) return false;
-    const stripAccents = (s) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'd').toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    const stripAccents = (s) => (s || '').normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd').replace(/Đ/g, 'd')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .replace(/\s+/g, ' ').trim();
     const s1 = stripAccents(text);
     const s2 = stripAccents(candidate);
     if (!s1 || !s2) return false;
@@ -1627,24 +1647,24 @@ class LiveDubStudio {
 
     // Direct Levenshtein similarity on normalized text
     const sim = this.ocrSimilarity(s1, s2);
-    // Short lines (<= 15 chars e.g. "Nhất trí!", "Thật à?", "Đi mau!"):
-    // If one contains the other or similarity >= 0.65 to catch fade distortions like "Ừ, tệ thật" vs "Ừ,, tệ hột"
+    // Short lines (<= 15 chars e.g. "Nhất trí!", "Thật à?", "Đi mau!", "Let's go!"):
+    // Cần độ tương đồng cao (>= 0.85) để không nhận nhầm câu ngắn khác nhau
     if (Math.min(s1.length, s2.length) <= 15) {
-      if (s1.includes(s2) || s2.includes(s1)) return true;
-      return sim >= 0.65;
+      if (s1 === s2) return true;
+      return sim >= 0.85;
     }
 
-    if (sim >= 0.70) return true;
+    if (sim >= 0.75) return true;
 
-    // Word overlap for longer sentences: must share at least 4 common words AND have >= 55% overlap
+    // Word overlap for longer sentences: must share at least 4 common words AND have >= 60% overlap
     const w1 = s1.split(/\s+/).filter(w => w.length > 1);
     const w2 = s2.split(/\s+/).filter(w => w.length > 1);
     if (w1.length >= 4 && w2.length >= 4) {
       const set2 = new Set(w2);
       const common = w1.filter(w => set2.has(w));
       if (common.length >= 4) {
-        const overlap = common.length / Math.min(w1.length, w2.length);
-        if (overlap >= 0.55) return true;
+        const overlap = common.length / Math.max(w1.length, w2.length);
+        if (overlap >= 0.60) return true;
       }
     }
     return false;
@@ -1660,11 +1680,14 @@ class LiveDubStudio {
       return true;
     }
 
-    // Allow Japanese, Chinese and Korean dialogue text
+    // Allow Japanese, Chinese and Korean dialogue text:
+    // Bất kỳ câu nào có ký tự CJK (chữ Hán, Hiragana, Katakana, Hangul) đều là thoại hợp lệ!
     if (/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/.test(trimmed)) {
-      const cjk = trimmed.match(/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/g) || [];
-      return cjk.length < 2;
+      return false;
     }
+
+    const currentLang = this.resolveOCRLanguage();
+    const isForeignLatin = currentLang.startsWith('en') || currentLang.startsWith('ja') || currentLang.startsWith('zh') || currentLang.startsWith('ko') || currentLang.startsWith('th');
 
     const cleanNorm = trimmed.replace(/^[^\wÀ-ỹ]+|[^\wÀ-ỹ]+$/gu, '').toLowerCase();
     if (!cleanNorm) return true;
@@ -1672,6 +1695,17 @@ class LiveDubStudio {
     // Single-letter exclamations: "Á!", "Ơ!", "Ô!", "Ê!", "Ý!", "A!", "O!"
     if (cleanNorm.length === 1) {
       return !/^[aáàảãạăằắẳẵặâầấẩẫậeéèẻẽẹêềếểễệiíìỉĩịoóòỏõọôồốổỗộơờớởỡợuúùủũụưừứửữựyýỳỷỹỵ]$/i.test(cleanNorm);
+    }
+
+    // Đối với phụ đề ngôn ngữ nước ngoài (Tiếng Anh, Latin):
+    if (isForeignLatin) {
+      // Cho phép tất cả các câu thoại tiếng Anh thông dụng (kể cả VIẾT HOA hoặc câu ngắn 1-2 từ)
+      const rawTokens = trimmed.match(/\S+/g) || [];
+      if (rawTokens.some(w => /[a-zA-Z]+[0-9]{2,}|[0-9]{2,}[a-zA-Z]+/.test(w))) return true;
+      if (/^[^\w\s]*\d+\s+[A-Za-z]{1,2}$/.test(trimmed)) return true;
+      const letters = trimmed.match(/[a-zA-Z]/g);
+      if (!letters || letters.length === 0) return true;
+      return false;
     }
 
     // Common short action/dialogue words in anime & movies
@@ -1745,8 +1779,11 @@ class LiveDubStudio {
 
     if (this.isGarbageOCR(raw)) return;
 
-    // Strip stray CJK characters if line contains Latin letters (protects against background kanji in anime)
-    if (/[a-zA-Zà-ỹÀ-Ỹ]/.test(raw)) {
+    // Strip stray CJK characters ONLY if we are in Vietnamese subtitle mode (Vietsub)
+    // NEVER strip CJK if source language is Japanese, Chinese, or contains native CJK subtitles!
+    const currentLang = this.resolveOCRLanguage();
+    const isVietsubMode = currentLang === 'vi' || (currentLang === 'auto' && this.detectedOCRLanguage === 'vi');
+    if (isVietsubMode && /[a-zA-Zà-ỹÀ-Ỹ]/.test(raw)) {
       raw = raw.replace(/[\u4e00-\u9fff\u3040-\u30ff]+/g, ' ').replace(/\s+/g, ' ').trim();
     }
 
@@ -1770,23 +1807,35 @@ class LiveDubStudio {
     if (raw.length > 1000 || raw.split(/\s+/).length > 200) return;
     // Reject 1-4 character alphanumeric noise (e.g. YA, EREE, TL2, Ta02, JNY, HE, CE)
     // Reject corrupted Vietsub hard subtitle OCR reading (e.g. 'å', 'ö', 'ø', 'ß', 'ngvòi', 'thvòng')
-    if (/[åöøß]|ngv[oò]i|thv[oò]ng|nu[aá]c\s*m[aå]t|lung\s*tr[oò]ng|ky\s*vi[eê]n/i.test(raw)) return;
+    if (isVietsubMode && /[åöøß]|ngv[oò]i|thv[oò]ng|nu[aá]c\s*m[aå]t|lung\s*tr[oò]ng|ky\s*vi[eê]n/i.test(raw)) return;
     // Reject UI, channel names, and thumbnail junk patterns
     if (/^(?:b[áa]ckinh|bickinh|backinh|truyengoc|lượt xem|\d+[:.]\d+|\d{1,4})$/i.test(raw)) return;
     if (/\b(?:animehay|animevietsub|bit\.ly|citumo|rap\s*citu|hdbet|3bet|chơingay|nổ\s*hũ|lượt xem|views?|người đăng ký|subscribers?|bình luận|comments?|chia sẻ|share|tải xuống|download|bản lồng tiếng|đăng ký)\b/i.test(raw)) return;
 
     // Strip isolated single-letter leading OCR boundary noise (e.g. "e kích thành trì" -> "kích thành trì")
-    raw = raw.replace(/^[a-zA-Z]\s+(?=[a-zA-Zà-ỹÀ-Ỹ]{3,})/i, '').trim();
+    // Giữ nguyên các đại từ và mạo từ cốt lõi 'I' và 'A' trong tiếng Anh ("I know", "A person")
+    if (isVietsubMode) {
+      raw = raw.replace(/^[a-zA-Z]\s+(?=[a-zA-Zà-ỹÀ-Ỹ]{3,})/i, '').trim();
+    } else {
+      raw = raw.replace(/^[b-hj-zB-HJ-Z]\s+(?=[a-zA-Z]{3,})/i, '').trim();
+    }
 
     // Reject isolated single-word noise tokens unless recognized conversational exclamation
     const rawTokens = raw.split(/\s+/).filter(Boolean);
     const validSingleWords = [
+      // Tiếng Việt
       'cha', 'ba', 'mẹ', 'bố', 'con', 'anh', 'em', 'ông', 'bà', 'chị', 'cô', 'chú', 'bác', 'cháu', 'hắn', 'nó', 'họ', 'ta', 'mình',
       'đúng', 'không', 'phải', 'chào', 'sao', 'dạ', 'vâng', 'ừ', 'thật', 'hả', 'này', 'vậy', 'hở', 'ôi', 'ơ', 'chứ', 'rồi', 'xong',
       'đi', 'được', 'nghe', 'tại', 'cứu', 'chạy', 'mau', 'khoan', 'chết', 'nguy', 'bắn', 'tránh', 'cút', 'dừng', 'đứng', 'buông', 'đợi', 'thôi', 'im', 'rõ',
-      'ai', 'gì', 'đâu', 'nào', 'có', 'biết', 'hiểu', 'nhớ', 'quên', 'xem', 'nói', 'thấy', 'chắc', 'kìa', 'đây', 'đó', 'lại', 'ngay'
+      'ai', 'gì', 'đâu', 'nào', 'có', 'biết', 'hiểu', 'nhớ', 'quên', 'xem', 'nói', 'thấy', 'chắc', 'kìa', 'đây', 'đó', 'lại', 'ngay',
+      // Tiếng Anh
+      'yes', 'no', 'why', 'what', 'who', 'how', 'when', 'where', 'stop', 'wait', 'run', 'help', 'look', 'see', 'listen', 'hear', 'come', 'go', 'stay', 'leave',
+      'fast', 'slow', 'quick', 'hurry', 'hide', 'jump', 'shoot', 'fire', 'duck', 'kill', 'die', 'dead', 'fine', 'good', 'bad', 'great', 'cool', 'sure',
+      'right', 'wrong', 'true', 'false', 'okay', 'ok', 'please', 'thanks', 'thank', 'sorry', 'hello', 'hi', 'bye', 'hey', 'yo', 'ready', 'done',
+      'never', 'always', 'maybe', 'again', 'enough', 'now', 'here', 'there', 'well', 'damn', 'shit', 'cool'
     ];
-    if (rawTokens.length === 1 && !validSingleWords.includes(raw.toLowerCase().replace(/[.!?…,]+$/u, '')) && raw.length <= 6) {
+    const isCjkText = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/.test(raw);
+    if (!isCjkText && rawTokens.length === 1 && !validSingleWords.includes(raw.toLowerCase().replace(/[.!?…,]+$/u, '')) && raw.length <= 6) {
       return;
     }
 
@@ -1806,9 +1855,17 @@ class LiveDubStudio {
     if (!this.recentOCRHistory) this.recentOCRHistory = [];
     this.recentOCRHistory = this.recentOCRHistory.filter(item => (now - item.time) < 3500);
 
-    const stripAccents = (s) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'd').toLowerCase().replace(/[^\w]/g, '');
+    const stripAccents = (s) => (s || '').normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd').replace(/Đ/g, 'd')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]/gu, '');
     const rawNorm = stripAccents(raw);
-    let cleanRaw = defrag(String(data.translated || raw || '')).replace(/^[a-zA-Z]\s+(?=[a-zA-Zà-ỹÀ-Ỹ]{3,})/i, '').replace(/(\.{2,}|…)\s*\.+/g, '$1').replace(/\s+([.,!?:;…])/g, '$1').trim();
+    let cleanRaw = defrag(String(data.translated || raw || ''));
+    if (isVietsubMode) {
+      cleanRaw = cleanRaw.replace(/^[a-zA-Z]\s+(?=[a-zA-Zà-ỹÀ-Ỹ]{3,})/i, '');
+    }
+    cleanRaw = cleanRaw.replace(/(\.{2,}|…)\s*\.+/g, '$1').replace(/\s+([.,!?:;…])/g, '$1').trim();
     cleanRaw = cleanRaw
       .replace(/\bđứa tre\b/gi, 'đứa trẻ')
       .replace(/\bxấu xí lăm\b/gi, 'xấu xí lắm')
@@ -1838,19 +1895,16 @@ class LiveDubStudio {
     const isSubFragment = this.recentOCRHistory.some(item => {
       const histNorm = stripAccents(item.text);
       const histCleanNorm = stripAccents(item.cleanText || item.text);
-      if (histNorm.length >= rawNorm.length && (histNorm.includes(rawNorm) || histNorm.endsWith(rawNorm) || histNorm.startsWith(rawNorm))) {
-        return true;
+      if (histNorm.length >= rawNorm.length && rawNorm.length >= 3 && (histNorm.includes(rawNorm) || histNorm.endsWith(rawNorm))) {
+        // Chỉ coi là sub-fragment nếu độ dài câu mới ngắn hơn đáng kể (câu mới bị cắt đuôi <= 65% câu cũ)
+        if (rawNorm.length <= histNorm.length * 0.65) {
+          return true;
+        }
       }
-      if (cleanNorm && histCleanNorm.length >= cleanNorm.length && (histCleanNorm.includes(cleanNorm) || histCleanNorm.endsWith(cleanNorm) || histCleanNorm.startsWith(cleanNorm))) {
-        return true;
-      }
-      // Word overlap check: if current words match the trailing words of recent line
-      const currentWords = cleanRaw.toLowerCase().split(/\s+/).filter(w => w.length > 1);
-      const histWords = (item.cleanText || item.text).toLowerCase().split(/\s+/).filter(w => w.length > 1);
-      if (currentWords.length >= 2 && histWords.length >= currentWords.length) {
-        const histTail = histWords.slice(-currentWords.length).join(' ');
-        const currJoined = currentWords.join(' ');
-        if (histTail === currJoined) return true;
+      if (cleanNorm && histCleanNorm.length >= cleanNorm.length && cleanNorm.length >= 3 && (histCleanNorm.includes(cleanNorm) || histCleanNorm.endsWith(cleanNorm))) {
+        if (cleanNorm.length <= histCleanNorm.length * 0.65) {
+          return true;
+        }
       }
       return false;
     });
@@ -1868,15 +1922,18 @@ class LiveDubStudio {
           lastQueued.text = cleanRaw;
           lastQueued.sourceText = raw;
           this.lastOCRText = raw;
+          this.lastCleanText = cleanRaw;
           return;
         }
       }
     }
 
     // Suppress if duplicate or highly similar to recent detections within 1.6s
+    // So sánh cùng hệ ngôn ngữ (raw với raw, cleanRaw với cleanRaw), không so sánh chéo gây mất câu oan
     if (
-      (this.lastOCRText && (this.isDuplicateOCR(raw, this.lastOCRText) || this.isDuplicateOCR(cleanRaw, this.lastOCRText))) ||
-      this.recentOCRHistory.some(item => this.isDuplicateOCR(raw, item.text) || this.isDuplicateOCR(cleanRaw, item.cleanText || item.text))
+      (this.lastOCRText && this.isDuplicateOCR(raw, this.lastOCRText)) ||
+      (this.lastCleanText && this.isDuplicateOCR(cleanRaw, this.lastCleanText)) ||
+      this.recentOCRHistory.some(item => this.isDuplicateOCR(raw, item.text) || (item.cleanText && this.isDuplicateOCR(cleanRaw, item.cleanText)))
     ) {
       return;
     }
@@ -1889,6 +1946,7 @@ class LiveDubStudio {
     }
 
     this.lastOCRText = raw;
+    this.lastCleanText = cleanRaw;
     this.recentOCRHistory.push({ text: raw, cleanText: cleanRaw, time: now });
     this.lastTranscriptContext = raw;
     const record = this.addHistory(raw, cleanRaw, 'ocr');
@@ -1919,6 +1977,7 @@ class LiveDubStudio {
     this._ocrLastSample = null;
     this._ocrStaticFrameCount = 0;
     this.lastOCRText = '';
+    this.lastCleanText = '';
     if (this.motionCtx) {
       this.motionCtx = null;
       this.motionCanvas = null;
@@ -3802,6 +3861,7 @@ class LiveDubStudio {
     }
     this.recentOCRHistory = [];
     this.lastOCRText = '';
+    this.lastCleanText = '';
     this.liveDubbingQueue = [];
     this.speechQueue = [];
     if (typeof this.stopDubbingAudio === 'function') {

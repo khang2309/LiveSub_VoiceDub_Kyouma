@@ -11,6 +11,7 @@ pub enum Language {
     Vi,
     Ja,
     Zh,
+    Ko,
     Th,
     En,
 }
@@ -20,11 +21,13 @@ impl Language {
         let norm = s.trim().to_lowercase().replace('_', "-");
         let prefix = norm.split('-').next().unwrap_or("vi");
         match prefix {
-            "vi" | "vietnamese" | "auto" => Language::Vi,
+            "vi" | "viet" | "vietnamese" => Language::Vi,
             "ja" | "jp" | "japanese" => Language::Ja,
             "zh" | "ch" | "chinese" | "cmn" => Language::Zh,
+            "ko" | "kor" | "korean" => Language::Ko,
             "th" | "thai" => Language::Th,
             "en" | "eng" | "english" => Language::En,
+            "auto" => Language::Auto,
             _ => Language::Vi,
         }
     }
@@ -35,6 +38,7 @@ impl Language {
             Language::Vi => "vi",
             Language::Ja => "ja",
             Language::Zh => "zh",
+            Language::Ko => "ko",
             Language::Th => "th",
             Language::En => "en",
         }

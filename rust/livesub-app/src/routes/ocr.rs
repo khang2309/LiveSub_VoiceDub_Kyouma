@@ -93,7 +93,23 @@ pub async fn api_ocr_subtitle(
 
     let (selected_engine, engine_name) = state.ocr_pool.select_engine(&source_lang);
     let recognized = if let Some(engine) = selected_engine {
-        let dyn_img = decoded.clone();
+        let mut dyn_img = decoded.clone();
+        // Tăng pixel tự động nếu khung phụ đề nhỏ hoặc mờ nét (Supersampling CatmullRom)
+        // Giúp mô hình phát hiện khung chữ và nhận dạng chính xác từng nét ký tự, dấu thanh
+        let (w, h) = (dyn_img.width(), dyn_img.height());
+        if h < 180 || w < 1280 {
+            let scale_factor = if h < 90 {
+                2.5
+            } else if h < 180 {
+                2.0
+            } else {
+                1.5
+            };
+            let new_w = ((w as f32 * scale_factor) as u32).min(3840);
+            let new_h = ((h as f32 * scale_factor) as u32).min(2160);
+            dyn_img = dyn_img.resize(new_w, new_h, image::imageops::FilterType::CatmullRom);
+        }
+
         tokio::task::spawn_blocking(move || -> Result<String, String> {
             let res = engine.run_from_image(&dyn_img).map_err(|e| e.to_string())?;
             let texts: Vec<String> = res
