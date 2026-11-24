@@ -1131,7 +1131,7 @@ select:focus-visible {
   position: fixed !important;
   top: 18px !important;
   left: 50% !important;
-  transform: translateX(-50%) !important;
+  transform: translateX(-50%) translateY(-14px) !important;
   width: auto !important;
   max-width: 90vw !important;
   z-index: 2147483647 !important;
@@ -1146,15 +1146,21 @@ select:focus-visible {
   align-items: center !important;
   gap: 14px !important;
   opacity: 0 !important;
-  transition: opacity 0.25s ease, transform 0.25s ease !important;
+  transition: opacity 0.32s cubic-bezier(0.16, 1, 0.3, 1), transform 0.32s cubic-bezier(0.16, 1, 0.3, 1) !important;
   pointer-events: none !important;
 }
 
-.web-video-wrapper:fullscreen:hover .video-top-bar,
-.web-video-wrapper:-webkit-full-screen:hover .video-top-bar,
+.web-video-wrapper:fullscreen.show-controls .video-top-bar,
+.web-video-wrapper:-webkit-full-screen.show-controls .video-top-bar,
 .web-video-wrapper.show-controls .video-top-bar {
   opacity: 1 !important;
+  transform: translateX(-50%) translateY(0) !important;
   pointer-events: auto !important;
+}
+
+.web-video-wrapper:fullscreen:not(.show-controls),
+.web-video-wrapper:-webkit-full-screen:not(.show-controls) {
+  cursor: none !important;
 }
 
 .web-video-wrapper:fullscreen #webVideoTitle,

@@ -4,18 +4,18 @@ const { EdgeTTS } = require('node-edge-tts');
 // Bảng cấu hình toàn bộ giọng VieNeu-TTS & Microsoft Studio Neural
 // Nam: vi-VN-NamMinhNeural, Nữ: vi-VN-HoaiMyNeural
 const VOICE_PRESETS = {
-  // Giọng Nam
+  // Giọng Nam Studio Neural
   'namminh': { voice: 'vi-VN-NamMinhNeural', pitch: '+0Hz', rate: '+0%' },
-  'thaison': { voice: 'vi-VN-NamMinhNeural', pitch: '-15Hz', rate: '+0%' },
-  'thienminh': { voice: 'vi-VN-NamMinhNeural', pitch: '+2Hz', rate: '+0%' },
-  'quangson': { voice: 'vi-VN-NamMinhNeural', pitch: '-8Hz', rate: '+0%' },
-  'adam': { voice: 'vi-VN-NamMinhNeural', pitch: '+8Hz', rate: '+5%' },
+  'thaison': { voice: 'vi-VN-NamMinhNeural', pitch: '+0Hz', rate: '+0%' },
+  'thienminh': { voice: 'vi-VN-NamMinhNeural', pitch: '+0Hz', rate: '+0%' },
+  'quangson': { voice: 'vi-VN-NamMinhNeural', pitch: '+0Hz', rate: '+0%' },
+  'adam': { voice: 'vi-VN-NamMinhNeural', pitch: '+0Hz', rate: '+0%' },
 
-  // Giọng Nữ
+  // Giọng Nữ Studio Neural
   'hoaimy': { voice: 'vi-VN-HoaiMyNeural', pitch: '+0Hz', rate: '+0%' },
   'trucly': { voice: 'vi-VN-HoaiMyNeural', pitch: '+0Hz', rate: '+0%' },
-  'thuydung': { voice: 'vi-VN-HoaiMyNeural', pitch: '+12Hz', rate: '+0%' },
-  'maianh': { voice: 'vi-VN-HoaiMyNeural', pitch: '-6Hz', rate: '+0%' }
+  'thuydung': { voice: 'vi-VN-HoaiMyNeural', pitch: '+0Hz', rate: '+0%' },
+  'maianh': { voice: 'vi-VN-HoaiMyNeural', pitch: '+0Hz', rate: '+0%' }
 };
 
 function removeVietnameseAccents(str) {
@@ -48,6 +48,69 @@ function getVoiceConfig(voice) {
   return VOICE_PRESETS['trucly'];
 }
 
+// Bộ đệm LRU Cache 2048 câu để phản hồi ngay 0ms cho câu lặp lại
+const memoryCache = new Map();
+const MAX_CACHE_SIZE = 2048;
+
+// Tránh gửi cùng một câu nhiều lần cùng một lúc tới server Microsoft
+const inFlightRequests = new Map();
+
+async function synthesizeWithRetry(text, cfg, maxRetries = 2) {
+  const cacheKey = `${cfg.voice}:${cfg.pitch}:${cfg.rate}:${text}`;
+  if (memoryCache.has(cacheKey)) {
+    return memoryCache.get(cacheKey);
+  }
+
+  if (inFlightRequests.has(cacheKey)) {
+    return await inFlightRequests.get(cacheKey);
+  }
+
+  const promise = (async () => {
+    let lastErr = null;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        if (attempt > 0) {
+          // Khi bị 429 hoặc lỗi kết nối, giãn cách một chút để Microsoft giải tỏa rate-limit
+          await new Promise(r => setTimeout(r, 120 * attempt));
+        }
+        const tts = new EdgeTTS({
+          voice: cfg.voice,
+          pitch: cfg.pitch,
+          rate: cfg.rate,
+          timeout: 4000
+        });
+
+        const chunks = [];
+        for await (const chunk of tts.streamAudio(text)) {
+          if (Buffer.isBuffer(chunk)) {
+            chunks.push(chunk);
+          }
+        }
+        const merged = Buffer.concat(chunks);
+        if (merged.length > 100) {
+          if (memoryCache.size >= MAX_CACHE_SIZE) {
+            const firstKey = memoryCache.keys().next().value;
+            memoryCache.delete(firstKey);
+          }
+          memoryCache.set(cacheKey, merged);
+          return merged;
+        }
+      } catch (err) {
+        lastErr = err;
+        // Tiếp tục thử lại nếu bị 429 hoặc socket closed
+      }
+    }
+    throw lastErr || new Error('TTS synthesis failed after retries');
+  })();
+
+  inFlightRequests.set(cacheKey, promise);
+  try {
+    return await promise;
+  } finally {
+    inFlightRequests.delete(cacheKey);
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && (req.url === '/tts' || req.url === '/api/tts')) {
     let body = '';
@@ -61,24 +124,15 @@ const server = http.createServer(async (req, res) => {
           return res.end('Empty text');
         }
         const cfg = getVoiceConfig(payload.voice);
-        const tts = new EdgeTTS({
-          voice: cfg.voice,
-          pitch: cfg.pitch,
-          rate: cfg.rate
-        });
+        const audioBuffer = await synthesizeWithRetry(text, cfg, 2);
 
         res.writeHead(200, {
           'Content-Type': 'audio/mpeg',
+          'Content-Length': audioBuffer.length,
           'Cache-Control': 'public, max-age=86400',
           'Access-Control-Allow-Origin': '*'
         });
-
-        for await (const chunk of tts.streamAudio(text)) {
-          if (Buffer.isBuffer(chunk)) {
-            res.write(chunk);
-          }
-        }
-        res.end();
+        res.end(audioBuffer);
       } catch (err) {
         console.error('Edge TTS error:', err.message);
         if (!res.headersSent) {
@@ -89,7 +143,7 @@ const server = http.createServer(async (req, res) => {
     });
   } else if (req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-    res.end(JSON.stringify({ status: 'ready', engine: 'VieNeu-Edge-Neural' }));
+    res.end(JSON.stringify({ status: 'ready', engine: 'VieNeu-Edge-Neural', cached: memoryCache.size }));
   } else {
     res.writeHead(404);
     res.end();

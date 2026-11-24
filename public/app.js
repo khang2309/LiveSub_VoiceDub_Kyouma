@@ -59,6 +59,7 @@ class LiveDubStudio {
     this.currentYtSegmentIdx = -1;
     this.originalYtVol = null;
     this.isYtDucked = false;
+    this.isAudioDuckingEnabled = false;
     this.ytRestoreVolumeTimer = null;
     this.audioPreCache = new Map();
     this.isFetchingPreCache = new Set();
@@ -950,20 +951,34 @@ class LiveDubStudio {
       this.btnFullscreenWebVideo.title = isFs ? 'Thoát chế độ toàn màn hình (Phím Esc)' : 'Phóng to toàn màn hình (Luôn hiện phụ đề)';
     }
 
+    if (this._fsHideTimer) {
+      clearTimeout(this._fsHideTimer);
+      this._fsHideTimer = null;
+    }
+
     if (isFs && this.webVideoContainer) {
-      // Auto-show controls on mouse move and auto-hide after 2.5s
-      if (!this._fsMouseMoveBound) {
+      if (!this._fsMouseMoveBound && isDoc) {
         this._fsMouseMoveBound = true;
-        let fsHideTimer = null;
-        this.webVideoContainer.addEventListener('mousemove', () => {
+        const resetFsTimer = () => {
+          const currentlyFs = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+          if (!currentlyFs || !this.webVideoContainer) return;
           this.webVideoContainer.classList.add('show-controls');
-          if (fsHideTimer) clearTimeout(fsHideTimer);
-          fsHideTimer = setTimeout(() => {
-            this.webVideoContainer.classList.remove('show-controls');
+          if (this._fsHideTimer) clearTimeout(this._fsHideTimer);
+          this._fsHideTimer = setTimeout(() => {
+            if (this.webVideoContainer) {
+              this.webVideoContainer.classList.remove('show-controls');
+            }
           }, 2500);
-        });
+        };
+        document.addEventListener('mousemove', resetFsTimer);
       }
+      // Enter fullscreen: reveal controls and schedule auto-hide after 2.5s of idle
       this.webVideoContainer.classList.add('show-controls');
+      this._fsHideTimer = setTimeout(() => {
+        if (this.webVideoContainer) {
+          this.webVideoContainer.classList.remove('show-controls');
+        }
+      }, 2500);
     } else if (this.webVideoContainer) {
       this.webVideoContainer.classList.remove('show-controls');
     }
@@ -974,6 +989,10 @@ class LiveDubStudio {
     if (this.youtubeSubtitleAbortController) {
       try { this.youtubeSubtitleAbortController.abort(); } catch (_) {}
       this.youtubeSubtitleAbortController = null;
+    }
+    if (this.ytPrefetchAbortController) {
+      try { this.ytPrefetchAbortController.abort(); } catch (_) {}
+      this.ytPrefetchAbortController = null;
     }
     if (this.ytSyncRemainingTimer) {
       clearTimeout(this.ytSyncRemainingTimer);
@@ -1048,6 +1067,11 @@ class LiveDubStudio {
   }
 
   switchSourceTab(source) {
+    if (this.activeSource === 'system' && source !== 'system') {
+      if (typeof this.stopListening === 'function') {
+        this.stopListening();
+      }
+    }
     if (source !== 'weburl' || this.activeSource === 'weburl') {
       this.cleanupYouTubePlayback();
     }
@@ -1190,26 +1214,26 @@ class LiveDubStudio {
     if (v.includes('thái sơn') || v.includes('thaison')) {
       return {
         id: 'thaison',
-        pitchFactor: 0.74,
-        eq: { type: 'lowshelf', frequency: 260, gain: 4.5 },
-        highCut: { frequency: 3600, gain: -2.5 }
+        pitchFactor: 1.0,
+        eq: null,
+        highCut: null
       };
     }
     // Thiện Minh: Warm masculine Northern narrator voice
     if (v.includes('thiện minh') || v.includes('thienminh') || v.includes('adam')) {
       return {
         id: 'thienminh',
-        pitchFactor: 0.82,
-        eq: { type: 'lowshelf', frequency: 320, gain: 3.5 },
-        highCut: { frequency: 4500, gain: -1.0 }
+        pitchFactor: 1.0,
+        eq: null,
+        highCut: null
       };
     }
     // Thùy Dung: Sweet, melodic Southern female voice
     if (v.includes('thùy dung') || v.includes('thuydung')) {
       return {
         id: 'thuydung',
-        pitchFactor: 1.12,
-        eq: { type: 'highshelf', frequency: 2800, gain: 3.0 },
+        pitchFactor: 1.0,
+        eq: null,
         highCut: null
       };
     }
@@ -2620,6 +2644,7 @@ class LiveDubStudio {
   }
 
   duckYouTubeVolume(targetVol = 18) {
+    if (!this.isAudioDuckingEnabled) return;
     if (!this.ytPlayer || typeof this.ytPlayer.setVolume !== 'function') return;
     if (this.ytRestoreVolumeTimer) {
       clearTimeout(this.ytRestoreVolumeTimer);
@@ -2638,6 +2663,7 @@ class LiveDubStudio {
   }
 
   scheduleRestoreYouTubeVolume(delayMs = 4500) {
+    if (!this.isAudioDuckingEnabled) return;
     if (this.ytRestoreVolumeTimer) clearTimeout(this.ytRestoreVolumeTimer);
     this.ytRestoreVolumeTimer = setTimeout(() => {
       this.restoreYouTubeVolumeNow();
@@ -2952,10 +2978,16 @@ class LiveDubStudio {
     }
     if (!pending.length) return;
 
+    if (this.ytPrefetchAbortController) {
+      try { this.ytPrefetchAbortController.abort(); } catch (_) {}
+    }
+    this.ytPrefetchAbortController = new AbortController();
+
     fetch('/api/tts-batch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ texts: pending.map(item => item.segment.translated), voice })
+      body: JSON.stringify({ texts: pending.map(item => item.segment.translated), voice }),
+      signal: this.ytPrefetchAbortController.signal
     })
     .then(response => response.ok ? response.json() : Promise.reject(new Error(`TTS batch HTTP ${response.status}`)))
     .then(async data => {

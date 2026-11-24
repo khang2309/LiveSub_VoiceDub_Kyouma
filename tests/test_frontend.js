@@ -1058,17 +1058,15 @@ test('voice profiles map distinct pitch factors and formant EQs', () => {
   
   const thaiSon = app.getVoiceProfile('vieneu:Thái Sơn');
   assert.equal(thaiSon.id, 'thaison');
-  assert.equal(thaiSon.pitchFactor, 0.74);
-  assert.equal(thaiSon.eq.type, 'lowshelf');
+  assert.equal(thaiSon.pitchFactor, 1.0);
 
   const thienMinh = app.getVoiceProfile('vieneu:Thiện Minh');
   assert.equal(thienMinh.id, 'thienminh');
-  assert.equal(thienMinh.pitchFactor, 0.82);
+  assert.equal(thienMinh.pitchFactor, 1.0);
 
   const thuyDung = app.getVoiceProfile('vieneu:Thùy Dung');
   assert.equal(thuyDung.id, 'thuydung');
-  assert.equal(thuyDung.pitchFactor, 1.12);
-  assert.equal(thuyDung.eq.type, 'highshelf');
+  assert.equal(thuyDung.pitchFactor, 1.0);
 
   const trucLy = app.getVoiceProfile('vieneu:Trúc Ly');
   assert.equal(trucLy.id, 'trucly');
