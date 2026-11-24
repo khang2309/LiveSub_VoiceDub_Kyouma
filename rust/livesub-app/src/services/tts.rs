@@ -4,15 +4,12 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-pub async fn synthesize_tts(state: &AppState, text: &str) -> Response {
+pub async fn synthesize_tts_bytes(state: &AppState, text: &str) -> Option<Vec<u8>> {
     let cleaned = get_re_ws().replace_all(text.trim(), " ").to_string();
     if cleaned.is_empty() {
-        return (StatusCode::BAD_REQUEST, "Text required").into_response();
+        return None;
     }
 
-    // Nếu văn bản đã có dấu tiếng Việt chuẩn xác (từ Google Translate hoặc phụ đề có sẵn dấu),
-    // phát âm trực tiếp nguyên vẹn 100% để không làm mất dấu (như "sáu" không bị nhầm thành "sau").
-    // Chỉ kích hoạt restore_vietnamese khi văn bản là chuỗi thô không dấu.
     let target_text = if crate::state::get_re_vi().is_match(&cleaned) {
         cleaned
     } else {
@@ -23,14 +20,7 @@ pub async fn synthesize_tts(state: &AppState, text: &str) -> Response {
     // 1. Check in-memory audio cache
     if let Ok(c) = state.audio_cache.read() {
         if let Some(audio_bytes) = c.get(&cache_key) {
-            let mut res = audio_bytes.clone().into_response();
-            res.headers_mut()
-                .insert(header::CONTENT_TYPE, HeaderValue::from_static("audio/mpeg"));
-            res.headers_mut().insert(
-                header::CACHE_CONTROL,
-                HeaderValue::from_static("public, max-age=86400"),
-            );
-            return res;
+            return Some(audio_bytes.clone());
         }
     }
 
@@ -43,29 +33,37 @@ pub async fn synthesize_tts(state: &AppState, text: &str) -> Response {
     if let Ok(resp) = state.http_client.get(&url).send().await {
         if resp.status().is_success() {
             if let Ok(bytes) = resp.bytes().await {
-                if bytes.len() > 200 {
+                if bytes.len() > 100 {
                     let audio_vec = bytes.to_vec();
                     if let Ok(mut c) = state.audio_cache.write() {
-                        if c.len() < 2048 {
+                        if c.len() < 4096 {
                             c.insert(cache_key, audio_vec.clone());
                         }
                     }
-                    let mut res = audio_vec.into_response();
-                    res.headers_mut()
-                        .insert(header::CONTENT_TYPE, HeaderValue::from_static("audio/mpeg"));
-                    res.headers_mut().insert(
-                        header::CACHE_CONTROL,
-                        HeaderValue::from_static("public, max-age=86400"),
-                    );
-                    return res;
+                    return Some(audio_vec);
                 }
             }
         }
     }
 
-    (
-        StatusCode::BAD_GATEWAY,
-        "No real TTS provider produced audio",
-    )
-        .into_response()
+    None
+}
+
+pub async fn synthesize_tts(state: &AppState, text: &str) -> Response {
+    if let Some(audio_vec) = synthesize_tts_bytes(state, text).await {
+        let mut res = audio_vec.into_response();
+        res.headers_mut()
+            .insert(header::CONTENT_TYPE, HeaderValue::from_static("audio/mpeg"));
+        res.headers_mut().insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("public, max-age=86400"),
+        );
+        res
+    } else {
+        (
+            StatusCode::BAD_GATEWAY,
+            "No real TTS provider produced audio",
+        )
+            .into_response()
+    }
 }

@@ -1,9 +1,13 @@
-use crate::{services::tts::synthesize_tts, state::AppState};
+use crate::{
+    services::tts::{synthesize_tts, synthesize_tts_bytes},
+    state::AppState,
+};
 use axum::{
     extract::State,
     response::Response,
     Json,
 };
+use base64::Engine;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -23,17 +27,41 @@ pub async fn api_tts_stream(State(state): State<AppState>, Json(req): Json<TtsRe
 }
 
 pub async fn api_tts_batch(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Json(payload): Json<serde_json::Value>,
 ) -> Json<serde_json::Value> {
-    let count = payload
+    let b64_engine = base64::engine::general_purpose::STANDARD;
+
+    let texts: Vec<String> = payload
         .get("texts")
         .and_then(|v| v.as_array())
-        .map(|a| a.len())
-        .unwrap_or(0);
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|item| item.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut items = Vec::with_capacity(texts.len());
+    for text in &texts {
+        if let Some(bytes) = synthesize_tts_bytes(&state, text).await {
+            items.push(serde_json::json!({
+                "text": text,
+                "audio_base64": b64_engine.encode(&bytes),
+                "format": "mp3"
+            }));
+        } else {
+            items.push(serde_json::json!({
+                "text": text,
+                "audio_base64": null,
+                "format": "none"
+            }));
+        }
+    }
 
     Json(serde_json::json!({
         "success": true,
-        "count": count
+        "count": items.len(),
+        "items": items
     }))
 }

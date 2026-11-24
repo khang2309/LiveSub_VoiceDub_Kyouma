@@ -323,7 +323,7 @@ class LiveDubStudio {
     this.meterPercentText = document.getElementById('meterPercentText');
 
     // Settings
-    this.sourceLangSelect = document.getElementById('sourceLang');
+    this.sourceLang = this.sourceLangSelect = document.getElementById('sourceLang');
     this.voiceSelect = document.getElementById('voiceSelect');
     this.btnTestVoiceSample = document.getElementById('btnTestVoiceSample');
     this.rateRange = document.getElementById('rateRange');
@@ -412,7 +412,9 @@ class LiveDubStudio {
 
   getSafeStreamingPlaybackRate(queueDepth = 0, serverCap = 2.0, originalDuration = 0, textLength = 0, queueLagMs = 0) {
     // Dynamic Speed Overdrive: Tự động ép xung tốc độ đọc khi phụ đề ra nhanh hoặc nhân vật nói dồn dập (MrBeast style)
-    let rate = parseFloat(this.rateRange && this.rateRange.value) || 1.15;
+    let rate = (typeof this.getSafePlaybackRate === 'function')
+      ? this.getSafePlaybackRate(0)
+      : (parseFloat(this.rateRange && this.rateRange.value) || 1.15);
 
     // 1. Cadence Overdrive: Nhịp độ nói dồn dập giữa các câu liên tiếp (khoảng cách câu < 2.5s)
     if (this.lastSentenceArrivalGapMs && this.lastSentenceArrivalGapMs < 1400) {
@@ -454,7 +456,7 @@ class LiveDubStudio {
       }
     }
 
-    return Math.min(2.0, Math.max(0.8, rate));
+    return Math.min(serverCap || 2.0, Math.max(0.8, rate));
   }
 
   setSubMode(mode) {
@@ -2009,11 +2011,14 @@ class LiveDubStudio {
   }
 
   buildYouTubeSubtitleRequest(url) {
+    const el = this.sourceLangSelect || this.sourceLang || document.getElementById('sourceLang');
+    const rawLang = el ? el.value : 'auto';
+    const langCode = (rawLang === 'auto') ? null : rawLang.split(/[-_]/)[0];
     return {
       url,
       target_lang: 'vi',
-      caption_mode: this.getRadioGroupValue(this.webCaptionMode),
-      caption_language: this.getRadioGroupValue(this.webCaptionLanguage)
+      caption_mode: 'has_captions',
+      caption_language: langCode
     };
   }
 
@@ -2035,7 +2040,6 @@ class LiveDubStudio {
     this.youtubeSubtitleAbortController = new AbortController();
 
     this.webVideoContainer.style.display = 'block';
-    this.webVideoContainer.scrollIntoView({ behavior: 'smooth' });
     this.webSyncNotice.className = 'web-sync-notice show';
     const subtitleRequest = this.buildYouTubeSubtitleRequest(val);
     if (subtitleRequest.caption_mode === 'audio_only') {
@@ -2317,11 +2321,14 @@ class LiveDubStudio {
   }
 
   isPlaybackCurrent(token) {
-    return Boolean(token
-      && token.playback === this.playbackGeneration
-      && token.session === this.ytSessionGeneration
-      && token.segment === this.currentYtSegmentIdx
-      && this.isDubbingEnabled !== false);
+    if (!token || this.isDubbingEnabled === false) return false;
+    if (token.session !== this.ytSessionGeneration) return false;
+    if (token.playback !== this.playbackGeneration) return false;
+    if (typeof token.segment === 'number') {
+      if (this.currentYtSegmentIdx === -1) return true;
+      return Math.abs(token.segment - this.currentYtSegmentIdx) <= 1;
+    }
+    return true;
   }
 
   async playSegmentAudio(segIdx, expectedSlotDuration = 0, onStart = null) {
@@ -3180,7 +3187,7 @@ class LiveDubStudio {
   }
 
   async playAudioBuffer(arrayBuffer, waitForEnd = false, onStart = null, originalDuration = 0, textLength = 0, queueDepth = 0, queueLagMs = 0) {
-    this.stopAllAudio();
+    this.stopDubbingAudio(false, false);
     try {
       this.ensureAudioUnlocked();
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
