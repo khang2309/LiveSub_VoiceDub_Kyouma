@@ -3,25 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Cửa sổ phụ đề nổi của LiveSub và VoiceDub AI.">
-  <title>LiveSub Subtitles</title>
+  <meta name="description" content="Cửa sổ phụ đề nổi Always-on-Top của LiveSub và VoiceDub AI.">
+  <title>LiveSub - Phụ Đề Nổi</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:ital,wght@0,600;0,700;0,800;0,900;1,700&family=Oswald:wght@600;700&display=swap" rel="stylesheet">
   <style>
-    /* Hallmark · shape: app overlay · genre: atmospheric · theme: Spore · redesign: full · scope: app */
     :root {
-      --overlay-paper: oklch(8% 0.008 60 / 0.72);
-      --overlay-paper-soft: oklch(8% 0.008 60 / 0.35);
-      --overlay-paper-strong: oklch(15% 0.012 60 / 0.88);
-      --overlay-ink: #FFFFFF;
-      --overlay-ink-muted: rgba(255, 255, 255, 0.82);
-      --overlay-accent: #FFFFFF;
-      --overlay-shadow: #000000;
-      --overlay-font-sub: "Roboto Condensed", "Oswald", "Barlow Condensed", "Montserrat", "Arial Narrow", "Franklin Gothic Medium", sans-serif;
-      --overlay-font: var(--overlay-font-sub);
-      --space-3xs: 2px;
-      --space-sm: 12px;
+      --sub-font-size: 24px;
+      --font-family: "Roboto Condensed", "Oswald", "Barlow Condensed", "Montserrat", sans-serif;
+      --accent-color: #38bdf8;
+      --accent-yellow: #ffe600;
+      --ink-white: #ffffff;
+      --ink-muted: rgba(255, 255, 255, 0.85);
     }
     * {
       box-sizing: border-box;
@@ -31,58 +25,115 @@
     html, body {
       width: 100%;
       height: 100%;
-      overflow-x: clip;
-      overflow-y: hidden;
-      background: var(--overlay-paper) !important;
-      font-family: var(--overlay-font);
-      color: var(--overlay-ink);
+      overflow: hidden;
+      font-family: var(--font-family);
       user-select: none;
       cursor: move;
+      transition: background 0.25s ease;
     }
-    body.pure-transparent {
-      background: var(--overlay-paper-soft) !important;
+
+    /* 3 Chế độ nền: Đậm / Kính mờ / Trong suốt hoàn toàn */
+    body.mode-solid {
+      background: rgba(10, 12, 18, 0.94) !important;
     }
-    body.dark-mode {
-      background: var(--overlay-paper-strong) !important;
+    body.mode-glass {
+      background: rgba(15, 23, 42, 0.40) !important;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
     }
-    body:focus-visible {
-      outline: 2px solid var(--overlay-accent);
-      outline-offset: -4px;
+    body.mode-transparent {
+      background: transparent !important;
     }
-    body:active {
-      opacity: 0.88;
-    }
+
+    /* Container chính */
     .overlay-container {
+      position: relative;
       display: flex;
       flex-direction: column;
       justify-content: center;
       align-items: center;
       width: 100%;
       height: 100%;
-      padding: var(--space-3xs) var(--space-sm);
+      padding: 6px 14px;
       text-align: center;
     }
+
+    /* Thanh điều khiển mini nổi khi hover / focus */
+    .pip-toolbar {
+      position: absolute;
+      top: 6px;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      background: rgba(10, 12, 18, 0.88);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 20px;
+      padding: 3px 8px;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-4px);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      z-index: 100;
+    }
+    body:hover .pip-toolbar,
+    body:focus-within .pip-toolbar,
+    .pip-toolbar.active {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0);
+    }
+
+    .pip-btn {
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      padding: 3px 9px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+      font-family: inherit;
+    }
+    .pip-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+    .pip-btn.active-warn {
+      background: rgba(239, 68, 68, 0.35);
+      border-color: rgba(239, 68, 68, 0.6);
+      color: #fca5a5;
+    }
+    .pip-btn.active-ok {
+      background: rgba(34, 197, 94, 0.25);
+      border-color: rgba(34, 197, 94, 0.5);
+      color: #86efac;
+    }
+
+    /* Phụ đề gốc */
     .sub-source {
-      font-family: var(--overlay-font-sub);
       font-size: 13px;
-      color: var(--overlay-ink-muted);
+      color: var(--ink-muted);
       font-weight: 600;
       max-width: 98%;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      margin-bottom: 3px;
+      margin-bottom: 2px;
       -webkit-text-stroke: 1px #000000;
       paint-order: stroke fill;
-      text-shadow: 0 1px 3px #000000;
+      text-shadow: 0 1px 4px #000000;
       letter-spacing: 0.01em;
     }
+
+    /* Phụ đề Tiếng Việt */
     .sub-vi {
-      font-family: var(--overlay-font-sub);
-      font-size: 24px;
+      font-size: var(--sub-font-size);
       font-weight: 800;
-      font-size-adjust: from-font;
-      color: #FFFFFF;
+      color: var(--ink-white);
       line-height: 1.25;
       max-width: 98%;
       white-space: nowrap;
@@ -95,42 +146,194 @@
          2px -2px 0 #000000,
         -2px  2px 0 #000000,
          2px  2px 0 #000000,
-         0px  3px 8px rgba(0, 0, 0, 0.9);
+         0px  0px 10px #000000,
+         0px  3px 8px rgba(0, 0, 0, 0.95);
+      letter-spacing: 0.015em;
+      transition: all 0.2s ease;
+      display: inline-block;
+    }
+
+    /* Phong cách pill chữ theo từng chế độ */
+    body.mode-solid .sub-vi {
       background: rgba(15, 23, 42, 0.88);
       border-radius: 8px;
-      padding: 4px 16px;
-      display: inline-block;
-      letter-spacing: 0.015em;
+      padding: 3px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    body.mode-glass .sub-vi {
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border-radius: 8px;
+      padding: 3px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+    body.mode-transparent .sub-vi {
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      padding: 0;
+    }
+
+    /* Toast HUD phản hồi tức thì khi bấm phím P / M / T */
+    .pip-hud-toast {
+      position: absolute;
+      bottom: 8px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(0, 0, 0, 0.85);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(4px);
+      transition: opacity 0.18s ease, transform 0.18s ease;
+      z-index: 200;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+    }
+    .pip-hud-toast.show {
+      opacity: 1;
+      transform: translateY(0);
     }
   </style>
 </head>
-<body id="overlayBody" tabindex="0" role="button" aria-label="Chuyển chế độ nền phụ đề" title="Bấm vào đây để chuyển đổi độ trong suốt">
+<body id="overlayBody" class="mode-transparent" tabindex="0" role="region" aria-label="Cửa sổ phụ đề ghim nổi" title="Bấm vào cửa sổ để dùng phím P (Quét) và M (Âm thanh). Bấm T để đổi độ trong suốt.">
   <div class="overlay-container">
+    <!-- Toolbar điều khiển nổi khi di chuột -->
+    <div class="pip-toolbar" id="pipToolbar">
+      <button type="button" id="btnPipBg" class="pip-btn" title="Chuyển chế độ nền (Phím tắt: T)">
+        🎨 <span id="lblPipBg">Trong suốt (T)</span>
+      </button>
+      <button type="button" id="btnPipMute" class="pip-btn" title="Bật/Tắt âm lồng tiếng (Phím tắt: M)">
+        🔊 Âm: Bật (M)
+      </button>
+      <button type="button" id="btnPipPause" class="pip-btn" title="Tạm dừng/Tiếp tục quét (Phím tắt: P)">
+        ▶️ Quét: Chạy (P)
+      </button>
+      <button type="button" id="btnPipFontMinus" class="pip-btn" title="Giảm cỡ chữ (Phím -)">A-</button>
+      <button type="button" id="btnPipFontPlus" class="pip-btn" title="Tăng cỡ chữ (Phím +)">A+</button>
+    </div>
+
+    <!-- Phụ đề -->
     <div id="floatSource" class="sub-source"></div>
     <div id="floatVi" class="sub-vi">Đang chờ âm thanh hoặc video…</div>
+
+    <!-- HUD Toast -->
+    <div id="pipHudToast" class="pip-hud-toast"></div>
   </div>
 
   <script>
+    const body = document.getElementById('overlayBody');
     const floatSource = document.getElementById('floatSource');
     const floatVi = document.getElementById('floatVi');
-    const body = document.getElementById('overlayBody');
+    const pipHudToast = document.getElementById('pipHudToast');
+    const btnPipBg = document.getElementById('btnPipBg');
+    const lblPipBg = document.getElementById('lblPipBg');
+    const btnPipMute = document.getElementById('btnPipMute');
+    const btnPipPause = document.getElementById('btnPipPause');
+    const btnPipFontMinus = document.getElementById('btnPipFontMinus');
+    const btnPipFontPlus = document.getElementById('btnPipFontPlus');
 
-    // Click anywhere to cycle transparency modes
-    let modeIdx = 0;
-    const modes = ['', 'pure-transparent', 'dark-mode'];
-    function cycleTransparency() {
-      modeIdx = (modeIdx + 1) % modes.length;
-      body.className = modes[modeIdx];
+    // 1. Quản lý 3 chế độ nền: Trong suốt / Kính mờ / Đậm
+    const BG_MODES = [
+      { id: 'mode-transparent', name: 'Trong suốt (T)' },
+      { id: 'mode-glass',       name: 'Kính mờ (T)' },
+      { id: 'mode-solid',       name: 'Đậm (T)' }
+    ];
+    let currentModeIdx = 0;
+    let toastTimer = null;
+    let fontSize = 24;
+    let isDubbingEnabled = true;
+    let isScanningPaused = false;
+
+    function showHudToast(text) {
+      if (!pipHudToast) return;
+      pipHudToast.textContent = text;
+      pipHudToast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        pipHudToast.classList.remove('show');
+      }, 1800);
     }
-    body.addEventListener('click', cycleTransparency);
-    body.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        cycleTransparency();
-      }
-    });
 
-    function handleUpdate(data) {
+    function setTransparencyMode(modeId) {
+      const idx = BG_MODES.findIndex(m => m.id === modeId);
+      if (idx !== -1) currentModeIdx = idx;
+      body.className = BG_MODES[currentModeIdx].id;
+      if (lblPipBg) lblPipBg.textContent = BG_MODES[currentModeIdx].name;
+      try { localStorage.setItem('livesub_overlay_mode', BG_MODES[currentModeIdx].id); } catch (_) {}
+    }
+
+    function cycleTransparency() {
+      currentModeIdx = (currentModeIdx + 1) % BG_MODES.length;
+      const target = BG_MODES[currentModeIdx];
+      setTransparencyMode(target.id);
+      showHudToast(`🎨 Nền: ${target.name.replace(' (T)', '')}`);
+    }
+
+    function changeFontSize(delta) {
+      fontSize = Math.min(48, Math.max(16, fontSize + delta));
+      document.documentElement.style.setProperty('--sub-font-size', fontSize + 'px');
+      showHudToast(`Cỡ chữ: ${fontSize}px`);
+    }
+
+    // 2. Giao tiếp 2 chiều với ứng dụng chính qua BroadcastChannel
+    let overlayChannel = null;
+    try {
+      overlayChannel = new BroadcastChannel('livesub_overlay_channel');
+      overlayChannel.onmessage = (e) => handleChannelMessage(e.data);
+      // Gửi yêu cầu đồng bộ trạng thái ban đầu khi mở PiP
+      overlayChannel.postMessage({ type: 'REQUEST_SYNC' });
+    } catch (e) {
+      console.warn('BroadcastChannel error:', e);
+    }
+
+    function sendKeyCommand(key) {
+      if (overlayChannel) {
+        overlayChannel.postMessage({ type: 'KEY_COMMAND', key: key.toLowerCase() });
+      }
+      if (key.toLowerCase() === 'p') {
+        isScanningPaused = !isScanningPaused;
+        updateButtonsUI();
+        showHudToast(isScanningPaused ? '⏸️ ĐÃ TẠM DỪNG QUÉT (P)' : '▶️ ĐANG QUÉT TIẾP TỤC (P)');
+      } else if (key.toLowerCase() === 'm') {
+        isDubbingEnabled = !isDubbingEnabled;
+        updateButtonsUI();
+        showHudToast(isDubbingEnabled ? '🔊 ĐÃ BẬT ÂM LỒNG TIẾNG (M)' : '🔇 ĐÃ TẮT ÂM LỒNG TIẾNG (M)');
+      }
+    }
+
+    function updateButtonsUI() {
+      if (btnPipMute) {
+        if (!isDubbingEnabled) {
+          btnPipMute.textContent = '🔇 Âm: Tắt (M)';
+          btnPipMute.classList.add('active-warn');
+          btnPipMute.classList.remove('active-ok');
+        } else {
+          btnPipMute.textContent = '🔊 Âm: Bật (M)';
+          btnPipMute.classList.remove('active-warn');
+          btnPipMute.classList.add('active-ok');
+        }
+      }
+      if (btnPipPause) {
+        if (isScanningPaused) {
+          btnPipPause.textContent = '⏸️ Quét: Dừng (P)';
+          btnPipPause.classList.add('active-warn');
+          btnPipPause.classList.remove('active-ok');
+        } else {
+          btnPipPause.textContent = '▶️ Quét: Chạy (P)';
+          btnPipPause.classList.remove('active-warn');
+          btnPipPause.classList.add('active-ok');
+        }
+      }
+    }
+
+    function handleChannelMessage(data) {
       if (!data) return;
       if (data.type === 'UPDATE_SUBTITLE') {
         const { sourceText, viText, subMode } = data;
@@ -151,23 +354,50 @@
           floatVi.style.display = 'block';
         }
       } else if (data.type === 'SET_TRANSPARENCY') {
-        if (data.mode === 'transparent') {
-          body.className = 'pure-transparent';
-        } else if (data.mode === 'glass') {
-          body.className = '';
-        } else {
-          body.className = 'dark-mode';
-        }
+        if (data.mode === 'transparent') setTransparencyMode('mode-transparent');
+        else if (data.mode === 'glass') setTransparencyMode('mode-glass');
+        else setTransparencyMode('mode-solid');
+      } else if (data.type === 'SYNC_STATE' || data.type === 'STATE_CHANGED') {
+        if (typeof data.isDubbingEnabled === 'boolean') isDubbingEnabled = data.isDubbingEnabled;
+        if (typeof data.isScanningPaused === 'boolean') isScanningPaused = data.isScanningPaused;
+        updateButtonsUI();
       }
     }
 
-    window.addEventListener('message', (e) => handleUpdate(e.data));
+    // 3. Xử lý phím tắt trực tiếp trên cửa sổ PiP (P, M, T, + / -)
+    window.addEventListener('keydown', (e) => {
+      const key = e.key.toLowerCase();
+      if (key === 'p') {
+        e.preventDefault();
+        sendKeyCommand('p');
+      } else if (key === 'm') {
+        e.preventDefault();
+        sendKeyCommand('m');
+      } else if (key === 't') {
+        e.preventDefault();
+        cycleTransparency();
+      } else if (key === '+' || key === '=') {
+        e.preventDefault();
+        changeFontSize(2);
+      } else if (key === '-' || key === '_') {
+        e.preventDefault();
+        changeFontSize(-2);
+      }
+    });
 
+    // Sự kiện nút bấm
+    if (btnPipBg) btnPipBg.addEventListener('click', cycleTransparency);
+    if (btnPipMute) btnPipMute.addEventListener('click', () => sendKeyCommand('m'));
+    if (btnPipPause) btnPipPause.addEventListener('click', () => sendKeyCommand('p'));
+    if (btnPipFontMinus) btnPipFontMinus.addEventListener('click', () => changeFontSize(-2));
+    if (btnPipFontPlus) btnPipFontPlus.addEventListener('click', () => changeFontSize(2));
+
+    // Khởi tạo chế độ nền đã lưu (mặc định trong suốt để không che khuất phim)
     try {
-      const channel = new BroadcastChannel('livesub_overlay_channel');
-      channel.onmessage = (e) => handleUpdate(e.data);
-    } catch (e) {
-      console.warn('BroadcastChannel error:', e);
+      const savedMode = localStorage.getItem('livesub_overlay_mode') || 'mode-transparent';
+      setTransparencyMode(savedMode);
+    } catch (_) {
+      setTransparencyMode('mode-transparent');
     }
   </script>
 </body>

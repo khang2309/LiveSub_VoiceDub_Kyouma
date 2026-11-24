@@ -79,6 +79,7 @@ pub fn run() {
                         .always_on_top(true)
                         .decorations(true)
                         .resizable(true)
+                        .transparent(true)
                         .build();
 
                         if let Ok(w) = win {

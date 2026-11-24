@@ -374,6 +374,50 @@ class LiveDubStudio {
         window.addEventListener(evt, unlock, { passive: true });
       });
     }
+
+    this.initOverlayChannel();
+  }
+
+  initOverlayChannel() {
+    try {
+      if (typeof BroadcastChannel === 'undefined') return;
+      if (!this.overlayChannel) {
+        this.overlayChannel = new BroadcastChannel('livesub_overlay_channel');
+      }
+      this.overlayChannel.onmessage = (event) => {
+        const data = event.data;
+        if (!data) return;
+        if (data.type === 'KEY_COMMAND') {
+          const key = (data.key || '').toLowerCase();
+          if (key === 'p') {
+            this.toggleScanningPause();
+          } else if (key === 'm') {
+            this.toggleDubbingMute();
+          }
+        } else if (data.type === 'REQUEST_SYNC') {
+          this.broadcastOverlayState();
+        }
+      };
+    } catch (e) {
+      console.warn('initOverlayChannel error:', e);
+    }
+  }
+
+  broadcastOverlayState() {
+    try {
+      if (!this.overlayChannel && typeof BroadcastChannel !== 'undefined') {
+        this.overlayChannel = new BroadcastChannel('livesub_overlay_channel');
+      }
+      if (this.overlayChannel) {
+        this.overlayChannel.postMessage({
+          type: 'SYNC_STATE',
+          isDubbingEnabled: this.isDubbingEnabled,
+          isScanningPaused: this.isScanningPaused,
+          currentSubMode: this.currentSubMode,
+          currentTransparency: this.currentTransparency
+        });
+      }
+    } catch (_) {}
   }
 
   ensureAudioUnlocked() {
@@ -973,6 +1017,7 @@ class LiveDubStudio {
       }
     }
     this.updateMasterDubUI();
+    this.broadcastOverlayState();
   }
 
   toggleScanningPause() {
@@ -988,6 +1033,7 @@ class LiveDubStudio {
         ? '⏸️ Tạm dừng quét (P)'
         : (this.currentSubMode || 'Song ngữ');
     }
+    this.broadcastOverlayState();
   }
 
   handleVoiceChange() {
