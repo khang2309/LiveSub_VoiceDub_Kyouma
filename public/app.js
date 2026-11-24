@@ -1325,7 +1325,8 @@ class LiveDubStudio {
         sourceY = Math.floor(height * 0.70);
         sourceHeight = Math.max(1, Math.floor(height * 0.24));
       }
-      const scale = Math.min(1, 960 / width);
+      // Giữ nguyên độ phân giải gốc 1:1 (lên tới 1080p/1920px) để không làm mờ hoặc mất các dấu phụ nhỏ
+      const scale = Math.min(1, 1920 / width);
       const probeCanvas = document.createElement('canvas');
       probeCanvas.width = Math.max(1, Math.round(sourceWidth * scale));
       probeCanvas.height = Math.max(1, Math.round(sourceHeight * scale));
@@ -1440,7 +1441,8 @@ class LiveDubStudio {
         sourceY = Math.floor(height * 0.62);
         sourceHeight = Math.max(1, Math.floor(height * 0.36));
       }
-      const scale = Math.min(1, 960 / width);
+      // Giữ nguyên độ phân giải gốc 1:1 (lên tới 1080p/1920px) để không làm mờ hoặc mất các dấu phụ nhỏ
+      const scale = Math.min(1, 1920 / width);
       this.ocrCanvas.width = Math.max(1, Math.round(sourceWidth * scale));
       this.ocrCanvas.height = Math.max(1, Math.round(sourceHeight * scale));
       const context = this.ocrCanvas.getContext('2d', { alpha: false, willReadFrequently: true });
