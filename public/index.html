@@ -15,7 +15,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="LiveSub">
   <link rel="icon" href="icon.svg">
-  <link rel="stylesheet" href="style.css?v=20261123_v25">
+  <link rel="stylesheet" href="style.css?v=20261124_v3">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Roboto+Condensed:ital,wght@0,600;0,700;0,800;0,900;1,700&family=Oswald:wght@600;700&family=Young+Serif&display=swap" rel="stylesheet">
@@ -229,31 +229,32 @@
     </div>
 
     <!-- NGUỒN 3: LINK YOUTUBE / WEB -->
-    <div id="panelSourceWebUrl" class="source-panel-block" style="display: none; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 14px; padding: 16px; max-width: 620px; margin: 0 auto; width: 100%;">
-      <div style="margin-bottom: 12px;">
-        <h3 style="font-size: 1.15rem; margin-bottom: 4px;">🌐 Xem Video YouTube & Lồng Tiếng Realtime</h3>
-        <p style="font-size: 0.85rem; color: var(--text-dim);">Dán URL video YouTube để tự động đồng bộ phụ đề gốc và giọng đọc tiếng Việt</p>
+    <div id="panelSourceWebUrl" class="source-panel-block" style="display: none; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 14px; padding: 14px; max-width: 580px; margin: 0 auto; width: 100%;">
+      <div style="margin-bottom: 10px;">
+        <h3 style="font-size: 1.1rem; margin-bottom: 4px;">🌐 Xem Video YouTube & Lồng Tiếng Realtime</h3>
+        <p style="font-size: 0.82rem; color: var(--text-dim);">Dán link YouTube (VD: MrBeast, Tin tức...) để tự động dịch và đọc lồng tiếng</p>
       </div>
       <div style="display: flex; gap: 8px;">
-        <input type="url" id="webUrlInput" class="form-control" placeholder="https://www.youtube.com/watch?v=..." style="flex: 1; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-main);">
-        <button id="btnLoadWebUrl" class="btn btn-primary" type="button" style="white-space: nowrap; padding: 10px 20px;">▶️ Nạp Video</button>
+        <input type="url" id="webUrlInput" class="form-control" placeholder="https://www.youtube.com/watch?v=..." style="flex: 1; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-main); font-size: 0.9rem;">
+        <button id="btnLoadWebUrl" class="btn btn-primary" type="button" style="white-space: nowrap; padding: 9px 18px; font-weight: 600;">▶️ Nạp Video</button>
       </div>
-      <div id="webVideoContainer" class="web-video-wrapper" style="display: none; margin-top: 14px; position: relative;">
-        <div class="video-element-container">
-          <div id="webVideoPlayer" class="iframe-element-container"></div>
+      <div id="webVideoContainer" class="web-video-wrapper" style="display: none; margin-top: 10px; position: relative;">
+        <!-- Thanh điều khiển và nút đóng đặt lên TRÊN CÙNG để luôn nhìn thấy và thao tác được -->
+        <div class="video-top-bar" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; margin-bottom: 6px; background: rgba(0, 0, 0, 0.4); border-radius: 6px;">
+          <span id="webVideoTitle" style="font-weight: 600; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%;">YouTube Video</span>
+          <div style="display: flex; gap: 6px;">
+            <button id="btnFullscreenWebVideo" class="btn btn-sm btn-secondary" type="button" style="padding: 3px 8px; font-size: 0.78rem;"><span id="btnFullscreenWebVideoText">⛶ Phóng To</span></button>
+            <button id="btnCloseWebVideo" class="btn btn-sm" type="button" style="background: rgba(239, 68, 68, 0.25); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.5); font-weight: 600; padding: 3px 10px; font-size: 0.78rem; cursor: pointer; border-radius: 4px;">✕ Đóng Video</button>
+          </div>
+        </div>
+        <div class="video-element-container" style="position: relative; width: 100%; height: 240px; max-height: 240px; background: #000; border-radius: 8px; overflow: hidden;">
+          <div id="webVideoPlayer" class="iframe-element-container" style="width: 100%; height: 100%;"></div>
           <div class="invideo-subtitle-overlay">
             <div id="invideoWebSubSource" class="invideo-sub-source" style="display: none;"></div>
             <div id="invideoWebSubVi" class="invideo-sub-vi" style="display: none;"></div>
           </div>
         </div>
-        <div class="video-top-bar" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; margin-top: 4px;">
-          <span id="webVideoTitle" style="font-weight: 600; font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 65%;"></span>
-          <div style="display: flex; gap: 8px;">
-            <button id="btnFullscreenWebVideo" class="btn btn-sm btn-secondary" type="button"><span id="btnFullscreenWebVideoText">⛶ Toàn Màn Hình</span></button>
-            <button id="btnCloseWebVideo" class="btn btn-sm btn-secondary" type="button">✕ Đóng Video</button>
-          </div>
-        </div>
-        <div id="webSyncNotice" class="web-sync-notice" style="margin-top: 4px; font-size: 0.85rem; color: var(--text-dim);"></div>
+        <div id="webSyncNotice" class="web-sync-notice" style="margin-top: 6px; font-size: 0.82rem; color: var(--text-dim); text-align: center;"></div>
       </div>
       <form id="webVideoForm" style="display: none;">
         <button id="btnWebLiveCapture" type="button">Bắt âm thanh</button>
@@ -386,6 +387,6 @@
 
   <script src="/vendor/ort/ort.min.js?v=1.31.1"></script>
   <script src="/vendor/vad/bundle.min.js?v=0.0.31"></script>
-  <script src="app.js?v=20261123_v25"></script>
+  <script src="app.js?v=20261124_v3"></script>
 </body>
 </html>

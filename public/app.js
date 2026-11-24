@@ -659,6 +659,8 @@ class LiveDubStudio {
         }
         if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = '';
         if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = '';
+        const playerContainer = document.getElementById('webVideoPlayer');
+        if (playerContainer) playerContainer.innerHTML = '';
         this.webVideoContainer.style.display = 'none';
         this.stopAllAudio();
       });
@@ -2142,6 +2144,9 @@ class LiveDubStudio {
       this.ytSyncInterval = null;
     }
 
+    const playerContainer = document.getElementById('webVideoPlayer');
+    if (!playerContainer) return;
+
     const onPlayerReady = () => {
       this.startXTSync();
       this.prefetchUpcomingAudio(0);
@@ -2161,29 +2166,29 @@ class LiveDubStudio {
       }
     };
 
-    if (window.YT && window.YT.Player) {
-      if (this.ytPlayer && typeof this.ytPlayer.loadVideoById === 'function') {
-        this.ytPlayer.loadVideoById(videoId);
-      } else {
-        document.getElementById('webVideoPlayer').innerHTML = '';
-        this.ytPlayer = new window.YT.Player('webVideoPlayer', {
-          height: '100%',
-          width: '100%',
-          videoId: videoId,
-          playerVars: {
-            autoplay: 1,
-            enablejsapi: 1,
-            modestbranding: 1,
-            rel: 0
-          },
-          events: {
-            onReady: onPlayerReady,
-            onStateChange: onPlayerStateChange
-          }
-        });
+    // 100% reliable direct responsive YouTube Embed Iframe (never empty black screen)
+    const embedUrl = `https://www.youtube.com/embed/${videoId}?enablejsapi=1&autoplay=1&rel=0&modestbranding=1`;
+    playerContainer.innerHTML = `<iframe id="ytIframeEl" src="${embedUrl}" width="100%" height="100%" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen style="width:100%; height:100%; border:none; border-radius:8px;"></iframe>`;
+
+    const attachYT = () => {
+      if (window.YT && window.YT.Player) {
+        try {
+          this.ytPlayer = new window.YT.Player('ytIframeEl', {
+            events: {
+              onReady: onPlayerReady,
+              onStateChange: onPlayerStateChange
+            }
+          });
+        } catch (e) {
+          console.warn('YT.Player attach warning:', e);
+        }
       }
+    };
+
+    if (window.YT && window.YT.Player) {
+      setTimeout(attachYT, 120);
     } else {
-      setTimeout(() => this.initOrUpdateYouTubePlayer(videoId), 400);
+      window.onYouTubeIframeAPIReady = attachYT;
     }
   }
 
