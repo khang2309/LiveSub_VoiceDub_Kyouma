@@ -25,6 +25,7 @@ pub fn run() {
         .on_window_event(|_window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed = event {
                 kill_background_services();
+                std::process::exit(0);
             }
         })
         .setup(|app| {
@@ -50,6 +51,7 @@ pub fn run() {
     app.run(|_app_handle, event| {
         if let tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit = event {
             kill_background_services();
+            std::process::exit(0);
         }
     });
 }

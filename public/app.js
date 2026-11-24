@@ -2087,14 +2087,14 @@ class LiveDubStudio {
           this.syncRemainingYouTubeSubtitles(val, videoId, loadGeneration);
         }
       } else {
-        this.webSyncNotice.innerHTML = `ℹ️ ${data.error || 'Video không có phụ đề sẵn'}. Hãy bấm nút <strong>" Bắt Âm Thanh Tab"</strong> để Whisper GPU nghe và dịch trực tiếp!`;
-        this.setSourceIntelligenceState('error', 'Không có track phù hợp', 'Chọn “Tự động” để thử track khác, hoặc chọn “Video chỉ có tiếng” và dùng Whisper.');
+        this.webSyncNotice.innerHTML = `ℹ️ ${data.error || 'Video không có phụ đề sẵn'}. Bạn hãy chọn nguồn <strong>"Màn hình / Tab Phim"</strong> để LiveSub quét phụ đề OCR trực tiếp trên video!`;
+        this.setSourceIntelligenceState('error', 'Không có track phù hợp', 'Hãy chuyển sang nguồn "Màn hình / Tab Phim" để quét OCR trực tiếp.');
       }
     } catch (e) {
       if (e.name === 'AbortError' || loadGeneration !== this.youtubeLoadGeneration) return;
       console.warn('Subtitles fetch error:', e);
-      this.webSyncNotice.innerHTML = 'ℹ️ Bấm nút " Bắt Âm Thanh Tab" để Whisper GPU nghe và dịch trực tiếp!';
-      this.setSourceIntelligenceState('error', 'Không tải được CC', 'Kiểm tra mạng rồi thử lại, hoặc chuyển sang chế độ chỉ có tiếng (Whisper).');
+      this.webSyncNotice.innerHTML = 'ℹ️ Hãy chọn nguồn "Màn hình / Tab Phim" để LiveSub quét phụ đề OCR trực tiếp trên video!';
+      this.setSourceIntelligenceState('error', 'Không tải được CC', 'Kiểm tra mạng rồi thử lại, hoặc dùng nguồn "Màn hình / Tab Phim" để OCR trực tiếp.');
     }
 
     // 2. Initialize YouTube Player
