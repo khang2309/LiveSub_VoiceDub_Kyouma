@@ -21,15 +21,25 @@ pub fn ensure_whisper_cuda_server(
         return None;
     }
 
-    println!("🚀 Launching Whisper CUDA GPU Server (NVIDIA GeForce RTX 3050)...");
-    match Command::new(exe_path)
-        .arg("-m")
+    println!("🚀 Launching Whisper CUDA GPU Server (Port {})...", port);
+    let mut cmd = Command::new(exe_path);
+    cmd.arg("-m")
         .arg(model_path)
         .arg("--port")
         .arg(port)
         .arg("--host")
         .arg(host)
-        .spawn()
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    match cmd.spawn()
     {
         Ok(child) => {
             for _ in 0..30 {
