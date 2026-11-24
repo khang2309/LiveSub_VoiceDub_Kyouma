@@ -647,20 +647,7 @@ class LiveDubStudio {
     }
     if (this.btnCloseWebVideo) {
       this.btnCloseWebVideo.addEventListener('click', () => {
-        this.youtubeLoadGeneration++;
-        if (this.youtubeSubtitleAbortController) {
-          this.youtubeSubtitleAbortController.abort();
-          this.youtubeSubtitleAbortController = null;
-        }
-        if (this.ytSyncInterval) {
-          clearInterval(this.ytSyncInterval);
-          this.ytSyncInterval = null;
-        }
-        if (this.ytPlayer && typeof this.ytPlayer.stopVideo === 'function') {
-          this.ytPlayer.stopVideo();
-        }
-        if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = '';
-        if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = '';
+        this.cleanupYouTubePlayback();
         const playerContainer = document.getElementById('webVideoPlayer');
         if (playerContainer) playerContainer.innerHTML = '';
         this.webVideoContainer.style.display = 'none';
@@ -896,7 +883,43 @@ class LiveDubStudio {
     }
   }
 
+  cleanupYouTubePlayback() {
+    this.youtubeLoadGeneration = (this.youtubeLoadGeneration || 0) + 1;
+    if (this.youtubeSubtitleAbortController) {
+      try { this.youtubeSubtitleAbortController.abort(); } catch (_) {}
+      this.youtubeSubtitleAbortController = null;
+    }
+    if (this.ytSyncRemainingTimer) {
+      clearTimeout(this.ytSyncRemainingTimer);
+      this.ytSyncRemainingTimer = null;
+    }
+    if (this.ytSyncInterval) {
+      clearInterval(this.ytSyncInterval);
+      this.ytSyncInterval = null;
+    }
+    if (this.ytPlayer && typeof this.ytPlayer.pauseVideo === 'function') {
+      try { this.ytPlayer.pauseVideo(); } catch (_) {}
+    }
+    if (this.isFetchingPreCache && typeof this.isFetchingPreCache.clear === 'function') {
+      this.isFetchingPreCache.clear();
+    }
+    if (this.audioPreCache && typeof this.audioPreCache.clear === 'function') {
+      this.audioPreCache.clear();
+    }
+    if (typeof this.stopDubbingAudio === 'function') {
+      this.stopDubbingAudio(false, false);
+    }
+    if (typeof this.releaseYouTubeDubbingHold === 'function') {
+      this.releaseYouTubeDubbingHold();
+    }
+    if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = '';
+    if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = '';
+  }
+
   switchSourceTab(source) {
+    if (this.activeSource === 'weburl' && source !== 'weburl') {
+      this.cleanupYouTubePlayback();
+    }
     this.activeSource = source;
     this.sourceTabs.forEach(t => {
       if (t.dataset.source === source) t.classList.add('active');
@@ -987,6 +1010,190 @@ class LiveDubStudio {
     if (this.isDubbingEnabled) {
       this.prefetchUpcomingAudio(Math.max(0, this.currentYtSegmentIdx));
     }
+  }
+
+  getVoiceProfile(voiceName = null) {
+    const rawVoice = voiceName || (this.voiceSelect ? this.voiceSelect.value : 'vieneu:Trúc Ly');
+    const v = String(rawVoice).toLowerCase();
+    
+    // Thái Sơn: Deep masculine Southern baritone voice
+    if (v.includes('thái sơn') || v.includes('thaison') || v.includes('namminh')) {
+      return {
+        id: 'thaison',
+        pitchFactor: 0.74,
+        eq: { type: 'lowshelf', frequency: 260, gain: 4.5 },
+        highCut: { frequency: 3600, gain: -2.5 }
+      };
+    }
+    // Thiện Minh: Warm masculine Northern narrator voice
+    if (v.includes('thiện minh') || v.includes('thienminh') || v.includes('adam')) {
+      return {
+        id: 'thienminh',
+        pitchFactor: 0.82,
+        eq: { type: 'lowshelf', frequency: 320, gain: 3.5 },
+        highCut: { frequency: 4500, gain: -1.0 }
+      };
+    }
+    // Thùy Dung: Sweet, melodic Southern female voice
+    if (v.includes('thùy dung') || v.includes('thuydung') || v.includes('hoaimy')) {
+      return {
+        id: 'thuydung',
+        pitchFactor: 1.12,
+        eq: { type: 'highshelf', frequency: 2800, gain: 3.0 },
+        highCut: null
+      };
+    }
+    // Trúc Ly: Standard natural Northern female voice
+    if (v.includes('trúc ly') || v.includes('trucly') || v.includes('mai anh')) {
+      return {
+        id: 'trucly',
+        pitchFactor: 1.0,
+        eq: null,
+        highCut: null
+      };
+    }
+    // Default / Google-vi
+    return {
+      id: 'default',
+      pitchFactor: 1.0,
+      eq: null,
+      highCut: null
+    };
+  }
+
+  pitchShiftWSOLA(input, sampleRate, pitchFactor) {
+    if (!input || input.length < 128 || Math.abs(pitchFactor - 1.0) < 0.02) return input;
+
+    const inLen = input.length;
+    // Step 1: Resample
+    const resampledLen = Math.round(inLen / pitchFactor);
+    if (resampledLen < 128) return input;
+    const resampled = new Float32Array(resampledLen);
+    for (let i = 0; i < resampledLen; i++) {
+      const srcPos = i * pitchFactor;
+      const idx0 = Math.floor(srcPos);
+      const frac = srcPos - idx0;
+      const s0 = input[idx0] || 0;
+      const s1 = input[idx0 + 1] !== undefined ? input[idx0 + 1] : s0;
+      resampled[i] = s0 + frac * (s1 - s0);
+    }
+
+    // Step 2: WSOLA overlap-add back to inLen
+    const windowSize = Math.max(128, Math.floor(sampleRate * 0.025)); // 25ms
+    const hopOut = Math.floor(windowSize / 2); // 12.5ms
+    const timeScale = inLen / resampledLen;
+    const searchRadius = Math.max(8, Math.floor(sampleRate * 0.003)); // 3ms correlation window
+
+    const output = new Float32Array(inLen);
+    const normWeights = new Float32Array(inLen);
+
+    const win = new Float32Array(windowSize);
+    for (let i = 0; i < windowSize; i++) {
+      win[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (windowSize - 1)));
+    }
+
+    let inOffset = 0;
+    let outOffset = 0;
+
+    while (outOffset + windowSize <= inLen && inOffset + windowSize + searchRadius <= resampledLen) {
+      let bestDelta = 0;
+      let maxCorr = -Infinity;
+      const centerIn = Math.floor(inOffset);
+
+      if (outOffset > 0) {
+        for (let delta = -searchRadius; delta <= searchRadius; delta++) {
+          const candidateIn = centerIn + delta;
+          if (candidateIn < 0 || candidateIn + hopOut >= resampledLen) continue;
+          let corr = 0;
+          for (let k = 0; k < hopOut; k += 2) {
+            corr += output[outOffset + k] * resampled[candidateIn + k];
+          }
+          if (corr > maxCorr) {
+            maxCorr = corr;
+            bestDelta = delta;
+          }
+        }
+      }
+
+      const matchedIn = centerIn + bestDelta;
+      for (let i = 0; i < windowSize; i++) {
+        const s = resampled[matchedIn + i] * win[i];
+        output[outOffset + i] += s;
+        normWeights[outOffset + i] += win[i];
+      }
+
+      outOffset += hopOut;
+      inOffset += hopOut / timeScale;
+    }
+
+    // Copy trailing samples if any
+    while (outOffset < inLen && inOffset < resampledLen) {
+      output[outOffset] = resampled[Math.floor(inOffset)] || 0;
+      normWeights[outOffset] = 1.0;
+      outOffset++;
+      inOffset += 1.0 / timeScale;
+    }
+
+    // Normalize overlapping window weights
+    for (let i = 0; i < inLen; i++) {
+      if (normWeights[i] > 1e-3) {
+        output[i] /= normWeights[i];
+      }
+    }
+
+    return output;
+  }
+
+  applyVoiceCharacteristics(audioBuffer, voiceName = null) {
+    if (!audioBuffer || !this.audioContext || typeof this.audioContext.createBuffer !== 'function') return audioBuffer;
+    const profile = this.getVoiceProfile(voiceName);
+    if (Math.abs(profile.pitchFactor - 1.0) < 0.02) return audioBuffer;
+
+    try {
+      const sampleRate = audioBuffer.sampleRate;
+      const numChannels = audioBuffer.numberOfChannels;
+      const length = audioBuffer.length;
+      const newBuffer = this.audioContext.createBuffer(numChannels, length, sampleRate);
+
+      for (let ch = 0; ch < numChannels; ch++) {
+        const inputData = audioBuffer.getChannelData(ch);
+        const outputData = newBuffer.getChannelData(ch);
+        const shifted = this.pitchShiftWSOLA(inputData, sampleRate, profile.pitchFactor);
+        outputData.set(shifted.subarray(0, length));
+      }
+      return newBuffer;
+    } catch (e) {
+      console.warn('applyVoiceCharacteristics error:', e);
+      return audioBuffer;
+    }
+  }
+
+  createVoiceNodes(voiceName = null) {
+    if (!this.audioContext || typeof this.audioContext.createBiquadFilter !== 'function' || this.audioContext.state === 'closed') return [];
+    const profile = this.getVoiceProfile(voiceName);
+    const nodes = [];
+
+    if (profile.eq) {
+      try {
+        const filter = this.audioContext.createBiquadFilter();
+        filter.type = profile.eq.type;
+        filter.frequency.value = profile.eq.frequency;
+        filter.gain.value = profile.eq.gain;
+        nodes.push(filter);
+      } catch (_) {}
+    }
+
+    if (profile.highCut) {
+      try {
+        const cut = this.audioContext.createBiquadFilter();
+        cut.type = 'highshelf';
+        cut.frequency.value = profile.highCut.frequency;
+        cut.gain.value = profile.highCut.gain;
+        nodes.push(cut);
+      } catch (_) {}
+    }
+
+    return nodes;
   }
 
   // Audition sample in the exact selected voice
@@ -1156,6 +1363,7 @@ class LiveDubStudio {
       return;
     }
 
+    this.cleanupYouTubePlayback();
     this.ensureAudioUnlocked();
     const AudioCtx = typeof window !== 'undefined' ? (window.AudioContext || window.webkitAudioContext) : null;
     if (AudioCtx) {
@@ -2114,7 +2322,7 @@ class LiveDubStudio {
     this.youtubeSubtitleAbortController = new AbortController();
 
     this.webVideoContainer.style.display = 'block';
-    this.webSyncNotice.className = 'web-sync-notice show';
+    if (this.webSyncNotice) this.webSyncNotice.style.display = 'none';
     const subtitleRequest = this.buildYouTubeSubtitleRequest(val);
     if (subtitleRequest.caption_mode === 'audio_only') {
       this.webSyncNotice.innerHTML = ' <strong>Chế độ chỉ có tiếng:</strong> Phát video, sau đó bấm “Bắt Âm Thanh Tab” và chọn đúng tab có video.';
@@ -2132,7 +2340,7 @@ class LiveDubStudio {
       this.initOrUpdateYouTubePlayer(videoId);
       return;
     }
-    this.webSyncNotice.innerHTML = '⏳ Đang kiểm tra track phụ đề và chuẩn bị bản dịch...';
+    if (this.webSyncNotice) this.webSyncNotice.style.display = 'none';
     this.setSourceIntelligenceState('loading', 'Đang dò CC', 'Đang đọc danh sách track phụ đề của video...');
 
     // 1. Fetch YouTube Subtitles from Backend
@@ -2151,7 +2359,10 @@ class LiveDubStudio {
       if (data.success && data.segments && data.segments.length > 0) {
         this.ytSegments = data.segments;
         if (data.title) this.webVideoTitle.textContent = data.title;
-        this.webSyncNotice.innerHTML = ` <strong>Đã nạp ${data.segments.length} câu thoại theo timestamp phụ đề.</strong> Hãy bấm ▶️ Play để bắt đầu thuyết minh đồng bộ.`;
+        if (this.webSyncNotice) {
+          this.webSyncNotice.innerHTML = '';
+          this.webSyncNotice.style.display = 'none';
+        }
         const languageNames = { vi: 'Tiếng Việt', en: 'English', ja: '日本語', ko: '한국어', zh: '中文' };
         const languageLabel = languageNames[data.caption_language] || (data.caption_language || 'Tiếng gốc').toUpperCase();
         const sourceLabel = data.caption_source === 'manual' ? 'CC thủ công' : 'CC tự động';
@@ -2519,6 +2730,13 @@ class LiveDubStudio {
         await this.audioContext.resume().catch(() => {});
       }
 
+      const voice = this.getEffectiveVoice();
+      const profile = this.getVoiceProfile(voice);
+      if (audioBuffer && audioBuffer._livesubVoice !== profile.id) {
+        audioBuffer = this.applyVoiceCharacteristics(audioBuffer, voice);
+        audioBuffer._livesubVoice = profile.id;
+      }
+
       const sourceNode = this.audioContext.createBufferSource();
       sourceNode.buffer = audioBuffer;
 
@@ -2535,7 +2753,15 @@ class LiveDubStudio {
       const gainNode = this.audioContext.createGain();
       gainNode.gain.value = (parseInt(this.volumeRange.value, 10) || 100) / 100;
 
-      sourceNode.connect(gainNode);
+      const voiceNodes = this.createVoiceNodes(voice);
+      let lastNode = sourceNode;
+      if (voiceNodes && voiceNodes.length) {
+        for (const vn of voiceNodes) {
+          lastNode.connect(vn);
+          lastNode = vn;
+        }
+      }
+      lastNode.connect(gainNode);
       gainNode.connect(this.audioContext.destination);
 
       this.currentActiveAudioSource = sourceNode;
@@ -2602,7 +2828,12 @@ class LiveDubStudio {
         const bytes = new Uint8Array(binary.length);
         for (let b = 0; b < binary.length; b++) bytes[b] = binary.charCodeAt(b);
         try {
-          const decoded = await this.audioContext.decodeAudioData(bytes.buffer.slice(0));
+          let decoded = await this.audioContext.decodeAudioData(bytes.buffer.slice(0));
+          const profile = this.getVoiceProfile(voice);
+          if (decoded && decoded._livesubVoice !== profile.id) {
+            decoded = this.applyVoiceCharacteristics(decoded, voice);
+            decoded._livesubVoice = profile.id;
+          }
           this.audioPreCache.set(entry.index, {
             buffer: decoded,
             translated: entry.segment.translated,
@@ -3312,7 +3543,14 @@ class LiveDubStudio {
         await this.audioContext.resume().catch(() => {});
       }
 
-      const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer.slice(0));
+      let audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer.slice(0));
+      const voice = this.getEffectiveVoice();
+      const profile = this.getVoiceProfile(voice);
+      if (audioBuffer && audioBuffer._livesubVoice !== profile.id) {
+        audioBuffer = this.applyVoiceCharacteristics(audioBuffer, voice);
+        audioBuffer._livesubVoice = profile.id;
+      }
+
       const sourceNode = this.audioContext.createBufferSource();
       sourceNode.buffer = audioBuffer;
       sourceNode.playbackRate.value = this.getSafeStreamingPlaybackRate(queueDepth, 2.0, originalDuration, textLength, queueLagMs);
@@ -3320,7 +3558,15 @@ class LiveDubStudio {
       const gainNode = this.audioContext.createGain();
       gainNode.gain.value = (parseInt(this.volumeRange.value, 10) || 100) / 100;
 
-      sourceNode.connect(gainNode);
+      const voiceNodes = this.createVoiceNodes(voice);
+      let lastNode = sourceNode;
+      if (voiceNodes && voiceNodes.length) {
+        for (const vn of voiceNodes) {
+          lastNode.connect(vn);
+          lastNode = vn;
+        }
+      }
+      lastNode.connect(gainNode);
       gainNode.connect(this.audioContext.destination);
 
       this.currentActiveAudioSource = sourceNode;
@@ -4101,12 +4347,7 @@ class LiveDubStudio {
 
   async playHistoryAudio(id) {
     const item = this.history.find(h => h.id === id);
-    if (!item) return;
-    if (item.audioBlobUrl) {
-      const a = new Audio(item.audioBlobUrl);
-      a.play();
-      return;
-    }
+    if (!item || !item.viText) return;
     try {
       const voice = this.getEffectiveVoice();
       const res = await fetch('/api/tts', {
@@ -4115,10 +4356,8 @@ class LiveDubStudio {
         body: JSON.stringify({ text: item.viText, voice })
       });
       if (res.ok) {
-        const blob = await res.blob();
-        item.audioBlobUrl = URL.createObjectURL(blob);
-        const a = new Audio(item.audioBlobUrl);
-        a.play();
+        const arrayBuf = await res.arrayBuffer();
+        await this.playAudioBuffer(arrayBuf);
       }
     } catch (e) {
       console.warn('Replay audio error:', e);

@@ -452,7 +452,7 @@ pub async fn api_youtube_subtitles_sync(
         if let Some(cached_segs) = cache.get(&video_id) {
             total = cached_segs.len();
             if from_idx < total {
-                let to_idx = (from_idx + 25).min(total);
+                let to_idx = (from_idx + 6).min(total);
                 segments_to_translate = cached_segs[from_idx..to_idx].to_vec();
                 done = to_idx >= total;
             }
@@ -469,11 +469,14 @@ pub async fn api_youtube_subtitles_sync(
         }));
     }
 
-    // Translate batch in parallel using JoinSet
+    // Translate batch with throttled concurrency (max 2 parallel) to prevent Google IP rate limiting
+    let sem = Arc::new(tokio::sync::Semaphore::new(2));
     let mut set = tokio::task::JoinSet::new();
     for (i, mut seg) in segments_to_translate.into_iter().enumerate() {
         let state_clone = state.clone();
+        let sem_clone = sem.clone();
         set.spawn(async move {
+            let _permit = sem_clone.acquire().await;
             if seg.translated.is_empty() || seg.translated == seg.original {
                 seg.translated = fetch_online_translation(&state_clone, &seg.original, "auto").await;
             }

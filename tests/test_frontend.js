@@ -1010,6 +1010,87 @@ test('handleOCRSubtitle ignores musical notes and OST songs', () => {
   assert.ok(displayed.trans.includes('Nhạc nền / OST'), 'Should mark as OST/Music');
 });
 
+test('cleanupYouTubePlayback stops background polling, sync timers, and clears pre-cache', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.youtubeLoadGeneration = 1;
+  let abortCalled = false;
+  app.youtubeSubtitleAbortController = { abort: () => { abortCalled = true; } };
+  app.ytSyncRemainingTimer = 999;
+  app.ytSyncInterval = 888;
+  let paused = false;
+  app.ytPlayer = { pauseVideo: () => { paused = true; } };
+  app.isFetchingPreCache = new Set([1, 2]);
+  app.audioPreCache = new Map([[1, 'audio']]);
+  let stoppedAudio = false;
+  app.stopDubbingAudio = () => { stoppedAudio = true; };
+  app.releaseYouTubeDubbingHold = () => {};
+  app.invideoWebSubVi = el();
+  app.invideoWebSubSource = el();
+
+  app.cleanupYouTubePlayback();
+
+  assert.equal(app.youtubeLoadGeneration, 2);
+  assert.equal(abortCalled, true);
+  assert.equal(app.ytSyncRemainingTimer, null);
+  assert.equal(app.ytSyncInterval, null);
+  assert.equal(paused, true);
+  assert.equal(app.isFetchingPreCache.size, 0);
+  assert.equal(app.audioPreCache.size, 0);
+  assert.equal(stoppedAudio, true);
+});
+
+test('switchSourceTab from weburl to system stops YouTube playback and background sync', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  app.activeSource = 'weburl';
+  let cleaned = false;
+  app.cleanupYouTubePlayback = () => { cleaned = true; };
+  app.sourceTabs = [];
+  app.updateAppliedSettings = () => {};
+
+  app.switchSourceTab('system');
+
+  assert.equal(app.activeSource, 'system');
+  assert.equal(cleaned, true, 'cleanupYouTubePlayback must be called when switching away from weburl');
+});
+
+test('voice profiles map distinct pitch factors and formant EQs', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  
+  const thaiSon = app.getVoiceProfile('vieneu:Thái Sơn');
+  assert.equal(thaiSon.id, 'thaison');
+  assert.equal(thaiSon.pitchFactor, 0.74);
+  assert.equal(thaiSon.eq.type, 'lowshelf');
+
+  const thienMinh = app.getVoiceProfile('vieneu:Thiện Minh');
+  assert.equal(thienMinh.id, 'thienminh');
+  assert.equal(thienMinh.pitchFactor, 0.82);
+
+  const thuyDung = app.getVoiceProfile('vieneu:Thùy Dung');
+  assert.equal(thuyDung.id, 'thuydung');
+  assert.equal(thuyDung.pitchFactor, 1.12);
+  assert.equal(thuyDung.eq.type, 'highshelf');
+
+  const trucLy = app.getVoiceProfile('vieneu:Trúc Ly');
+  assert.equal(trucLy.id, 'trucly');
+  assert.equal(trucLy.pitchFactor, 1.0);
+
+  const googleVi = app.getVoiceProfile('google-vi');
+  assert.equal(googleVi.pitchFactor, 1.0);
+});
+
+test('pitchShiftWSOLA preserves buffer length and processes audio cleanly', () => {
+  const app = Object.create(LiveDubStudio.prototype);
+  const sampleRate = 24000;
+  const input = new Float32Array(sampleRate * 1); // 1 second
+  for (let i = 0; i < input.length; i++) {
+    input[i] = Math.sin(2 * Math.PI * 220 * (i / sampleRate));
+  }
+
+  const shifted = app.pitchShiftWSOLA(input, sampleRate, 0.74);
+  assert.equal(shifted.length, input.length);
+  assert.ok(!Number.isNaN(shifted[100]));
+});
+
 
 
 

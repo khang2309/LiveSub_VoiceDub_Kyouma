@@ -27,6 +27,4 @@ urlencoding = "2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 pure-onnx-ocr = "0.3.2"
 base64 = "0.22"
-tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
-futures-util = "0.3"
 
