@@ -126,7 +126,7 @@ fn parse_transcript_xml(xml: &str) -> Vec<SubtitleSegment> {
                 segments.push(SubtitleSegment {
                     index: segments.len(),
                     start,
-                    end: (start + duration * 1000.0).round() / 1000.0,
+                    end: ((start + duration) * 1000.0).round() / 1000.0,
                     duration,
                     original: cleaned.clone(),
                     translated: cleaned,
@@ -147,7 +147,7 @@ fn parse_transcript_xml(xml: &str) -> Vec<SubtitleSegment> {
                     segments.push(SubtitleSegment {
                         index: segments.len(),
                         start,
-                        end: (start + dur * 1000.0).round() / 1000.0,
+                        end: ((start + dur) * 1000.0).round() / 1000.0,
                         duration: dur,
                         original: cleaned.clone(),
                         translated: cleaned,
@@ -163,7 +163,7 @@ fn parse_transcript_xml(xml: &str) -> Vec<SubtitleSegment> {
         if let Some(last) = deduped.last_mut() {
             if last.original == seg.original && (seg.start - last.start).abs() < 0.3 {
                 last.end = last.end.max(seg.end);
-                last.duration = last.end - last.start;
+                last.duration = ((last.end - last.start) * 1000.0).round() / 1000.0;
                 continue;
             }
         }
@@ -385,6 +385,9 @@ pub async fn api_youtube_subtitles(
             let orig = segments[i].original.clone();
             let trans = fetch_online_translation(&state, &orig, &lang_code).await;
             segments[i].translated = trans;
+        }
+        for i in initial_count..total {
+            segments[i].translated = String::new();
         }
     }
 

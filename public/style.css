@@ -995,8 +995,9 @@ select:focus-visible {
   border-radius: 12px;
   border: 1px solid var(--border-color);
   overflow: hidden;
-  max-width: 560px;
-  margin: 10px auto 0;
+  max-width: 100%;
+  width: 100%;
+  margin: 0;
 }
 
 .web-video-wrapper {
@@ -1004,9 +1005,9 @@ select:focus-visible {
   border-radius: 12px;
   border: 1px solid var(--border-color);
   overflow: hidden;
-  max-width: 440px;
+  max-width: 100%;
   width: 100%;
-  margin: 10px auto 0;
+  margin: 0;
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
 }
 
@@ -1024,8 +1025,10 @@ select:focus-visible {
 .video-element-container {
   position: relative;
   width: 100%;
-  height: 240px;
-  max-height: 240px;
+  aspect-ratio: 16 / 9;
+  height: auto;
+  min-height: 200px;
+  max-height: 380px;
   background: var(--color-black-video);
   display: flex;
   justify-content: center;
@@ -1036,15 +1039,17 @@ select:focus-visible {
 .video-element-container video {
   width: 100%;
   height: 100%;
-  max-height: 240px;
+  aspect-ratio: 16 / 9;
+  max-height: 380px;
   object-fit: contain;
 }
 
 .iframe-element-container, #webVideoPlayer {
   width: 100%;
-  height: 240px;
-  max-width: 440px;
-  max-height: 240px;
+  height: 100%;
+  aspect-ratio: 16 / 9;
+  max-width: 100%;
+  max-height: 380px;
 }
 
 .iframe-element-container iframe, #webVideoPlayer iframe {
@@ -2155,18 +2160,47 @@ html, body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   grid-template-rows: minmax(0, 1fr);
-  gap: 8px;
+  gap: 12px;
   flex: 1;
   height: 100%;
   min-height: 0;
   overflow: hidden;
 }
 
-@media (max-width: 460px) {
+@media (max-width: 768px) {
   .main-content-streamlined {
     grid-template-columns: 1fr;
-    grid-template-rows: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto auto;
+    overflow-y: auto;
   }
+}
+
+.video-workspace-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.subtitles-workspace-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.subtitles-workspace-column .cinema-panel {
+  flex: 1.1;
+  min-height: 160px;
+}
+
+.subtitles-workspace-column .history-panel {
+  flex: 0.9;
+  min-height: 160px;
 }
 
 .cinema-panel, .history-panel {

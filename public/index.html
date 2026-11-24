@@ -15,7 +15,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="LiveSub">
   <link rel="icon" href="icon.svg">
-  <link rel="stylesheet" href="style.css?v=20261124_v3">
+  <link rel="stylesheet" href="style.css?v=20261124_v5">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Roboto+Condensed:ital,wght@0,600;0,700;0,800;0,900;1,700&family=Oswald:wght@600;700&family=Young+Serif&display=swap" rel="stylesheet">
@@ -159,164 +159,170 @@
       </div>
     </div>
 
-    <!-- NGUỒN 1: MÀN HÌNH / TAB PHIM -->
-    <div id="panelSourceSystem" style="display: flex; flex-direction: column; width: 100%; gap: 10px;">
-      <div class="control-row-bottom" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px 16px; flex-wrap: wrap;">
-        <button id="btnToggleSystemAudio" class="btn-hero-action" type="button" style="flex: 1; min-width: 280px;">
-          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <polygon points="5 3 19 12 5 21 5 3"/>
-          </svg>
-          <span id="btnSystemAudioText">BẮT ĐẦU ĐỌC & LỒNG TIẾNG SUB</span>
-        </button>
-
-        <div class="control-cell">
-          <span class="control-label sr-only">Chế độ video:</span>
-          <div class="mode-toggle-group">
-            <button type="button" id="btnModeSub" class="btn-mode active" title="Dành cho Anime, Phim có phụ đề chữ in trên video">
-              📷 Đọc Sub OCR
-            </button>
-            <button type="button" id="btnModeAudio" class="btn-mode" title="Dành cho video không có sub: YouTube, Livestream">
-              🎙️ Nghe Whisper
-            </button>
-            <button type="button" id="btnModeHybrid" class="btn-mode" title="Tự động nhận diện: Ưu tiên đọc phụ đề trên màn hình, kết hợp nghe Whisper">
-              ⚡ Tự Động Hybrid
-            </button>
-          </div>
-        </div>
-
-        <div class="control-cell-zone" id="cellOcrZone" title="Chọn vùng quét phụ đề trên khung hình chia sẻ">
-          <label for="ocrZoneSelect" class="control-label sr-only">Vùng Quét Sub:</label>
-          <select id="ocrZoneSelect" class="form-control form-control-compact select-zone">
-            <option value="bottom" selected>📐 1/3 Đáy (Phim)</option>
-            <option value="split">📺 Nửa Dưới (50%)</option>
-            <option value="full">🖥️ Toàn Màn Hình</option>
-          </select>
-        </div>
-
-        <div id="oneTouchDetectionPill" class="one-touch-status-pill">
-          📷 Đang đọc sub OCR (~150ms)
-        </div>
-      </div>
-    </div>
-
-    <!-- NGUỒN 2: FILE VIDEO CỤC BỘ -->
-    <div id="panelSourceLocalFile" class="source-panel-block" style="display: none; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 14px; padding: 20px;">
-      <div style="margin-bottom: 12px;">
-        <h3 style="font-size: 1.15rem; margin-bottom: 4px;">📁 Nạp Video từ máy tính (MP4, MKV, WebM, AVI)</h3>
-        <p style="font-size: 0.85rem; color: var(--text-dim);">Chọn file video để phát trực tiếp và tự động nhận diện phụ đề / lồng tiếng realtime</p>
-      </div>
-      <div id="localVideoDropZone" style="border: 2px dashed var(--border-color); border-radius: 12px; padding: 28px; text-align: center; cursor: pointer; background: var(--bg-primary); transition: border-color 0.2s;">
-        <p style="font-size: 1.1rem; margin-bottom: 6px;">📂 <strong>Kéo thả file video vào đây</strong> hoặc bấm để chọn file</p>
-        <span style="font-size: 0.82rem; color: var(--text-dim);">Hỗ trợ MP4, MKV, WebM, AVI</span>
-      </div>
-      <input type="file" id="localVideoFileInput" accept="video/*" style="display: none;">
-      <div id="localVideoFileInfo" style="display: none; align-items: center; justify-content: space-between; padding: 10px 16px; background: var(--bg-primary); border-radius: 8px; border: 1px solid var(--border-color); margin-top: 10px;">
-        <span id="loadedFileName" style="font-weight: 600;"></span>
-        <button id="btnStartLocalDubbing" class="btn btn-primary btn-sm" type="button">▶️ Bắt Đầu Thuyết Minh</button>
-      </div>
-      <div id="localVideoContainer" class="local-video-wrapper" style="display: none; margin-top: 14px; position: relative;">
-        <div class="video-element-container">
-          <video id="localVideoPlayer" controls playsinline style="width: 100%; max-height: 480px; border-radius: 12px; background: #000;"></video>
-          <div class="invideo-subtitle-overlay">
-            <div id="invideoSubSource" class="invideo-sub-source" style="display: none;"></div>
-            <div id="invideoSubVi" class="invideo-sub-vi" style="display: none;"></div>
-          </div>
-        </div>
-        <div style="display: flex; justify-content: flex-end; margin-top: 8px;">
-          <button id="btnCloseLocalVideo" class="btn btn-sm btn-secondary" type="button">✕ Đóng Video</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- NGUỒN 3: LINK YOUTUBE / WEB -->
-    <div id="panelSourceWebUrl" class="source-panel-block" style="display: none; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 14px; padding: 14px; max-width: 580px; margin: 0 auto; width: 100%;">
-      <div style="margin-bottom: 10px;">
-        <h3 style="font-size: 1.1rem; margin-bottom: 4px;">🌐 Xem Video YouTube & Lồng Tiếng Realtime</h3>
-        <p style="font-size: 0.82rem; color: var(--text-dim);">Dán link YouTube (VD: MrBeast, Tin tức...) để tự động dịch và đọc lồng tiếng</p>
-      </div>
-      <div style="display: flex; gap: 8px;">
-        <input type="url" id="webUrlInput" class="form-control" placeholder="https://www.youtube.com/watch?v=..." style="flex: 1; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-main); font-size: 0.9rem;">
-        <button id="btnLoadWebUrl" class="btn btn-primary" type="button" style="white-space: nowrap; padding: 9px 18px; font-weight: 600;">▶️ Nạp Video</button>
-      </div>
-      <div id="webVideoContainer" class="web-video-wrapper" style="display: none; margin-top: 10px; position: relative;">
-        <!-- Thanh điều khiển và nút đóng đặt lên TRÊN CÙNG để luôn nhìn thấy và thao tác được -->
-        <div class="video-top-bar" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; margin-bottom: 6px; background: rgba(0, 0, 0, 0.4); border-radius: 6px;">
-          <span id="webVideoTitle" style="font-weight: 600; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%;">YouTube Video</span>
-          <div style="display: flex; gap: 6px;">
-            <button id="btnFullscreenWebVideo" class="btn btn-sm btn-secondary" type="button" style="padding: 3px 8px; font-size: 0.78rem;"><span id="btnFullscreenWebVideoText">⛶ Phóng To</span></button>
-            <button id="btnCloseWebVideo" class="btn btn-sm" type="button" style="background: rgba(239, 68, 68, 0.25); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.5); font-weight: 600; padding: 3px 10px; font-size: 0.78rem; cursor: pointer; border-radius: 4px;">✕ Đóng Video</button>
-          </div>
-        </div>
-        <div class="video-element-container" style="position: relative; width: 100%; height: 240px; max-height: 240px; background: #000; border-radius: 8px; overflow: hidden;">
-          <div id="webVideoPlayer" class="iframe-element-container" style="width: 100%; height: 100%;"></div>
-          <div class="invideo-subtitle-overlay">
-            <div id="invideoWebSubSource" class="invideo-sub-source" style="display: none;"></div>
-            <div id="invideoWebSubVi" class="invideo-sub-vi" style="display: none;"></div>
-          </div>
-        </div>
-        <div id="webSyncNotice" class="web-sync-notice" style="margin-top: 6px; font-size: 0.82rem; color: var(--text-dim); text-align: center;"></div>
-      </div>
-      <form id="webVideoForm" style="display: none;">
-        <button id="btnWebLiveCapture" type="button">Bắt âm thanh</button>
-      </form>
-    </div>
-
-    <!-- MAIN WORKSPACE: 2 CỘT CÂN ĐỐI LẤP ĐẦY KHÔNG GIAN -->
+    <!-- MAIN WORKSPACE: CHIA ĐÔI 50/50 (TRÁI: VIDEO PLAYER, PHẢI: PHỤ ĐỀ CINEMA TRÊN + LỊCH SỬ THOẠI DƯỚI) -->
     <main class="main-content-streamlined">
-      <!-- Cột Trái: Màn Hình Phụ Đề Realtime (Cinema View) -->
-      <section class="cinema-panel">
-        <div class="cinema-panel-header">
-          <span class="panel-title-text">🎬 Phụ Đề Cinema View</span>
-          <div class="header-btn-group">
-            <button id="btnCinemaPiP" class="btn btn-primary btn-sm" title="Ghim phụ đề nổi Always-on-Top">
-              📌 Ghim PiP
+      <!-- CỘT TRÁI (50%): KHÔNG GIAN PHÁT VIDEO / NGUỒN PHÁT -->
+      <div class="video-workspace-column">
+        <!-- NGUỒN 1: MÀN HÌNH / TAB PHIM -->
+        <div id="panelSourceSystem" style="display: flex; flex-direction: column; width: 100%; gap: 10px;">
+          <div class="control-row-bottom" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px 16px; flex-wrap: wrap;">
+            <button id="btnToggleSystemAudio" class="btn-hero-action" type="button" style="flex: 1; min-width: 220px;">
+              <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+              </svg>
+              <span id="btnSystemAudioText">BẮT ĐẦU ĐỌC & LỒNG TIẾNG SUB</span>
             </button>
-            <button id="btnSubtitleFontMinus" class="btn-icon" title="Giảm cỡ chữ">A-</button>
-            <button id="btnSubtitleFontPlus" class="btn-icon" title="Tăng cỡ chữ">A+</button>
+
+            <div class="control-cell">
+              <span class="control-label sr-only">Chế độ video:</span>
+              <div class="mode-toggle-group">
+                <button type="button" id="btnModeSub" class="btn-mode active" title="Dành cho Anime, Phim có phụ đề chữ in trên video">
+                  📷 Đọc Sub OCR
+                </button>
+                <button type="button" id="btnModeAudio" class="btn-mode" title="Dành cho video không có sub: YouTube, Livestream">
+                  🎙️ Nghe Whisper
+                </button>
+                <button type="button" id="btnModeHybrid" class="btn-mode" title="Tự động nhận diện: Ưu tiên đọc phụ đề trên màn hình, kết hợp nghe Whisper">
+                  ⚡ Tự Động Hybrid
+                </button>
+              </div>
+            </div>
+
+            <div class="control-cell-zone" id="cellOcrZone" title="Chọn vùng quét phụ đề trên khung hình chia sẻ">
+              <label for="ocrZoneSelect" class="control-label sr-only">Vùng Quét Sub:</label>
+              <select id="ocrZoneSelect" class="form-control form-control-compact select-zone">
+                <option value="bottom" selected>📐 1/3 Đáy (Phim)</option>
+                <option value="split">📺 Nửa Dưới (50%)</option>
+                <option value="full">🖥️ Toàn Màn Hình</option>
+              </select>
+            </div>
+
+            <div id="oneTouchDetectionPill" class="one-touch-status-pill">
+              📷 Đang đọc sub OCR (~150ms)
+            </div>
           </div>
         </div>
 
-        <div class="cinema-screen cinema-box" id="subtitleViewport">
-          <div class="subtitle-container" id="subtitleContainer">
-            <div class="sub-line sub-source" id="subSourceDisplay" style="display: none;"></div>
-            <div class="sub-line sub-vi" id="subViDisplay">
-              Đang chờ phụ đề video... Hãy chọn nguồn phát ở trên để bắt đầu!
+        <!-- NGUỒN 2: FILE VIDEO CỤC BỘ -->
+        <div id="panelSourceLocalFile" class="source-panel-block" style="display: none; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 14px; padding: 14px; width: 100%;">
+          <div style="margin-bottom: 10px;">
+            <h3 style="font-size: 1.05rem; margin-bottom: 4px;">📁 Nạp Video từ máy tính (MP4, MKV, WebM, AVI)</h3>
+            <p style="font-size: 0.82rem; color: var(--text-dim);">Chọn file video để phát trực tiếp và tự động nhận diện phụ đề / lồng tiếng realtime</p>
+          </div>
+          <div id="localVideoDropZone" style="border: 2px dashed var(--border-color); border-radius: 12px; padding: 22px; text-align: center; cursor: pointer; background: var(--bg-primary); transition: border-color 0.2s;">
+            <p style="font-size: 1rem; margin-bottom: 4px;">📂 <strong>Kéo thả file video vào đây</strong> hoặc bấm để chọn file</p>
+            <span style="font-size: 0.8rem; color: var(--text-dim);">Hỗ trợ MP4, MKV, WebM, AVI</span>
+          </div>
+          <input type="file" id="localVideoFileInput" accept="video/*" style="display: none;">
+          <div id="localVideoFileInfo" style="display: none; align-items: center; justify-content: space-between; padding: 8px 14px; background: var(--bg-primary); border-radius: 8px; border: 1px solid var(--border-color); margin-top: 8px;">
+            <span id="loadedFileName" style="font-weight: 600; font-size: 0.85rem;"></span>
+            <button id="btnStartLocalDubbing" class="btn btn-primary btn-sm" type="button">▶️ Bắt Đầu Thuyết Minh</button>
+          </div>
+          <div id="localVideoContainer" class="local-video-wrapper" style="display: none; margin-top: 10px; position: relative;">
+            <div class="video-element-container">
+              <video id="localVideoPlayer" controls playsinline style="width: 100%; border-radius: 10px; background: #000;"></video>
+              <div class="invideo-subtitle-overlay">
+                <div id="invideoSubSource" class="invideo-sub-source" style="display: none;"></div>
+                <div id="invideoSubVi" class="invideo-sub-vi" style="display: none;"></div>
+              </div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
+              <button id="btnCloseLocalVideo" class="btn btn-sm btn-secondary" type="button">✕ Đóng Video</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- NGUỒN 3: LINK YOUTUBE / WEB -->
+        <div id="panelSourceWebUrl" class="source-panel-block" style="display: none; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 14px; padding: 14px; width: 100%;">
+          <div style="margin-bottom: 8px;">
+            <h3 style="font-size: 1.05rem; margin-bottom: 2px;">🌐 Xem Video YouTube & Lồng Tiếng Realtime</h3>
+            <p style="font-size: 0.8rem; color: var(--text-dim);">Dán link YouTube (VD: MrBeast, Tin tức...) để tự động dịch và đọc lồng tiếng</p>
+          </div>
+          <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+            <input type="url" id="webUrlInput" class="form-control" placeholder="https://www.youtube.com/watch?v=..." style="flex: 1; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-main); font-size: 0.88rem;">
+            <button id="btnLoadWebUrl" class="btn btn-primary" type="button" style="white-space: nowrap; padding: 8px 16px; font-weight: 600;">▶️ Nạp Video</button>
+          </div>
+          <div id="webVideoContainer" class="web-video-wrapper" style="display: none; position: relative;">
+            <!-- Thanh điều khiển và nút đóng đặt lên TRÊN CÙNG để luôn nhìn thấy và thao tác được -->
+            <div class="video-top-bar" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; margin-bottom: 6px; background: rgba(0, 0, 0, 0.4); border-radius: 6px;">
+              <span id="webVideoTitle" style="font-weight: 600; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%;">YouTube Video</span>
+              <div style="display: flex; gap: 6px;">
+                <button id="btnFullscreenWebVideo" class="btn btn-sm btn-secondary" type="button" style="padding: 3px 8px; font-size: 0.78rem;"><span id="btnFullscreenWebVideoText">⛶ Phóng To</span></button>
+                <button id="btnCloseWebVideo" class="btn btn-sm" type="button" style="background: rgba(239, 68, 68, 0.25); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.5); font-weight: 600; padding: 3px 10px; font-size: 0.78rem; cursor: pointer; border-radius: 4px;">✕ Đóng Video</button>
+              </div>
+            </div>
+            <div class="video-element-container">
+              <div id="webVideoPlayer" class="iframe-element-container"></div>
+              <div class="invideo-subtitle-overlay">
+                <div id="invideoWebSubSource" class="invideo-sub-source" style="display: none;"></div>
+                <div id="invideoWebSubVi" class="invideo-sub-vi" style="display: none;"></div>
+              </div>
+            </div>
+            <div id="webSyncNotice" class="web-sync-notice" style="margin-top: 6px; font-size: 0.82rem; color: var(--text-dim); text-align: center;"></div>
+          </div>
+          <form id="webVideoForm" style="display: none;">
+            <button id="btnWebLiveCapture" type="button">Bắt âm thanh</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- CỘT PHẢI (50%): PHỤ ĐỀ CINEMA VIEW (TRÊN) & LỊCH SỬ THOẠI (DƯỚI) -->
+      <div class="subtitles-workspace-column">
+        <!-- Phía TRÊN: 🎬 Phụ Đề Cinema View -->
+        <section class="cinema-panel">
+          <div class="cinema-panel-header">
+            <span class="panel-title-text">🎬 Phụ Đề Cinema View</span>
+            <div class="header-btn-group">
+              <button id="btnCinemaPiP" class="btn btn-primary btn-sm" title="Ghim phụ đề nổi Always-on-Top">
+                📌 Ghim PiP
+              </button>
+              <button id="btnSubtitleFontMinus" class="btn-icon" title="Giảm cỡ chữ">A-</button>
+              <button id="btnSubtitleFontPlus" class="btn-icon" title="Tăng cỡ chữ">A+</button>
             </div>
           </div>
 
-          <div class="dubbing-indicator" id="dubbingIndicator" style="margin-top: 14px;">
-            <div class="waveform">
-              <span></span><span></span><span></span><span></span><span></span>
+          <div class="cinema-screen cinema-box" id="subtitleViewport">
+            <div class="subtitle-container" id="subtitleContainer">
+              <div class="sub-line sub-source" id="subSourceDisplay" style="display: none;"></div>
+              <div class="sub-line sub-vi" id="subViDisplay">
+                Đang chờ phụ đề video... Hãy chọn nguồn phát ở trên để bắt đầu!
+              </div>
             </div>
-            <span id="dubbingStatusText">VieNeu AI đang lồng tiếng…</span>
-          </div>
-        </div>
 
-        <!-- THANH KIỂM TRA & ĐỌC THỬ CÂU BẤT KỲ -->
-        <div class="test-text-bar" style="display: flex; gap: 8px; margin-top: 12px; align-items: center; background: var(--bg-card); padding: 10px 14px; border-radius: 10px; border: 1px solid var(--border-color);">
-          <input type="text" id="testTextInput" class="form-control" placeholder="💬 Gõ câu thử nghiệm (Enter để dịch và phát âm thanh kiểm tra)..." style="flex: 1; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-main);">
-          <button id="btnSendTestText" class="btn btn-primary btn-sm" type="button" style="white-space: nowrap; padding: 8px 16px;">🔊 Đọc Thử</button>
-          <button id="btnTestVoiceSample" class="btn btn-secondary btn-sm" type="button" style="white-space: nowrap; padding: 8px 16px;">🎧 Nghe Giọng</button>
-        </div>
-      </section>
-
-      <!-- Cột Phải: Lịch Sử Thoại & Xuất File -->
-      <section class="history-panel">
-        <div class="history-panel-header">
-          <span class="panel-title-text">📜 Lịch Sử Thoại (<span id="historyCount">0</span>)</span>
-          <div class="header-btn-group">
-            <button id="btnExportSRT" class="btn btn-sm btn-secondary" title="Xuất file phụ đề chuẩn .SRT">.SRT</button>
-            <button id="btnExportTXT" class="btn btn-sm btn-secondary" title="Xuất kịch bản text .TXT">.TXT</button>
-            <button id="btnClearHistory" class="btn btn-sm btn-danger" title="Xóa toàn bộ lịch sử">Xóa</button>
+            <div class="dubbing-indicator" id="dubbingIndicator" style="margin-top: 10px;">
+              <div class="waveform">
+                <span></span><span></span><span></span><span></span><span></span>
+              </div>
+              <span id="dubbingStatusText">VieNeu AI đang lồng tiếng…</span>
+            </div>
           </div>
-        </div>
 
-        <div class="history-list" id="historyList">
-          <div class="history-empty" id="historyEmpty">
-            <p>👉 Chưa có câu thoại nào. Bấm <strong>BẮT ĐẦU</strong> để xem phim!</p>
+          <!-- THANH KIỂM TRA & ĐỌC THỬ CÂU BẤT KỲ -->
+          <div class="test-text-bar" style="display: flex; gap: 8px; margin-top: 8px; align-items: center; background: var(--bg-card); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color);">
+            <input type="text" id="testTextInput" class="form-control" placeholder="💬 Gõ câu thử nghiệm (Enter để dịch và phát âm thanh kiểm tra)..." style="flex: 1; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-main); font-size: 0.85rem;">
+            <button id="btnSendTestText" class="btn btn-primary btn-sm" type="button" style="white-space: nowrap; padding: 7px 12px; font-size: 0.82rem;">🔊 Đọc Thử</button>
+            <button id="btnTestVoiceSample" class="btn btn-secondary btn-sm" type="button" style="white-space: nowrap; padding: 7px 12px; font-size: 0.82rem;">🎧 Nghe Giọng</button>
           </div>
-        </div>
-      </section>
+        </section>
+
+        <!-- Phía DƯỚI: 📜 Lịch Sử Thoại -->
+        <section class="history-panel">
+          <div class="history-panel-header">
+            <span class="panel-title-text">📜 Lịch Sử Thoại (<span id="historyCount">0</span>)</span>
+            <div class="header-btn-group">
+              <button id="btnExportSRT" class="btn btn-sm btn-secondary" title="Xuất file phụ đề chuẩn .SRT">.SRT</button>
+              <button id="btnExportTXT" class="btn btn-sm btn-secondary" title="Xuất kịch bản text .TXT">.TXT</button>
+              <button id="btnClearHistory" class="btn btn-sm btn-danger" title="Xóa toàn bộ lịch sử">Xóa</button>
+            </div>
+          </div>
+
+          <div class="history-list" id="historyList">
+            <div class="history-empty" id="historyEmpty">
+              <p>👉 Chưa có câu thoại nào. Bấm <strong>BẮT ĐẦU</strong> để xem phim!</p>
+            </div>
+          </div>
+        </section>
+      </div>
     </main>
 
     <!-- HIDDEN LEGACY CONTAINER: Giữ các elements đặc thù cho test suite -->
@@ -387,6 +393,6 @@
 
   <script src="/vendor/ort/ort.min.js?v=1.31.1"></script>
   <script src="/vendor/vad/bundle.min.js?v=0.0.31"></script>
-  <script src="app.js?v=20261124_v3"></script>
+  <script src="app.js?v=20261124_v5"></script>
 </body>
 </html>

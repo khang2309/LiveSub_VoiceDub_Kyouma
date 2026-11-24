@@ -2196,8 +2196,9 @@ class LiveDubStudio {
     if (this.ytSyncInterval) clearInterval(this.ytSyncInterval);
     this.ytSessionGeneration++;
     this.lastYtTime = null;
+    this.lastYtTickWallClock = performance.now();
 
-    this.ytSyncInterval = setInterval(async () => {
+    this.ytSyncInterval = setInterval(() => {
       if (!this.ytPlayer || typeof this.ytPlayer.getCurrentTime !== 'function') return;
 
       const playerState = this.ytPlayer.getPlayerState ? this.ytPlayer.getPlayerState() : -1;
@@ -2208,13 +2209,20 @@ class LiveDubStudio {
       const curTime = this.ytPlayer.getCurrentTime();
       if (!this.ytSegments || this.ytSegments.length === 0) return;
 
-      if (this.lastYtTime !== null && Math.abs(curTime - this.lastYtTime) > 0.75) {
-        this.ytSessionGeneration++;
-        this.currentYtSegmentIdx = -1;
-        this.playbackGeneration++;
-        this.stopDubbingAudio(false);
+      const now = performance.now();
+      if (this.lastYtTime !== null && this.lastYtTickWallClock) {
+        const timeDelta = curTime - this.lastYtTime;
+        const wallDelta = (now - this.lastYtTickWallClock) / 1000;
+        // Detect genuine user scrubbing/seek (jump > 1.5s relative to elapsed real time)
+        if (Math.abs(timeDelta - wallDelta) > 1.5) {
+          this.ytSessionGeneration++;
+          this.currentYtSegmentIdx = -1;
+          this.playbackGeneration++;
+          this.stopDubbingAudio(false);
+        }
       }
       this.lastYtTime = curTime;
+      this.lastYtTickWallClock = now;
 
       // Anticipate 0.15s before speech starts for zero perceived latency
       const idx = this.findActiveYtSegment(curTime);
@@ -2241,24 +2249,12 @@ class LiveDubStudio {
             if (this.ytPlayer.setVolume) this.ytPlayer.setVolume(12);
 
             const timing = this.getYtSegmentTiming(idx, curTime);
-            // If previous segment is still playing and user has NOT scrubbed/seeked,
-            // wait for previous audio to finish naturally up to 1.2s instead of cutting it off in mid-sentence!
-            if (this.currentActiveAudioSource || (this.streamingAudioSources && this.streamingAudioSources.size > 0)) {
-              if (this.currentSegmentAudioPromise) {
-                await Promise.race([
-                  this.currentSegmentAudioPromise,
-                  new Promise(res => setTimeout(res, 1200))
-                ]);
-              }
-            }
-            this.currentSegmentAudioPromise = this.playSegmentAudio(idx, timing.slotDuration, revealSubtitle);
-            await this.currentSegmentAudioPromise;
+            this.playSegmentAudio(idx, timing.slotDuration, revealSubtitle).catch(err => {
+              console.warn('Dubbing play error for segment ' + idx, err);
+            });
           } catch (err) {
-            console.warn('Dubbing play error:', err);
-          } finally {
-            this.currentSegmentAudioPromise = null;
+            console.warn('Dubbing trigger error:', err);
           }
-          // TTS failure must not hide the subtitle.
           if (!subtitleRevealed) revealSubtitle();
           this.prefetchUpcomingAudio(idx + 1);
         } else {
@@ -2266,7 +2262,10 @@ class LiveDubStudio {
         }
       } else if (idx === -1) {
         // Keep subtitle readable for up to 1.4s after sentence ends
-        const isNearAny = this.ytSegments.some(s => curTime >= (s.start - 0.2) && curTime <= (s.end + 1.4));
+        const isNearAny = this.ytSegments.some(s => {
+          const end = (s.end && s.end > s.start) ? s.end : (s.start + (s.duration > 0 ? s.duration : 3.0));
+          return curTime >= (s.start - 0.2) && curTime <= (end + 1.4);
+        });
         if (!isNearAny) {
           if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = '';
           if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = '';
@@ -2289,7 +2288,11 @@ class LiveDubStudio {
         high = mid - 1;
       }
     }
-    if (candidate >= 0 && curTime <= this.ytSegments[candidate].end) return candidate;
+    if (candidate >= 0) {
+      const seg = this.ytSegments[candidate];
+      const end = (seg.end && seg.end > seg.start) ? seg.end : (seg.start + (seg.duration > 0 ? seg.duration : 3.0));
+      if (curTime <= end) return candidate;
+    }
     return -1;
   }
 
@@ -2358,7 +2361,7 @@ class LiveDubStudio {
     if (!seg) return;
 
     // Fast fallback translation if segment isn't translated yet
-    if (!seg.translated && seg.original) {
+    if ((!seg.translated || seg.translated === seg.original) && seg.original) {
       try {
         const transRes = await fetch('/api/translate', {
           method: 'POST',
@@ -2457,7 +2460,7 @@ class LiveDubStudio {
   prefetchUpcomingAudio(fromIdx) {
     if (!this.isDubbingEnabled || !this.ytSegments || this.ytSegments.length === 0) return;
 
-    const toIdx = Math.min(this.ytSegments.length, fromIdx + 4);
+    const toIdx = Math.min(this.ytSegments.length, fromIdx + 6);
     const generation = this.voiceGeneration;
     const selectedVoice = this.voiceSelect ? this.voiceSelect.value : 'auto-fast';
     const voice = this.getEffectiveVoice();
