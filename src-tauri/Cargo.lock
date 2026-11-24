@@ -2805,6 +2805,7 @@ name = "livesub-app"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "image",
  "ocr-engine-rs",
  "pure-onnx-ocr",

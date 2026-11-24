@@ -397,13 +397,13 @@ class LiveDubStudio {
 
   getSafePlaybackRate(extra = 0, originalDuration = 0, textLength = 0) {
     const selected = parseFloat(this.rateRange && this.rateRange.value) || 1.15;
-    // Cho phép tốc độ lên tới 2.0x theo thiết lập của người dùng
     let rate = Math.min(2.0, Math.max(0.8, selected + extra));
-    if (this.isAdaptiveSpeedEnabled && originalDuration > 0 && textLength > 0) {
+    if (this.isAdaptiveSpeedEnabled && textLength > 0) {
       const estimatedSyllables = Math.max(1, textLength / 3.8);
-      const estimatedSpeechSeconds = estimatedSyllables * 0.20;
-      if (estimatedSpeechSeconds > originalDuration) {
-        const fitRate = estimatedSpeechSeconds / originalDuration;
+      const estimatedSpeechSeconds = estimatedSyllables * 0.21;
+      const targetDuration = originalDuration > 0 ? originalDuration : Math.min(2.5, Math.max(1.2, textLength * 0.045));
+      if (estimatedSpeechSeconds > targetDuration) {
+        const fitRate = estimatedSpeechSeconds / targetDuration;
         rate = Math.min(2.0, Math.max(rate, fitRate));
       }
     }
@@ -414,29 +414,40 @@ class LiveDubStudio {
     // Dynamic Speed Overdrive: Tự động ép xung tốc độ đọc khi phụ đề ra nhanh hoặc nhân vật nói dồn dập (MrBeast style)
     let rate = parseFloat(this.rateRange && this.rateRange.value) || 1.15;
 
-    // 1. Overdrive theo thời gian bị trễ trong hàng đợi (Queue Lag Overdrive)
-    if (queueLagMs > 2500) {
-      rate = Math.max(rate, 1.85);
-    } else if (queueLagMs > 1500) {
+    // 1. Cadence Overdrive: Nhịp độ nói dồn dập giữa các câu liên tiếp (khoảng cách câu < 2.5s)
+    if (this.lastSentenceArrivalGapMs && this.lastSentenceArrivalGapMs < 1400) {
       rate = Math.max(rate, 1.65);
-    } else if (queueLagMs > 700) {
+    } else if (this.lastSentenceArrivalGapMs && this.lastSentenceArrivalGapMs < 2400) {
       rate = Math.max(rate, 1.45);
-    } else if (queueLagMs > 300) {
-      rate = Math.max(rate, 1.30);
     }
 
-    // 2. Overdrive theo số lượng câu đang ứ đọng phía sau (Queue Depth Boost)
-    if (queueDepth >= 2) {
-      rate = Math.max(rate, 1.60 + Math.min(0.40, (queueDepth - 2) * 0.20));
-    } else if (queueDepth === 1) {
-      rate = Math.max(rate, 1.38);
+    // 2. Queue Lag Overdrive: Phản hồi siêu nhạy với độ trễ tích lũy trong hàng đợi
+    if (queueLagMs > 1800) {
+      rate = Math.max(rate, 1.95);
+    } else if (queueLagMs > 1000) {
+      rate = Math.max(rate, 1.70);
+    } else if (queueLagMs > 450) {
+      rate = Math.max(rate, 1.50);
+    } else if (queueLagMs > 200) {
+      rate = Math.max(rate, 1.35);
     }
 
-    // 3. Adaptive Speed Pacing: nếu câu dài hơn thời lượng video slot, tăng tốc để đọc vừa vặn
+    // 3. Queue Depth Boost: Mỗi câu dồn lại phía sau đẩy tốc độ lên một nấc
+    if (queueDepth >= 3) {
+      rate = Math.max(rate, 2.0);
+    } else if (queueDepth >= 2) {
+      rate = Math.max(rate, 1.75);
+    } else if (queueDepth >= 1) {
+      rate = Math.max(rate, 1.45);
+    }
+
+    // 4. Adaptive Speech Pacing: Ép tốc độ đọc để vừa khít với thời lượng thoại
     if (this.isAdaptiveSpeedEnabled && textLength > 0) {
       const estimatedSyllables = Math.max(1, textLength / 3.8);
-      const estimatedSpeechSeconds = estimatedSyllables * 0.20;
-      const targetDuration = originalDuration > 0 ? originalDuration : (queueDepth > 0 || queueLagMs > 400 ? 1.8 : 0);
+      const estimatedSpeechSeconds = estimatedSyllables * 0.21;
+      const targetDuration = originalDuration > 0
+        ? originalDuration
+        : Math.min(2.5, Math.max(1.2, textLength * 0.045));
       if (targetDuration > 0 && estimatedSpeechSeconds > targetDuration) {
         const fitRate = estimatedSpeechSeconds / targetDuration;
         rate = Math.max(rate, fitRate);
@@ -2354,25 +2365,9 @@ class LiveDubStudio {
 
     try {
       const voice = this.getEffectiveVoice();
-      if (voice.startsWith('vieneu')) {
-        await this.playStreamingTts(seg.translated, voice, true, onStart, token, 0, expectedSlotDuration);
-        this.releaseYouTubeDubbingHold();
-        return;
-      }
-      const res = await fetch('/api/dub-subtitle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          text: seg.translated,
-          voice: voice,
-          source_lang: 'vi'
-        })
-      });
-      const data = await res.json();
-      if (data && data.audio_base64 && this.isPlaybackCurrent(token)) {
-        await this.playBase64Audio(data.audio_base64, null, data.audio_mime || 'audio/mpeg', expectedSlotDuration, token, onStart);
-        this.releaseYouTubeDubbingHold();
-      }
+      await this.playStreamingTts(seg.translated, voice, true, onStart, token, 0, expectedSlotDuration);
+      this.releaseYouTubeDubbingHold();
+      return;
     } catch (err) {
       console.warn('On-demand dub error for seg ' + segIdx, err);
     } finally {
@@ -2927,6 +2922,11 @@ class LiveDubStudio {
     }
     const duration = originalDuration || (capturedAt && finalizedAt ? Math.max(0, (finalizedAt - capturedAt) / 1000) : 0);
     const effectiveVoice = this.getEffectiveVoice();
+    const now = performance.now();
+    if (this.lastEnqueueTime) {
+      this.lastSentenceArrivalGapMs = now - this.lastEnqueueTime;
+    }
+    this.lastEnqueueTime = now;
     this.liveDubbingQueue.push({
       text,
       sourceText,
@@ -3033,6 +3033,15 @@ class LiveDubStudio {
         );
         if (isStale()) continue;
 
+        // Avalanche prevention: nếu hàng đợi ứ đọng từ 4 câu trở lên do video nói quá nhanh dồn dập,
+        // giữ lại 2 câu mới nhất để lồng tiếng bám sát khung hình hiện tại của video
+        if (this.liveDubbingQueue.length >= 4) {
+          const dropped = this.liveDubbingQueue.splice(0, this.liveDubbingQueue.length - 2);
+          for (const d of dropped) {
+            this.displaySubtitle(d.sourceText, d.text);
+          }
+        }
+
         // Chỉ loại bỏ các câu quá cũ (> 5 giây) nếu đã có câu mới hơn thay thế
         const queuedAgeMs = item.enqueuedAt ? (performance.now() - item.enqueuedAt) : 0;
         if (queuedAgeMs > 5000 && this.liveDubbingQueue.length > 0) {
@@ -3059,6 +3068,7 @@ class LiveDubStudio {
           };
           const originalDuration = item.originalDuration || (item.finalizedAt && item.capturedAt ? Math.max(0, (item.finalizedAt - item.capturedAt) / 1000) : 0);
           const queueLagMs = item.enqueuedAt ? (performance.now() - item.enqueuedAt) : 0;
+          const currentQueueDepth = this.liveDubbingQueue.length + 1;
           if (item.voice.startsWith('vieneu')) {
             await this.playStreamingTts(
               item.text,
@@ -3066,7 +3076,7 @@ class LiveDubStudio {
               true,
               revealSubtitle,
               null,
-              this.liveDubbingQueue.length,
+              currentQueueDepth,
               originalDuration,
               queueLagMs
             );
@@ -3084,7 +3094,7 @@ class LiveDubStudio {
           if (isStale()) continue;
           const audio = await response.arrayBuffer();
           if (isStale()) continue;
-          await this.playAudioBuffer(audio, true, revealSubtitle, originalDuration, item.text ? item.text.length : 0, this.liveDubbingQueue.length, queueLagMs);
+          await this.playAudioBuffer(audio, true, revealSubtitle, originalDuration, item.text ? item.text.length : 0, currentQueueDepth, queueLagMs);
         } catch (error) {
           console.warn('Live dubbing error:', error);
           // A voice failure must not hide the translated content.

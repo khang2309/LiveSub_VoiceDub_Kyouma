@@ -22,10 +22,30 @@ pub async fn api_dub_subtitle(
     State(state): State<AppState>,
     Json(req): Json<DubRequest>,
 ) -> Json<serde_json::Value> {
-    let restored = state.ocr.restore_vietnamese(&req.text);
+    let target_text = if crate::state::get_re_vi().is_match(&req.text) {
+        req.text.trim().to_string()
+    } else {
+        state.ocr.restore_vietnamese(&req.text)
+    };
+    let mut audio_b64 = String::new();
+    let url = format!(
+        "https://translate.google.com/translate_tts?ie=UTF-8&tl=vi&client=tw-ob&q={}",
+        urlencoding::encode(&target_text)
+    );
+    if let Ok(resp) = state.http_client.get(&url).send().await {
+        if resp.status().is_success() {
+            if let Ok(bytes) = resp.bytes().await {
+                use base64::{engine::general_purpose::STANDARD, Engine as _};
+                audio_b64 = STANDARD.encode(&bytes);
+            }
+        }
+    }
+
     Json(serde_json::json!({
         "success": true,
-        "prompt": restored,
+        "prompt": target_text,
+        "audio_base64": audio_b64,
+        "audio_mime": "audio/mpeg",
         "voice": req.voice.unwrap_or_else(|| "google-vi".to_string()),
         "duration_ms": 1100.0,
         "provider": "google-vi"

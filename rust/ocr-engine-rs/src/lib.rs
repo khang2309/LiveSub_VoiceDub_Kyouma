@@ -125,6 +125,8 @@ mod tests {
             ("Con va nói gì đó?", "Con vừa nói gì đó?"),
             ("Tri đt i", "Trời đất ơi"),
             ("Khong co thit nhung van an duoc", "Không có thịt nhưng vẫn ăn được"),
+            ("sau sáu ngày", "sau sáu ngày"),
+            ("bắt đầu sau sáu giây", "bắt đầu sau sáu giây"),
         ];
 
         for (input, expected) in samples {

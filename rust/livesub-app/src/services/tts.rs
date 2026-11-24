@@ -10,8 +10,15 @@ pub async fn synthesize_tts(state: &AppState, text: &str) -> Response {
         return (StatusCode::BAD_REQUEST, "Text required").into_response();
     }
 
-    let restored = state.ocr.restore_vietnamese(&cleaned);
-    let cache_key = format!("tts:{}", restored);
+    // Nếu văn bản đã có dấu tiếng Việt chuẩn xác (từ Google Translate hoặc phụ đề có sẵn dấu),
+    // phát âm trực tiếp nguyên vẹn 100% để không làm mất dấu (như "sáu" không bị nhầm thành "sau").
+    // Chỉ kích hoạt restore_vietnamese khi văn bản là chuỗi thô không dấu.
+    let target_text = if crate::state::get_re_vi().is_match(&cleaned) {
+        cleaned
+    } else {
+        state.ocr.restore_vietnamese(&cleaned)
+    };
+    let cache_key = format!("tts:{}", target_text);
 
     // 1. Check in-memory audio cache
     if let Ok(c) = state.audio_cache.read() {
@@ -30,7 +37,7 @@ pub async fn synthesize_tts(state: &AppState, text: &str) -> Response {
     // 2. Fetch high-fidelity Vietnamese audio from Google TTS endpoint
     let url = format!(
         "https://translate.google.com/translate_tts?ie=UTF-8&tl=vi&client=tw-ob&q={}",
-        urlencoding::encode(&restored)
+        urlencoding::encode(&target_text)
     );
 
     if let Ok(resp) = state.http_client.get(&url).send().await {

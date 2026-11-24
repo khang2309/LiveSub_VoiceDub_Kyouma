@@ -43,6 +43,8 @@ pub const CONVERSATIONAL_COLLOCATIONS: &[&str] = &[
     "lẫn vào", "vào đây", "tương tự", "thực tế", "thực tế là", "nạn đói", "cũng nghĩ",
     "bằng chứng", "số lượng", "nhiều hơn", "điềm báo", "tai ương", "năm tới", "lũ côn",
     "lũ côn trùng", "gây ra", "tai họa", "chẳng sao", "đúng chứ",
+    "sau sáu", "sáu ngày", "sáu giây", "sáu phút", "sáu giờ", "sáu người", "sáu cái",
+    "sáu trăm", "sáu nghìn", "sáu triệu", "sáu mươi",
 ];
 
 pub struct Lexicon {
@@ -355,7 +357,9 @@ fn cand_unigram_score(lex: &Lexicon, cand: &str, core_low: &str, is_strictly_una
     let mut score = unigram_frequency_score(cand);
     if cand == core_low {
         if !is_strictly_unacc && lex.syllables.contains(cand) && !is_rare_override_syllable(cand) {
-            score += 28;
+            // If the input word already has legitimate diacritics, strongly preserve it (+55)
+            // so an accidental unaccented bigram like "sau ngày" cannot strip "sáu ngày" into "sau ngày"
+            score += 55;
         }
     }
     if core_low.starts_with('đ') && cand.starts_with('đ') {
@@ -380,7 +384,7 @@ fn transition_score(lex: &Lexicon, p: &str, c: &str) -> i32 {
         ("hoàn", "thành") | ("thành", "mọi") | ("mọi", "việc") | ("cả", "lão") | ("lão", "bà") | ("bà", "bà") => 50,
         ("cũng", "ngầm") | ("ngầm", "tin") | ("tin", "tưởng") | ("tưởng", "anh") => 50,
         ("mách", "lẻo") | ("lẻo", "mình") => 50,
-        ("tạm", "biệt") => 50,
+        ("tạm", "biệt") => 85,
         ("trước", "khi") | ("khi", "nấu") | ("nấu", "châu") | ("châu", "chấu") | ("phải", "loại") | ("loại", "bỏ") | ("bỏ", "nội") | ("nội", "tạng") => 50,
         ("rỗng", "ruột") | ("nhớ", "ra") | ("ra", "chợ") | ("chợ", "mua") | ("mua", "ít") => 50,
         ("một", "lượt") | ("lượt", "tắm") | ("tắm", "sáng") | ("một", "bữa") | ("bữa", "sáng") | ("chưa", "đủ") | ("bủn", "xỉn") => 50,

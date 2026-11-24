@@ -41,13 +41,7 @@ pub async fn fetch_online_translation(state: &AppState, text: &str, source_lang:
                     }
                     let res_trimmed = translated_text.trim();
                     if !res_trimmed.is_empty() {
-                        // Ensure 100% full Vietnamese diacritics with phonological lexicon restore
-                        let full_diacritics = state.ocr.restore_vietnamese(res_trimmed);
-                        let final_res = if full_diacritics.is_empty() {
-                            res_trimmed.to_string()
-                        } else {
-                            full_diacritics
-                        };
+                        let final_res = res_trimmed.to_string();
                         if let Ok(mut c) = state.trans_cache.write() {
                             if c.len() < 4096 {
                                 c.insert(cache_key.clone(), final_res.clone());
@@ -99,12 +93,7 @@ pub async fn fetch_online_translation(state: &AppState, text: &str, source_lang:
                                             }
                                             let final_res = translated_text.trim();
                                             if !final_res.is_empty() {
-                                                let full_diacritics = state.ocr.restore_vietnamese(final_res);
-                                                let verified_res = if full_diacritics.is_empty() {
-                                                    final_res.to_string()
-                                                } else {
-                                                    full_diacritics
-                                                };
+                                                let verified_res = final_res.to_string();
                                                 if let Ok(mut c) = state.trans_cache.write() {
                                                     if c.len() < 4096 {
                                                         c.insert(cache_key.clone(), verified_res.clone());
@@ -135,12 +124,7 @@ pub async fn fetch_online_translation(state: &AppState, text: &str, source_lang:
                 if let Some(trans) = val.pointer("/responseData/translatedText").and_then(|v| v.as_str()) {
                     let t_trimmed = trans.trim();
                     if !t_trimmed.is_empty() && !t_trimmed.eq_ignore_ascii_case(trimmed) {
-                        let full_diacritics = state.ocr.restore_vietnamese(t_trimmed);
-                        let final_res = if full_diacritics.is_empty() {
-                            t_trimmed.to_string()
-                        } else {
-                            full_diacritics
-                        };
+                        let final_res = t_trimmed.to_string();
                         if let Ok(mut c) = state.trans_cache.write() {
                             if c.len() < 4096 {
                                 c.insert(cache_key, final_res.clone());
