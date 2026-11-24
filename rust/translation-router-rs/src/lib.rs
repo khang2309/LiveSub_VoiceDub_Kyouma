@@ -7,8 +7,10 @@ pub enum SourceLanguage {
     Vi,
     Ja,
     Zh,
+    Ko,
     Th,
     En,
+    Auto,
 }
 
 impl SourceLanguage {
@@ -17,10 +19,12 @@ impl SourceLanguage {
         match prefix.as_str() {
             "ja" | "jp" | "japanese" => SourceLanguage::Ja,
             "zh" | "ch" | "chinese" | "cmn" => SourceLanguage::Zh,
+            "ko" | "kor" | "korean" => SourceLanguage::Ko,
             "th" | "thai" => SourceLanguage::Th,
             "en" | "eng" | "english" => SourceLanguage::En,
+            "auto" => SourceLanguage::Auto,
             "vi" | "viet" | "vietnamese" => SourceLanguage::Vi,
-            _ => SourceLanguage::Vi,
+            _ => SourceLanguage::Auto,
         }
     }
 
@@ -29,8 +33,10 @@ impl SourceLanguage {
             SourceLanguage::Vi => "vi",
             SourceLanguage::Ja => "ja",
             SourceLanguage::Zh => "zh",
+            SourceLanguage::Ko => "ko",
             SourceLanguage::Th => "th",
             SourceLanguage::En => "en",
+            SourceLanguage::Auto => "auto",
         }
     }
 }

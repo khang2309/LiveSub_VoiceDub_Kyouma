@@ -80,7 +80,11 @@ pub async fn api_transcribe(
 
     let asr_ms = asr_started.elapsed().as_secs_f64() * 1000.0;
     let translation_started = Instant::now();
-    let translated = fetch_online_translation(&state, &transcript, &source_lang).await;
+    let translated = if norm == "vi" {
+        transcript.clone()
+    } else {
+        fetch_online_translation(&state, &transcript, &source_lang).await
+    };
     Ok(Json(serde_json::json!({
         "empty": false,
         "original": transcript,
