@@ -35,6 +35,7 @@ pub async fn synthesize_tts_bytes(state: &AppState, text: &str, voice: Option<&s
     if let Ok(resp) = state
         .http_client
         .post("http://127.0.0.1:3005/tts")
+        .timeout(std::time::Duration::from_millis(2000))
         .json(&edge_payload)
         .send()
         .await

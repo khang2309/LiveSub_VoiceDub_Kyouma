@@ -313,18 +313,11 @@
       try {
         localStorage.setItem('livesub_key_command', JSON.stringify({ key: k, time: Date.now() }));
       } catch (_) {}
-      try {
-        fetch('/api/overlay/command', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key: k })
-        }).catch(() => {});
-      } catch (_) {}
 
       if (k === 'p') {
         isScanningPaused = !isScanningPaused;
         updateButtonsUI();
-        showHudToast(isScanningPaused ? '⏸️ ĐÃ TẠM DỪNG QUÉT (P)' : '▶️ ĐANG QUÉT TIẾP TỤC (P)');
+        showHudToast(isScanningPaused ? '⏸️ ĐÃ TẠM DỪNG QUÉT (P)' : '▶️ ĐANG TIẾP TỤC QUÉT (P)');
       } else if (k === 'm') {
         isDubbingEnabled = !isDubbingEnabled;
         updateButtonsUI();
@@ -335,22 +328,22 @@
     function updateButtonsUI() {
       if (btnPipMute) {
         if (!isDubbingEnabled) {
-          btnPipMute.textContent = '🔇 Âm: Tắt (M)';
+          btnPipMute.innerHTML = '🔇 Âm: ĐÃ TẮT (M)';
           btnPipMute.classList.add('active-warn');
           btnPipMute.classList.remove('active-ok');
         } else {
-          btnPipMute.textContent = '🔊 Âm: Bật (M)';
+          btnPipMute.innerHTML = '🔊 Âm: ĐANG BẬT (M)';
           btnPipMute.classList.remove('active-warn');
           btnPipMute.classList.add('active-ok');
         }
       }
       if (btnPipPause) {
         if (isScanningPaused) {
-          btnPipPause.textContent = '⏸️ Quét: Dừng (P)';
+          btnPipPause.innerHTML = '⏸️ Quét: ĐÃ DỪNG (P)';
           btnPipPause.classList.add('active-warn');
           btnPipPause.classList.remove('active-ok');
         } else {
-          btnPipPause.textContent = '▶️ Quét: Chạy (P)';
+          btnPipPause.innerHTML = '🟢 Quét: ĐANG BẬT (P)';
           btnPipPause.classList.remove('active-warn');
           btnPipPause.classList.add('active-ok');
         }

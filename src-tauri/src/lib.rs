@@ -46,6 +46,26 @@ pub fn run() {
                 )?;
             }
 
+            // Khởi động background VieNeu/Edge Neural TTS Server nếu chưa chạy
+            let node_path = if std::path::Path::new(r"C:\Program Files\nodejs\node.exe").exists() {
+                r"C:\Program Files\nodejs\node.exe"
+            } else {
+                "node"
+            };
+            let script_path = std::path::Path::new(r"C:\dich\scripts\edge_tts_server.js");
+            if script_path.exists() && std::net::TcpStream::connect("127.0.0.1:3005").is_err() {
+                #[cfg(windows)]
+                {
+                    use std::os::windows::process::CommandExt;
+                    const CREATE_NO_WINDOW: u32 = 0x08000000;
+                    let _ = std::process::Command::new(node_path)
+                        .arg(script_path)
+                        .current_dir(r"C:\dich")
+                        .creation_flags(CREATE_NO_WINDOW)
+                        .spawn();
+                }
+            }
+
             // Khởi động LiveSub Engine ngầm bên trong tiến trình Tauri
             tauri::async_runtime::spawn(async move {
                 let config = livesub_app::config::AppConfig::default();

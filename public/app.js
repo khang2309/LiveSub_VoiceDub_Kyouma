@@ -387,11 +387,7 @@ class LiveDubStudio {
           if (!data) return;
           if (data.type === 'KEY_COMMAND') {
             const key = (data.key || '').toLowerCase();
-            if (key === 'p') {
-              this.toggleScanningPause();
-            } else if (key === 'm') {
-              this.toggleDubbingMute();
-            }
+            this.handleKeyCommand(key);
           } else if (data.type === 'REQUEST_SYNC') {
             this.broadcastOverlayState();
           }
@@ -404,8 +400,7 @@ class LiveDubStudio {
             try {
               const cmd = JSON.parse(event.newValue);
               if (cmd && cmd.key) {
-                if (cmd.key === 'p') this.toggleScanningPause();
-                else if (cmd.key === 'm') this.toggleDubbingMute();
+                this.handleKeyCommand(cmd.key.toLowerCase());
               }
             } catch (_) {}
           }
@@ -413,6 +408,21 @@ class LiveDubStudio {
       }
     } catch (e) {
       console.warn('initOverlayChannel error:', e);
+    }
+  }
+
+  handleKeyCommand(key) {
+    const now = Date.now();
+    if (this._lastKeyCmd === key && (now - (this._lastKeyCmdTime || 0)) < 300) {
+      return; // Khử lặp khi nhận đồng thời từ BroadcastChannel và storage event
+    }
+    this._lastKeyCmd = key;
+    this._lastKeyCmdTime = now;
+
+    if (key === 'p') {
+      this.toggleScanningPause();
+    } else if (key === 'm') {
+      this.toggleDubbingMute();
     }
   }
 
@@ -931,12 +941,31 @@ class LiveDubStudio {
   }
 
   handleFullscreenChange() {
-    const isFs = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+    const isDoc = typeof document !== 'undefined';
+    const isFs = isDoc && Boolean(document.fullscreenElement || document.webkitFullscreenElement);
     if (this.btnFullscreenWebVideoText) {
-      this.btnFullscreenWebVideoText.textContent = isFs ? '🗗 Thu Nhỏ' : '⛶ Toàn Màn Hình';
+      this.btnFullscreenWebVideoText.textContent = isFs ? '🗗 Thu Nhỏ (Esc)' : '⛶ Toàn Màn Hình';
     }
     if (this.btnFullscreenWebVideo) {
-      this.btnFullscreenWebVideo.title = isFs ? 'Thoát chế độ toàn màn hình' : 'Phóng to toàn màn hình (Luôn hiện phụ đề)';
+      this.btnFullscreenWebVideo.title = isFs ? 'Thoát chế độ toàn màn hình (Phím Esc)' : 'Phóng to toàn màn hình (Luôn hiện phụ đề)';
+    }
+
+    if (isFs && this.webVideoContainer) {
+      // Auto-show controls on mouse move and auto-hide after 2.5s
+      if (!this._fsMouseMoveBound) {
+        this._fsMouseMoveBound = true;
+        let fsHideTimer = null;
+        this.webVideoContainer.addEventListener('mousemove', () => {
+          this.webVideoContainer.classList.add('show-controls');
+          if (fsHideTimer) clearTimeout(fsHideTimer);
+          fsHideTimer = setTimeout(() => {
+            this.webVideoContainer.classList.remove('show-controls');
+          }, 2500);
+        });
+      }
+      this.webVideoContainer.classList.add('show-controls');
+    } else if (this.webVideoContainer) {
+      this.webVideoContainer.classList.remove('show-controls');
     }
   }
 
@@ -958,6 +987,10 @@ class LiveDubStudio {
       clearTimeout(this.ytRestoreVolumeTimer);
       this.ytRestoreVolumeTimer = null;
     }
+    if (this.ytOverrunHoldTimer) {
+      clearTimeout(this.ytOverrunHoldTimer);
+      this.ytOverrunHoldTimer = null;
+    }
     if (this.ytPlayer) {
       try {
         if (typeof this.ytPlayer.pauseVideo === 'function') this.ytPlayer.pauseVideo();
@@ -969,15 +1002,30 @@ class LiveDubStudio {
     if (typeof document !== 'undefined') {
       const playerContainer = document.getElementById('webVideoPlayer');
       if (playerContainer) playerContainer.innerHTML = '';
-      if (this.webVideoContainer) this.webVideoContainer.style.display = 'none';
+      if (this.webVideoContainer) {
+        this.webVideoContainer.style.display = 'none';
+        this.webVideoContainer.classList.remove('show-controls');
+        if (document.fullscreenElement === this.webVideoContainer && document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        }
+      }
     }
     this.ytSegments = [];
     this.currentYtSegmentIdx = -1;
+    this.lastSentenceArrivalGapMs = 0;
+    this.lastEnqueueTime = 0;
+    this.isHoldingYtForDubbing = false;
+    this.ytShouldResumeAfterHold = false;
+    this.isYtDucked = false;
+
     if (this.isFetchingPreCache && typeof this.isFetchingPreCache.clear === 'function') {
       this.isFetchingPreCache.clear();
     }
     if (this.audioPreCache && typeof this.audioPreCache.clear === 'function') {
       this.audioPreCache.clear();
+    }
+    if (this.liveTtsPrefetch && typeof this.liveTtsPrefetch.clear === 'function') {
+      this.liveTtsPrefetch.clear();
     }
     this.liveDubbingQueue = [];
     this.isProcessingLiveDubbing = false;
@@ -991,6 +1039,9 @@ class LiveDubStudio {
     }
     if (typeof this.releaseYouTubeDubbingHold === 'function') {
       this.releaseYouTubeDubbingHold();
+    }
+    if (typeof this.restoreYouTubeVolumeNow === 'function') {
+      this.restoreYouTubeVolumeNow();
     }
     if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = '';
     if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = '';
@@ -1049,8 +1100,16 @@ class LiveDubStudio {
     if (!this.isDubbingEnabled) {
       this.stopDubbingAudio(true, false);
       this.showToast('🔇 Đã TẮT ÂM lồng tiếng (Bấm M để bật lại)');
+      if (this.btnPanicKill) {
+        this.btnPanicKill.innerHTML = '🔊 Bật Tiếng (M)';
+        this.btnPanicKill.className = 'btn btn-warning btn-compact';
+      }
     } else {
       this.showToast('🔊 Đã BẬT LẠI âm lồng tiếng (Phím M)');
+      if (this.btnPanicKill) {
+        this.btnPanicKill.innerHTML = '🔇 Tắt Tiếng (M)';
+        this.btnPanicKill.className = 'btn btn-secondary btn-compact';
+      }
       if (this.ytSegments && this.ytSegments.length > 0 && this.currentYtSegmentIdx >= 0) {
         this.prefetchUpcomingAudio(this.currentYtSegmentIdx);
       }
@@ -1064,8 +1123,16 @@ class LiveDubStudio {
     if (this.isScanningPaused) {
       this.stopDubbingAudio(false, false);
       this.showToast('⏸️ Đã TẠM DỪNG quét & lồng tiếng (Tránh dịch nhầm nhạc OST/Credit. Bấm P để tiếp tục)');
+      if (this.btnPauseScan) {
+        this.btnPauseScan.innerHTML = '▶️ Tiếp Tục Quét (P)';
+        this.btnPauseScan.className = 'btn btn-warning btn-compact';
+      }
     } else {
       this.showToast('▶️ Đã TIẾP TỤC quét & lồng tiếng (Phím P)');
+      if (this.btnPauseScan) {
+        this.btnPauseScan.innerHTML = '⏸️ Tạm Dừng (P)';
+        this.btnPauseScan.className = 'btn btn-secondary btn-compact';
+      }
     }
     if (this.runtimeSubtitleValue) {
       this.runtimeSubtitleValue.textContent = this.isScanningPaused
@@ -2526,8 +2593,8 @@ class LiveDubStudio {
       }
     };
 
-    // 100% reliable direct responsive YouTube Embed Iframe (never empty black screen)
-    const embedUrl = `https://www.youtube.com/embed/${videoId}?enablejsapi=1&autoplay=1&rel=0&modestbranding=1`;
+    // 100% reliable direct responsive YouTube Embed Iframe (never empty black screen, fs=0 to route fullscreen through LiveSub container)
+    const embedUrl = `https://www.youtube.com/embed/${videoId}?enablejsapi=1&autoplay=1&rel=0&modestbranding=1&fs=0`;
     playerContainer.innerHTML = `<iframe id="ytIframeEl" src="${embedUrl}" width="100%" height="100%" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen style="width:100%; height:100%; border:none; border-radius:8px;"></iframe>`;
 
     const attachYT = () => {

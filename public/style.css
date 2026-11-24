@@ -1129,19 +1129,48 @@ select:focus-visible {
 .web-video-wrapper:fullscreen .video-top-bar,
 .web-video-wrapper:-webkit-full-screen .video-top-bar {
   position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  width: 100% !important;
-  z-index: 2147483646 !important;
-  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.88), transparent) !important;
+  top: 18px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: auto !important;
+  max-width: 90vw !important;
+  z-index: 2147483647 !important;
+  background: rgba(18, 20, 29, 0.92) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  border-radius: 9999px !important;
+  padding: 6px 18px !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 14px !important;
   opacity: 0 !important;
-  transition: opacity var(--dur-med) var(--ease-out) !important;
-  padding: var(--space-md) var(--space-xl) !important;
+  transition: opacity 0.25s ease, transform 0.25s ease !important;
+  pointer-events: none !important;
 }
 
 .web-video-wrapper:fullscreen:hover .video-top-bar,
-.web-video-wrapper:-webkit-full-screen:hover .video-top-bar {
+.web-video-wrapper:-webkit-full-screen:hover .video-top-bar,
+.web-video-wrapper.show-controls .video-top-bar {
   opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+.web-video-wrapper:fullscreen #webVideoTitle,
+.web-video-wrapper:-webkit-full-screen #webVideoTitle {
+  color: #f1f5f9 !important;
+  font-size: 0.88rem !important;
+  font-weight: 600 !important;
+  max-width: 340px !important;
+}
+
+.web-video-wrapper:fullscreen .video-top-bar .btn,
+.web-video-wrapper:-webkit-full-screen .video-top-bar .btn {
+  border-radius: 9999px !important;
+  padding: 5px 14px !important;
+  font-weight: 600 !important;
+  font-size: 0.82rem !important;
 }
 
 .web-video-wrapper:fullscreen .video-element-container,
