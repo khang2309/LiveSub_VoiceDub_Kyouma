@@ -885,10 +885,10 @@ class LiveDubStudio {
       else t.classList.remove('active');
     });
 
-    this.panelSourceSystem.style.display = source === 'system' ? 'flex' : 'none';
-    this.panelSourceLocalFile.style.display = source === 'local' ? 'flex' : 'none';
-    this.panelSourceMic.style.display = source === 'mic' ? 'flex' : 'none';
-    this.panelSourceWebUrl.style.display = source === 'weburl' ? 'flex' : 'none';
+    if (this.panelSourceSystem) this.panelSourceSystem.style.display = source === 'system' ? 'flex' : 'none';
+    if (this.panelSourceLocalFile) this.panelSourceLocalFile.style.display = source === 'local' ? 'flex' : 'none';
+    if (this.panelSourceMic) this.panelSourceMic.style.display = source === 'mic' ? 'flex' : 'none';
+    if (this.panelSourceWebUrl) this.panelSourceWebUrl.style.display = source === 'weburl' ? 'flex' : 'none';
     this.updateAppliedSettings();
   }
 
@@ -3602,9 +3602,11 @@ class LiveDubStudio {
     }
     this.updateMasterDubUI();
 
-    this.btnMicText.textContent = 'Bật Microphone';
-    this.btnToggleMic.classList.remove('btn-danger');
-    this.btnToggleMic.classList.add('btn-primary');
+    if (this.btnMicText) this.btnMicText.textContent = 'Bật Microphone';
+    if (this.btnToggleMic) {
+      this.btnToggleMic.classList.remove('btn-danger');
+      this.btnToggleMic.classList.add('btn-primary');
+    }
 
     this.setStatus('ready', 'Sẵn sàng');
   }

@@ -24,18 +24,8 @@ pub async fn run_server(config: AppConfig) {
     let ocr = Arc::new(DiacriticEngine::new());
     let ocr_pool = services::ocr::load_all_ocr_models(&config);
     let ppocr = ocr_pool.vietnamese.clone();
-    let whisper_child = services::whisper::ensure_whisper_cuda_server(
-        &config.whisper_bin_path,
-        &config.whisper_model_path,
-        "127.0.0.1",
-        "8089",
-    );
-    let whisper_en_child = services::whisper::ensure_whisper_cuda_server(
-        &config.whisper_bin_path,
-        &config.whisper_en_model_path,
-        "127.0.0.1",
-        "8090",
-    );
+    let whisper_child = None;
+    let whisper_en_child = None;
     let router = Arc::new(TranslationRouter::new());
     let http_client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
