@@ -184,12 +184,12 @@ pub async fn api_ocr_subtitle(
     } else {
         // Tự động nhận diện (Auto):
         let has_vi = get_re_vi().is_match(&rec_trimmed);
-        if has_vi {
+        if has_vi && (rec_trimmed.contains(' ') || rec_trimmed.chars().count() > 3) {
             let restored = state.ocr.restore_vietnamese(&rec_trimmed);
             (restored.clone(), restored)
         } else {
             let trans = fetch_online_translation(&state, &rec_trimmed, "auto").await;
-            if !trans.is_empty() && trans != rec_trimmed {
+            if !trans.is_empty() {
                 (rec_trimmed, trans)
             } else {
                 let restored = state.ocr.restore_vietnamese(&rec_trimmed);

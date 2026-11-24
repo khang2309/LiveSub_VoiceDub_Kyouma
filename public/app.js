@@ -410,28 +410,40 @@ class LiveDubStudio {
     return rate;
   }
 
-  getSafeStreamingPlaybackRate(queueDepth = 0, serverCap = 1.85, originalDuration = 0, textLength = 0) {
-    // Dynamic Speed Overdrive: Tự động tăng tốc độ đọc khi phụ đề ra nhanh hoặc hàng đợi bị dồn
-    const queueBoost = Math.min(0.60, queueDepth * 0.20);
-    const requested = this.getSafePlaybackRate(queueBoost, originalDuration, textLength);
-    let rate = requested;
-    if (queueDepth >= 2) {
-      // Khi có từ 2 câu trở lên đang chờ, đẩy mạnh tốc độ lên 1.45x - 1.90x để đuổi kịp video ngay lập tức
-      rate = Math.max(rate, 1.45 + Math.min(0.45, (queueDepth - 1) * 0.15));
-    } else if (queueDepth === 1) {
-      // Khi có 1 câu đang chờ sẵn, tăng nhẹ lên tối thiểu 1.25x
-      rate = Math.max(rate, 1.25);
+  getSafeStreamingPlaybackRate(queueDepth = 0, serverCap = 2.0, originalDuration = 0, textLength = 0, queueLagMs = 0) {
+    // Dynamic Speed Overdrive: Tự động ép xung tốc độ đọc khi phụ đề ra nhanh hoặc nhân vật nói dồn dập (MrBeast style)
+    let rate = parseFloat(this.rateRange && this.rateRange.value) || 1.15;
+
+    // 1. Overdrive theo thời gian bị trễ trong hàng đợi (Queue Lag Overdrive)
+    if (queueLagMs > 2500) {
+      rate = Math.max(rate, 1.85);
+    } else if (queueLagMs > 1500) {
+      rate = Math.max(rate, 1.65);
+    } else if (queueLagMs > 700) {
+      rate = Math.max(rate, 1.45);
+    } else if (queueLagMs > 300) {
+      rate = Math.max(rate, 1.30);
     }
 
-    if (this.isAdaptiveSpeedEnabled && originalDuration > 0 && textLength > 0) {
+    // 2. Overdrive theo số lượng câu đang ứ đọng phía sau (Queue Depth Boost)
+    if (queueDepth >= 2) {
+      rate = Math.max(rate, 1.60 + Math.min(0.40, (queueDepth - 2) * 0.20));
+    } else if (queueDepth === 1) {
+      rate = Math.max(rate, 1.38);
+    }
+
+    // 3. Adaptive Speed Pacing: nếu câu dài hơn thời lượng video slot, tăng tốc để đọc vừa vặn
+    if (this.isAdaptiveSpeedEnabled && textLength > 0) {
       const estimatedSyllables = Math.max(1, textLength / 3.8);
       const estimatedSpeechSeconds = estimatedSyllables * 0.20;
-      if (estimatedSpeechSeconds > originalDuration) {
-        const fitRate = estimatedSpeechSeconds / originalDuration;
-        rate = Math.min(2.0, Math.max(rate, fitRate));
+      const targetDuration = originalDuration > 0 ? originalDuration : (queueDepth > 0 || queueLagMs > 400 ? 1.8 : 0);
+      if (targetDuration > 0 && estimatedSpeechSeconds > targetDuration) {
+        const fitRate = estimatedSpeechSeconds / targetDuration;
+        rate = Math.max(rate, fitRate);
       }
     }
-    return Math.min(2.0, rate);
+
+    return Math.min(2.0, Math.max(0.8, rate));
   }
 
   setSubMode(mode) {
@@ -1289,9 +1301,9 @@ class LiveDubStudio {
   resolveOCRLanguage() {
     const selectedSpeech = this.sourceLangSelect ? this.sourceLangSelect.value : 'auto';
     if (selectedSpeech && selectedSpeech !== 'auto') return selectedSpeech;
-    if (this.detectedOCRLanguage) return this.detectedOCRLanguage;
     const selectedCaption = this.getRadioGroupValue(this.webCaptionLanguage, 'auto');
-    return ['original', 'auto'].includes(selectedCaption) ? 'auto' : selectedCaption;
+    if (selectedCaption && !['original', 'auto'].includes(selectedCaption)) return selectedCaption;
+    return 'auto';
   }
 
   async runInitialSubtitleProbe(stream) {
@@ -2343,7 +2355,7 @@ class LiveDubStudio {
     try {
       const voice = this.getEffectiveVoice();
       if (voice.startsWith('vieneu')) {
-        await this.playStreamingTts(seg.translated, voice, true, onStart, token);
+        await this.playStreamingTts(seg.translated, voice, true, onStart, token, 0, expectedSlotDuration);
         this.releaseYouTubeDubbingHold();
         return;
       }
@@ -2393,7 +2405,7 @@ class LiveDubStudio {
       let effectiveRate = userRate;
       if (expectedSlotDuration > 0 && audioBuffer.duration > expectedSlotDuration) {
         const fitRate = audioBuffer.duration / expectedSlotDuration;
-        effectiveRate = Math.min(1.50, Math.max(userRate, fitRate));
+        effectiveRate = Math.min(2.0, Math.max(userRate, fitRate));
       }
       sourceNode.playbackRate.value = effectiveRate;
       this.scheduleYouTubeOverrunHold(audioBuffer.duration / effectiveRate, expectedSlotDuration);
@@ -3046,6 +3058,7 @@ class LiveDubStudio {
             if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = item.sourceText;
           };
           const originalDuration = item.originalDuration || (item.finalizedAt && item.capturedAt ? Math.max(0, (item.finalizedAt - item.capturedAt) / 1000) : 0);
+          const queueLagMs = item.enqueuedAt ? (performance.now() - item.enqueuedAt) : 0;
           if (item.voice.startsWith('vieneu')) {
             await this.playStreamingTts(
               item.text,
@@ -3054,7 +3067,8 @@ class LiveDubStudio {
               revealSubtitle,
               null,
               this.liveDubbingQueue.length,
-              originalDuration
+              originalDuration,
+              queueLagMs
             );
             continue;
           }
@@ -3070,7 +3084,7 @@ class LiveDubStudio {
           if (isStale()) continue;
           const audio = await response.arrayBuffer();
           if (isStale()) continue;
-          await this.playAudioBuffer(audio, true, revealSubtitle, originalDuration, item.text ? item.text.length : 0, this.liveDubbingQueue.length);
+          await this.playAudioBuffer(audio, true, revealSubtitle, originalDuration, item.text ? item.text.length : 0, this.liveDubbingQueue.length, queueLagMs);
         } catch (error) {
           console.warn('Live dubbing error:', error);
           // A voice failure must not hide the translated content.
@@ -3116,7 +3130,7 @@ class LiveDubStudio {
       let effectiveRate = userRate;
       if (expectedSlotDuration > 0 && audioBuffer.duration > expectedSlotDuration) {
         const fitRate = audioBuffer.duration / expectedSlotDuration;
-        effectiveRate = Math.min(1.50, Math.max(userRate, fitRate));
+        effectiveRate = Math.min(2.0, Math.max(userRate, fitRate));
       }
       sourceNode.playbackRate.value = effectiveRate;
       this.scheduleYouTubeOverrunHold(audioBuffer.duration / effectiveRate, expectedSlotDuration);
@@ -3155,7 +3169,7 @@ class LiveDubStudio {
     }
   }
 
-  async playAudioBuffer(arrayBuffer, waitForEnd = false, onStart = null, originalDuration = 0, textLength = 0, queueDepth = 0) {
+  async playAudioBuffer(arrayBuffer, waitForEnd = false, onStart = null, originalDuration = 0, textLength = 0, queueDepth = 0, queueLagMs = 0) {
     this.stopAllAudio();
     try {
       this.ensureAudioUnlocked();
@@ -3170,7 +3184,7 @@ class LiveDubStudio {
       const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer.slice(0));
       const sourceNode = this.audioContext.createBufferSource();
       sourceNode.buffer = audioBuffer;
-      sourceNode.playbackRate.value = this.getSafeStreamingPlaybackRate(queueDepth, 1.85, originalDuration, textLength);
+      sourceNode.playbackRate.value = this.getSafeStreamingPlaybackRate(queueDepth, 2.0, originalDuration, textLength, queueLagMs);
 
       const gainNode = this.audioContext.createGain();
       gainNode.gain.value = (parseInt(this.volumeRange.value, 10) || 100) / 100;
@@ -3199,7 +3213,7 @@ class LiveDubStudio {
 
   // Play raw PCM as each VieNeu chunk arrives. This removes the old wait for
   // the complete WAV (typically several seconds) while preserving queue order.
-  async playStreamingTts(text, voice, waitForEnd = true, onStart = null, token = null, queueDepth = 0, originalDuration = 0) {
+  async playStreamingTts(text, voice, waitForEnd = true, onStart = null, token = null, queueDepth = 0, originalDuration = 0, queueLagMs = 0) {
     if (token && !this.isPlaybackCurrent(token)) return;
     if (token) this.stopDubbingAudio(false, false);
     if (token && !this.isPlaybackCurrent(token)) return;
@@ -3243,7 +3257,7 @@ class LiveDubStudio {
         const isMp3 = (b.length > 3 && b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) || (b.length > 2 && b[0] === 0xFF && (b[1] & 0xE0) === 0xE0);
         if (isMp3) {
           if (token && !this.isPlaybackCurrent(token)) return;
-          await this.playAudioBuffer(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength), waitForEnd, onStart, originalDuration, text ? text.length : 0);
+          await this.playAudioBuffer(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength), waitForEnd, onStart, originalDuration, text ? text.length : 0, queueDepth, queueLagMs);
           return;
         }
       }
@@ -3254,7 +3268,7 @@ class LiveDubStudio {
       if (cType.includes('audio/mpeg') || cType.includes('audio/mp3') || cType.includes('audio/wav')) {
         const audioBuf = await response.arrayBuffer();
         if (token && !this.isPlaybackCurrent(token)) return;
-        await this.playAudioBuffer(audioBuf, waitForEnd, onStart, originalDuration, text ? text.length : 0);
+        await this.playAudioBuffer(audioBuf, waitForEnd, onStart, originalDuration, text ? text.length : 0, queueDepth, queueLagMs);
         return;
       }
       if (token && !this.isPlaybackCurrent(token)) return;
@@ -3276,7 +3290,7 @@ class LiveDubStudio {
       this.currentGainNode = gainNode;
       this.dubbingIndicator.classList.add('active');
 
-      const playbackRate = this.getSafeStreamingPlaybackRate(queueDepth, serverRateCap, originalDuration, text ? text.length : 0);
+      const playbackRate = this.getSafeStreamingPlaybackRate(queueDepth, serverRateCap, originalDuration, text ? text.length : 0, queueLagMs);
       let nextStart = 0;
       let carry = null;
       let started = false;

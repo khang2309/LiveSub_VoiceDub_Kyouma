@@ -26,21 +26,26 @@ pub async fn api_translate(
     }
 
     let source_lang_str = req.source_lang.unwrap_or_else(|| "auto".to_string());
-    let restored = state.ocr.restore_vietnamese(raw);
-    if restored.trim().is_empty() {
+    let norm = source_lang_str.split(['-', '_']).next().unwrap_or("auto").to_lowercase();
+
+    // Nếu nguồn chỉ định rõ là tiếng Việt:
+    if norm == "vi" {
+        let restored = state.ocr.restore_vietnamese(raw);
         return Json(serde_json::json!({
-            "original": "",
-            "translated": "",
-            "source_lang": source_lang_str,
+            "original": raw,
+            "translated": restored,
+            "source_lang": "vi",
             "target_lang": "vi"
         }));
     }
-    let is_already_vi = get_re_vi().is_match(&restored) || source_lang_str == "vi";
 
+    // Nếu nguồn là Auto: chỉ coi là tiếng Việt nếu đã có dấu tiếng Việt rõ ràng
+    let is_already_vi = norm == "auto" && get_re_vi().is_match(raw) && raw.split_whitespace().count() > 1;
     let translated = if is_already_vi {
-        restored.clone()
+        state.ocr.restore_vietnamese(raw)
     } else {
-        fetch_online_translation(&state, &restored, &source_lang_str).await
+        // Nguồn là ngôn ngữ nước ngoài: Dịch trực tiếp sang tiếng Việt đầy đủ dấu
+        fetch_online_translation(&state, raw, &source_lang_str).await
     };
 
     Json(serde_json::json!({
