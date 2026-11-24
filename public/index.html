@@ -214,13 +214,17 @@
         <span id="loadedFileName" style="font-weight: 600;"></span>
         <button id="btnStartLocalDubbing" class="btn btn-primary btn-sm" type="button">▶️ Bắt Đầu Thuyết Minh</button>
       </div>
-      <div id="localVideoContainer" style="display: none; margin-top: 14px; position: relative;">
-        <video id="localVideoPlayer" controls playsinline style="width: 100%; max-height: 480px; border-radius: 12px; background: #000;"></video>
-        <div style="display: flex; justify-content: space-between; margin-top: 8px;">
-          <button id="btnCloseLocalVideo" class="btn btn-sm btn-secondary" type="button">Đóng Video</button>
+      <div id="localVideoContainer" class="local-video-wrapper" style="display: none; margin-top: 14px; position: relative;">
+        <div class="video-element-container">
+          <video id="localVideoPlayer" controls playsinline style="width: 100%; max-height: 480px; border-radius: 12px; background: #000;"></video>
+          <div class="invideo-subtitle-overlay">
+            <div id="invideoSubSource" class="invideo-sub-source" style="display: none;"></div>
+            <div id="invideoSubVi" class="invideo-sub-vi" style="display: none;"></div>
+          </div>
         </div>
-        <div id="invideoSubSource" class="invideo-sub-source" style="display: none;"></div>
-        <div id="invideoSubVi" class="invideo-sub-vi" style="display: none;"></div>
+        <div style="display: flex; justify-content: flex-end; margin-top: 8px;">
+          <button id="btnCloseLocalVideo" class="btn btn-sm btn-secondary" type="button">✕ Đóng Video</button>
+        </div>
       </div>
     </div>
 
@@ -234,17 +238,25 @@
         <input type="url" id="webUrlInput" class="form-control" placeholder="https://www.youtube.com/watch?v=..." style="flex: 1; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-main);">
         <button id="btnLoadWebUrl" class="btn btn-primary" type="button" style="white-space: nowrap; padding: 10px 20px;">▶️ Nạp Video</button>
       </div>
-      <div id="webVideoContainer" style="margin-top: 14px; position: relative;">
-        <div id="webVideoPlayer" style="width: 100%; min-height: 380px; border-radius: 12px; background: #000;"></div>
-        <span id="webVideoTitle" style="display: block; margin-top: 6px; font-weight: 600;"></span>
-        <div id="webSyncNotice" style="margin-top: 4px; font-size: 0.85rem; color: var(--text-dim);"></div>
-        <div id="invideoWebSubVi" class="invideo-sub-vi" style="display: none;"></div>
-        <div id="invideoWebSubSource" class="invideo-sub-source" style="display: none;"></div>
+      <div id="webVideoContainer" class="web-video-wrapper" style="display: none; margin-top: 14px; position: relative;">
+        <div class="video-element-container">
+          <div id="webVideoPlayer" class="iframe-element-container"></div>
+          <div class="invideo-subtitle-overlay">
+            <div id="invideoWebSubSource" class="invideo-sub-source" style="display: none;"></div>
+            <div id="invideoWebSubVi" class="invideo-sub-vi" style="display: none;"></div>
+          </div>
+        </div>
+        <div class="video-top-bar" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; margin-top: 4px;">
+          <span id="webVideoTitle" style="font-weight: 600; font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 65%;"></span>
+          <div style="display: flex; gap: 8px;">
+            <button id="btnFullscreenWebVideo" class="btn btn-sm btn-secondary" type="button"><span id="btnFullscreenWebVideoText">⛶ Toàn Màn Hình</span></button>
+            <button id="btnCloseWebVideo" class="btn btn-sm btn-secondary" type="button">✕ Đóng Video</button>
+          </div>
+        </div>
+        <div id="webSyncNotice" class="web-sync-notice" style="margin-top: 4px; font-size: 0.85rem; color: var(--text-dim);"></div>
       </div>
       <form id="webVideoForm" style="display: none;">
-        <button id="btnCloseWebVideo" type="button">Đóng</button>
         <button id="btnWebLiveCapture" type="button">Bắt âm thanh</button>
-        <button id="btnFullscreenWebVideo" type="button"><span id="btnFullscreenWebVideoText">Toàn màn hình</span></button>
       </form>
     </div>
 
