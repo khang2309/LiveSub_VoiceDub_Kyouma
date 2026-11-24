@@ -378,9 +378,9 @@ pub async fn api_youtube_subtitles(
     let is_vi = lang_code == "vi";
     let total = segments.len();
 
-    // If not Vietnamese, translate the first 6 segments in parallel immediately so playback & dubbing can begin instantly
+    // If not Vietnamese, translate the first 2 segments in parallel immediately so playback & dubbing can begin instantly
     if !is_vi {
-        let initial_count = total.min(6);
+        let initial_count = total.min(2);
         let mut set = tokio::task::JoinSet::new();
         for i in 0..initial_count {
             let state_clone = state.clone();

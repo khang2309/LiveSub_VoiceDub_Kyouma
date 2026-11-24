@@ -39,8 +39,10 @@ pub async fn run_server(config: AppConfig) {
     let whisper_en_child = None;
     let router = Arc::new(TranslationRouter::new());
     let http_client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-        .timeout(Duration::from_secs(10))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+        .timeout(Duration::from_secs(3))
+        .pool_idle_timeout(Duration::from_secs(15))
+        .pool_max_idle_per_host(4)
         .build()
         .expect("Failed to initialize HTTP client");
 
@@ -57,6 +59,25 @@ pub async fn run_server(config: AppConfig) {
         _whisper_child: Arc::new(Mutex::new(whisper_child)),
         _whisper_en_child: Arc::new(Mutex::new(whisper_en_child)),
     };
+
+    // Tự động khởi chạy LiveSub Edge TTS Neural Server nếu port 3005 chưa kích hoạt
+    if std::net::TcpStream::connect("127.0.0.1:3005").is_err() {
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            let _ = std::process::Command::new("node")
+                .arg("scripts/edge_tts_server.js")
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn();
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = std::process::Command::new("node")
+                .arg("scripts/edge_tts_server.js")
+                .spawn();
+        }
+    }
 
     let app = routes::build_router(state, &config.public_dir);
 

@@ -30,6 +30,7 @@
       user-select: none;
       cursor: move;
       transition: background 0.25s ease;
+      pointer-events: auto !important;
     }
 
     /* 3 Chế độ nền: Đậm / Kính mờ / Trong suốt hoàn toàn */
@@ -42,7 +43,7 @@
       -webkit-backdrop-filter: blur(16px);
     }
     body.mode-transparent {
-      background: transparent !important;
+      background: rgba(0, 0, 0, 0.01) !important;
     }
 
     /* Container chính */
@@ -282,7 +283,7 @@
       showHudToast(`Cỡ chữ: ${fontSize}px`);
     }
 
-    // 2. Giao tiếp 2 chiều với ứng dụng chính qua BroadcastChannel
+    // 2. Giao tiếp 2 chiều với ứng dụng chính qua BroadcastChannel + localStorage fallback
     let overlayChannel = null;
     try {
       overlayChannel = new BroadcastChannel('livesub_overlay_channel');
@@ -293,15 +294,38 @@
       console.warn('BroadcastChannel error:', e);
     }
 
+    // Tự động nhận diện focus khi click vào bất kỳ đâu trên cửa sổ PiP (kể cả vùng trong suốt)
+    function ensurePipFocus() {
+      try {
+        window.focus();
+        if (body && typeof body.focus === 'function') body.focus();
+      } catch (_) {}
+    }
+    window.addEventListener('pointerdown', ensurePipFocus);
+    window.addEventListener('click', ensurePipFocus);
+    window.addEventListener('DOMContentLoaded', ensurePipFocus);
+
     function sendKeyCommand(key) {
+      const k = key.toLowerCase();
       if (overlayChannel) {
-        overlayChannel.postMessage({ type: 'KEY_COMMAND', key: key.toLowerCase() });
+        overlayChannel.postMessage({ type: 'KEY_COMMAND', key: k });
       }
-      if (key.toLowerCase() === 'p') {
+      try {
+        localStorage.setItem('livesub_key_command', JSON.stringify({ key: k, time: Date.now() }));
+      } catch (_) {}
+      try {
+        fetch('/api/overlay/command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: k })
+        }).catch(() => {});
+      } catch (_) {}
+
+      if (k === 'p') {
         isScanningPaused = !isScanningPaused;
         updateButtonsUI();
         showHudToast(isScanningPaused ? '⏸️ ĐÃ TẠM DỪNG QUÉT (P)' : '▶️ ĐANG QUÉT TIẾP TỤC (P)');
-      } else if (key.toLowerCase() === 'm') {
+      } else if (k === 'm') {
         isDubbingEnabled = !isDubbingEnabled;
         updateButtonsUI();
         showHudToast(isDubbingEnabled ? '🔊 ĐÃ BẬT ÂM LỒNG TIẾNG (M)' : '🔇 ĐÃ TẮT ÂM LỒNG TIẾNG (M)');

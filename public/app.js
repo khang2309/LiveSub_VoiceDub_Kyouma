@@ -380,24 +380,37 @@ class LiveDubStudio {
 
   initOverlayChannel() {
     try {
-      if (typeof BroadcastChannel === 'undefined') return;
-      if (!this.overlayChannel) {
+      if (typeof BroadcastChannel !== 'undefined' && !this.overlayChannel) {
         this.overlayChannel = new BroadcastChannel('livesub_overlay_channel');
-      }
-      this.overlayChannel.onmessage = (event) => {
-        const data = event.data;
-        if (!data) return;
-        if (data.type === 'KEY_COMMAND') {
-          const key = (data.key || '').toLowerCase();
-          if (key === 'p') {
-            this.toggleScanningPause();
-          } else if (key === 'm') {
-            this.toggleDubbingMute();
+        this.overlayChannel.onmessage = (event) => {
+          const data = event.data;
+          if (!data) return;
+          if (data.type === 'KEY_COMMAND') {
+            const key = (data.key || '').toLowerCase();
+            if (key === 'p') {
+              this.toggleScanningPause();
+            } else if (key === 'm') {
+              this.toggleDubbingMute();
+            }
+          } else if (data.type === 'REQUEST_SYNC') {
+            this.broadcastOverlayState();
           }
-        } else if (data.type === 'REQUEST_SYNC') {
-          this.broadcastOverlayState();
-        }
-      };
+        };
+      }
+      if (typeof window !== 'undefined' && !this._overlayStorageBound) {
+        this._overlayStorageBound = true;
+        window.addEventListener('storage', (event) => {
+          if (event.key === 'livesub_key_command' && event.newValue) {
+            try {
+              const cmd = JSON.parse(event.newValue);
+              if (cmd && cmd.key) {
+                if (cmd.key === 'p') this.toggleScanningPause();
+                else if (cmd.key === 'm') this.toggleDubbingMute();
+              }
+            } catch (_) {}
+          }
+        });
+      }
     } catch (e) {
       console.warn('initOverlayChannel error:', e);
     }
@@ -941,15 +954,38 @@ class LiveDubStudio {
       clearInterval(this.ytSyncInterval);
       this.ytSyncInterval = null;
     }
-    if (this.ytPlayer && typeof this.ytPlayer.pauseVideo === 'function') {
-      try { this.ytPlayer.pauseVideo(); } catch (_) {}
+    if (this.ytRestoreVolumeTimer) {
+      clearTimeout(this.ytRestoreVolumeTimer);
+      this.ytRestoreVolumeTimer = null;
     }
+    if (this.ytPlayer) {
+      try {
+        if (typeof this.ytPlayer.pauseVideo === 'function') this.ytPlayer.pauseVideo();
+        if (typeof this.ytPlayer.stopVideo === 'function') this.ytPlayer.stopVideo();
+        if (typeof this.ytPlayer.destroy === 'function') this.ytPlayer.destroy();
+      } catch (_) {}
+      this.ytPlayer = null;
+    }
+    if (typeof document !== 'undefined') {
+      const playerContainer = document.getElementById('webVideoPlayer');
+      if (playerContainer) playerContainer.innerHTML = '';
+      if (this.webVideoContainer) this.webVideoContainer.style.display = 'none';
+    }
+    this.ytSegments = [];
+    this.currentYtSegmentIdx = -1;
     if (this.isFetchingPreCache && typeof this.isFetchingPreCache.clear === 'function') {
       this.isFetchingPreCache.clear();
     }
     if (this.audioPreCache && typeof this.audioPreCache.clear === 'function') {
       this.audioPreCache.clear();
     }
+    this.liveDubbingQueue = [];
+    this.isProcessingLiveDubbing = false;
+    this.speechQueue = [];
+    this.isProcessingSpeechQueue = false;
+    this.playbackGeneration = (this.playbackGeneration || 0) + 1;
+    this.dubbingGeneration = (this.dubbingGeneration || 0) + 1;
+
     if (typeof this.stopDubbingAudio === 'function') {
       this.stopDubbingAudio(false, false);
     }
@@ -961,8 +997,11 @@ class LiveDubStudio {
   }
 
   switchSourceTab(source) {
-    if (this.activeSource === 'weburl' && source !== 'weburl') {
+    if (source !== 'weburl' || this.activeSource === 'weburl') {
       this.cleanupYouTubePlayback();
+    }
+    if (this.audioContext && this.audioContext.state === 'suspended') {
+      this.audioContext.resume().catch(() => {});
     }
     this.activeSource = source;
     this.sourceTabs.forEach(t => {
@@ -1062,8 +1101,26 @@ class LiveDubStudio {
     const rawVoice = voiceName || (this.voiceSelect ? this.voiceSelect.value : 'vieneu:Trúc Ly');
     const v = String(rawVoice).toLowerCase();
     
+    // Genuine Edge Neural AI Voices (Microsoft Studio - Native Human Vocals, No Pitch Shift Needed)
+    if (v.includes('namminh') || v === 'vi-vn-namminhneural') {
+      return {
+        id: 'namminh',
+        pitchFactor: 1.0,
+        eq: null,
+        highCut: null
+      };
+    }
+    if (v.includes('hoaimy') || v === 'vi-vn-hoaimyneural') {
+      return {
+        id: 'hoaimy',
+        pitchFactor: 1.0,
+        eq: null,
+        highCut: null
+      };
+    }
+
     // Thái Sơn: Deep masculine Southern baritone voice
-    if (v.includes('thái sơn') || v.includes('thaison') || v.includes('namminh')) {
+    if (v.includes('thái sơn') || v.includes('thaison')) {
       return {
         id: 'thaison',
         pitchFactor: 0.74,
@@ -1081,7 +1138,7 @@ class LiveDubStudio {
       };
     }
     // Thùy Dung: Sweet, melodic Southern female voice
-    if (v.includes('thùy dung') || v.includes('thuydung') || v.includes('hoaimy')) {
+    if (v.includes('thùy dung') || v.includes('thuydung')) {
       return {
         id: 'thuydung',
         pitchFactor: 1.12,
@@ -2418,9 +2475,6 @@ class LiveDubStudio {
         this.prefetchUpcomingAudio(0);
         this.subViDisplay.textContent = '▶️ Hãy bấm nút Play trên video để bắt đầu xem & nghe lồng tiếng!';
         this.subSourceDisplay.textContent = `Đã đồng bộ ${data.segments.length} câu thoại`;
-        if (data.has_more_translations) {
-          this.syncRemainingYouTubeSubtitles(val, videoId, loadGeneration);
-        }
       } else {
         this.webSyncNotice.innerHTML = `ℹ️ ${data.error || 'Video không có phụ đề sẵn'}. Bạn hãy chọn nguồn <strong>"Màn hình / Tab Phim"</strong> để LiveSub quét phụ đề OCR trực tiếp trên video!`;
         this.setSourceIntelligenceState('error', 'Không có track phù hợp', 'Hãy chuyển sang nguồn "Màn hình / Tab Phim" để quét OCR trực tiếp.');
@@ -2440,31 +2494,7 @@ class LiveDubStudio {
 
   syncRemainingYouTubeSubtitles(url, videoId, loadGeneration) {
     if (this.ytSyncRemainingTimer) clearTimeout(this.ytSyncRemainingTimer);
-    const poll = async () => {
-      if (loadGeneration !== this.youtubeLoadGeneration) return;
-      const firstUntranslated = this.ytSegments.findIndex(s => !s.translated);
-      if (firstUntranslated === -1) return;
-      try {
-        const res = await fetch(`/api/youtube-subtitles-sync?url=${encodeURIComponent(url)}&from_idx=${firstUntranslated}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        if (loadGeneration !== this.youtubeLoadGeneration) return;
-        if (data.success && Array.isArray(data.segments)) {
-          for (let i = 0; i < data.segments.length; i++) {
-            const targetIdx = data.from_idx + i;
-            if (this.ytSegments[targetIdx] && data.segments[i].translated) {
-              this.ytSegments[targetIdx].translated = data.segments[i].translated;
-            }
-          }
-          if (!data.done && this.ytSegments.some(s => !s.translated)) {
-            this.ytSyncRemainingTimer = setTimeout(poll, 2200);
-          }
-        }
-      } catch (err) {
-        console.warn('Background subtitles sync error:', err);
-      }
-    };
-    this.ytSyncRemainingTimer = setTimeout(poll, 1500);
+    this.ytSyncRemainingTimer = null;
   }
 
   initOrUpdateYouTubePlayer(videoId) {
@@ -2838,7 +2868,7 @@ class LiveDubStudio {
   prefetchUpcomingAudio(fromIdx) {
     if (!this.isDubbingEnabled || !this.ytSegments || this.ytSegments.length === 0) return;
 
-    const toIdx = Math.min(this.ytSegments.length, fromIdx + 6);
+    const toIdx = Math.min(this.ytSegments.length, fromIdx + 1);
     const generation = this.voiceGeneration;
     const selectedVoice = this.voiceSelect ? this.voiceSelect.value : 'auto-fast';
     const voice = this.getEffectiveVoice();

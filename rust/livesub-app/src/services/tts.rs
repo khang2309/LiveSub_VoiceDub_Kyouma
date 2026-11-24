@@ -4,7 +4,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-pub async fn synthesize_tts_bytes(state: &AppState, text: &str, _voice: Option<&str>) -> Option<Vec<u8>> {
+pub async fn synthesize_tts_bytes(state: &AppState, text: &str, voice: Option<&str>) -> Option<Vec<u8>> {
     let cleaned = get_re_ws().replace_all(text.trim(), " ").to_string();
     if cleaned.is_empty() {
         return None;
@@ -16,7 +16,8 @@ pub async fn synthesize_tts_bytes(state: &AppState, text: &str, _voice: Option<&
         state.ocr.restore_vietnamese(&cleaned)
     };
 
-    let cache_key = format!("tts:{}", target_text);
+    let selected_voice = voice.unwrap_or("vi-VN-HoaiMyNeural");
+    let cache_key = format!("tts:{}:{}", selected_voice, target_text);
 
     // 1. Check in-memory audio cache
     if let Ok(c) = state.audio_cache.read() {
@@ -25,7 +26,35 @@ pub async fn synthesize_tts_bytes(state: &AppState, text: &str, _voice: Option<&
         }
     }
 
-    // 2. Fetch high-fidelity Vietnamese audio from Google TTS endpoint (fast ~150ms)
+    // 2. Try Edge TTS local service for authentic high-fidelity neural voices (Hoai My / Nam Minh)
+    let edge_payload = serde_json::json!({
+        "text": target_text,
+        "voice": selected_voice
+    });
+
+    if let Ok(resp) = state
+        .http_client
+        .post("http://127.0.0.1:3005/tts")
+        .json(&edge_payload)
+        .send()
+        .await
+    {
+        if resp.status().is_success() {
+            if let Ok(bytes) = resp.bytes().await {
+                if bytes.len() > 100 {
+                    let audio_vec = bytes.to_vec();
+                    if let Ok(mut c) = state.audio_cache.write() {
+                        if c.len() < 4096 {
+                            c.insert(cache_key.clone(), audio_vec.clone());
+                        }
+                    }
+                    return Some(audio_vec);
+                }
+            }
+        }
+    }
+
+    // 3. Fallback to Google TTS endpoint if Edge TTS is unreachable
     let url = format!(
         "https://translate.google.com/translate_tts?ie=UTF-8&tl=vi&client=tw-ob&q={}",
         urlencoding::encode(&target_text)
@@ -68,5 +97,3 @@ pub async fn synthesize_tts(state: &AppState, text: &str, voice: Option<&str>) -
             .into_response()
     }
 }
-
-
