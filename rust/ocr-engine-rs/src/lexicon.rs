@@ -400,6 +400,13 @@ fn cand_unigram_score(lex: &Lexicon, cand: &str, core_low: &str, is_strictly_una
 fn transition_score(lex: &Lexicon, p: &str, c: &str) -> i32 {
     match (p, c) {
         ("tử", "thúy") => 60,
+        ("mỗi", "năm") | ("mỗi", "ngày") | ("mỗi", "tháng") | ("mỗi", "người") | ("mỗi", "lần") | ("mỗi", "khi") | ("mỗi", "thứ") => 65,
+        ("tôi", "trả") | ("trả", "được") | ("trả", "nợ") | ("trả", "lại") | ("trả", "giá") | ("trả", "tiền") | ("trả", "công") => 60,
+        ("một", "nửa") | ("nửa", "rồi") | ("nửa", "ngày") | ("nửa", "đêm") | ("nửa", "chừng") => 75,
+        ("cô", "có") | ("cô", "ấy") | ("cô", "ta") | ("cô", "gái") | ("cô", "nương") | ("cô", "giáo") => 60,
+        ("có", "muốn") => 60,
+        ("muốn", "uống") | ("uống", "thì") | ("uống", "rượu") | ("uống", "nước") | ("uống", "thuốc") | ("uống", "gì") | ("uống", "không") => 65,
+        ("loại", "rượu") => 60,
         ("không", "phải") | ("phải", "không") | ("phải", "chăng") | ("phải", "làm") | ("phải", "biết") | ("đúng", "phải") | ("phải", "rồi") => 55,
         ("chẳng", "phải") | ("đâu", "phải") => 55,
         ("cảm", "ơn") | ("cảm", "thấy") | ("cảm", "giác") | ("cảm", "xúc") | ("cảm", "nhận") | ("cảm", "thông") => 55,
@@ -459,7 +466,7 @@ fn transition_score(lex: &Lexicon, p: &str, c: &str) -> i32 {
         ("ngay", "bây") | ("bây", "giờ") | ("đến", "ngay") | ("thể", "có") | ("có", "nạn") => 50,
         ("số", "lượng") | ("lượng", "cào") | ("nhiều", "hơn") | ("điềm", "báo") | ("báo", "tai") | ("tai", "ương") | ("năm", "tới") => 50,
         ("lũ", "côn") | ("gây", "ra") | ("tai", "họa") | ("chẳng", "sao") | ("đúng", "chứ") | ("kinh", "quá") | ("ngon", "quá") | ("gớm", "quá") => 50,
-        ("cậu", "ta") | ("ta", "còn") | ("còn", "chẳng") | ("chẳng", "thèm") | ("thèm", "trả") | ("trả", "giá") => 50,
+        ("cậu", "ta") | ("ta", "còn") | ("còn", "chẳng") | ("chẳng", "thèm") | ("thèm", "trả") => 50,
         ("được", "mà") | ("không", "ngại") | ("cái", "kia") | ("đau", "quá") => 50,
         ("thằng", "nhóc") | ("nhóc", "này") | ("mày", "nói") | ("thằng", "nhãi") => 50,
         ("món", "gớm") | ("gớm", "ghiếc") | ("gì", "vậy") | ("im", "miệng") | ("miệng", "đi") => 50,
@@ -529,7 +536,8 @@ pub fn is_rare_override_syllable(s: &str) -> bool {
             | "tri"
             | "dt"
             | "kẻ"
-            | "cô"
+            | "uông"
+            | "muôn"
             | "phúc"
             | "lay"
             | "van"
@@ -607,7 +615,7 @@ fn unigram_frequency_score(cand: &str) -> i32 {
         | "thôi" | "nhé" | "ạ" | "hả" | "hở" | "ơi" | "ôi" | "ơ" | "dạ" | "vâng" | "ừ"
         | "tôi" | "bạn" | "anh" | "em" | "chị" | "ông" | "bà" | "bố" | "mẹ" | "con"
         | "cháu" | "cô" | "chú" | "bác" | "chúng" | "họ" | "nó" | "hắn" | "ta" | "mình"
-        | "ăn" | "uống" | "ngủ" | "nhìn" | "chạy" | "đứng" | "mua" | "bán"
+        | "ăn" | "uống" | "muốn" | "rượu" | "trả" | "nửa" | "mỗi" | "ngủ" | "nhìn" | "chạy" | "đứng" | "mua" | "bán"
         | "để" | "ngồi" | "đau" | "sợ" | "buồn" | "vui" | "yêu" | "thương" | "ghét" | "giúp" | "bỏ"
         | "thịt" | "cá" | "cơm" | "nước" | "bánh" | "chợ" | "nhà" | "trường" | "lớp" | "đường"
         | "xe" | "ngày" | "tháng" | "năm" | "giờ" | "phút" | "trước" | "sau" | "giữa"
@@ -711,14 +719,15 @@ pub fn pre_normalize_ocr_substitutions(text: &str) -> String {
     s = re_gambling.replace(&s, "").to_string();
 
     // 2. Strip video player OSD timecodes (e.g. "09:15/23:58", "5 09:20 / 23:50", "Dù 0 09:23 / 23:59", "23:56", "3 09:54/ 23:5", "a Vao 3 09.56 /23:5")
+    // IMPORTANT: Must preserve valid numbers & quantities like "1.000", "50.000"
     static RE_TIMECODE: OnceLock<regex::Regex> = OnceLock::new();
     let re_timecode = RE_TIMECODE.get_or_init(|| {
-        regex::Regex::new(r"(?i)(?:\b(?:Dù|Vào|Vao|[a-zA-Z]{1,4})\s*){0,3}\d*\s*\b\d{1,2}[:.]\d{2}\s*(?:[/|\\]\s*\d{1,2}[:.]\d{1,2})?\s*\d*\b").unwrap()
+        regex::Regex::new(r"(?i)(?:(?:^|\s+)(?:Dù|Vào|Vao|[a-zA-Z]{1,4})\s*){0,2}(?:\s*\d+\s+)?(?:\b\d{1,2}:\d{2}(?::\d{2})?(?:\s*[/|\\]\s*\d{1,2}[:.]\d{1,2}(?:[:.]\d{1,2})?)?\s*\d*\b|\b\d{1,2}\.\d{2}\s*[/|\\]\s*\d{1,2}[:.]\d{1,2}\s*\d*\b)").unwrap()
     });
     s = re_timecode.replace_all(&s, "").to_string();
 
-    // 3. Clean trailing stray numbers, punctuation or whitespace left from OSD stripping
-    s = s.trim().trim_end_matches(|c: char| c.is_ascii_digit() || c == '/' || c == '\\').trim().to_string();
+    // 3. Clean trailing stray slashes or whitespace left from OSD stripping
+    s = s.trim().trim_end_matches(|c: char| c == '/' || c == '\\').trim().to_string();
 
     // Split hyphenated lowercase words like "minh-ra-doi" -> "minh ra doi"
     if s.contains('-') {
@@ -975,6 +984,22 @@ pub fn pre_normalize_ocr_substitutions(text: &str) -> String {
         ("nho lại", "nhớ lại"),
         ("Dúng tay", "Dùng tay"),
         ("dúng tay", "dùng tay"),
+        ("Môi năm", "Mỗi năm"),
+        ("môi năm", "mỗi năm"),
+        ("tôi tra được", "tôi trả được"),
+        ("tôi tra", "tôi trả"),
+        ("tra được", "trả được"),
+        ("môt", "một"),
+        ("Môt", "Một"),
+        ("một nữa", "một nửa"),
+        ("Một nữa", "Một nửa"),
+        ("môt nữa", "một nửa"),
+        ("Môt nữa", "Một nửa"),
+        ("có có muốn", "cô có muốn"),
+        ("có có", "cô có"),
+        ("muôn uông", "muốn uống"),
+        ("muôn uống", "muốn uống"),
+        ("muốn uông", "muốn uống"),
     ];
     for (k, v) in subs {
         s = s.replace(k, v);

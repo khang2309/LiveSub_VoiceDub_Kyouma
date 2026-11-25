@@ -2339,9 +2339,20 @@ class LiveDubStudio {
       raw = raw.replace(/^[b-hj-zB-HJ-Z]\s+(?=[a-zA-Z]{3,})/i, '').trim();
     }
 
-    // Strip video player OSD timecodes (e.g. "09:15/23:58", "5 09:20 / 23:50", "Dù 0 09:23 / 23:59", "23:56", "3 09:54/ 23:5")
-    raw = raw.replace(/(?:\b(?:Dù\s*\d*|\b[a-zA-Z]?\s*\d*)\s*)?\b\d{1,2}[:.]\d{2}\s*(?:[/|\\]\s*\d{1,2}[:.]\d{1,2})?\s*\d*\b/gi, '').trim();
-    raw = raw.replace(/\s*\b\d+\s*$/, '').trim();
+    // Strip video player OSD timecodes (e.g. "09:15/23:58", "5 09:20 / 23:50", "Dù 0 09:23 / 23:59", "23:56", "3 09:54/ 23:5", "11:24 / 23:59")
+    // IMPORTANT: Preserve valid quantities & numbers like "1.000", "50.000", "1.5"
+    raw = raw.replace(/(?:(?:^|\s+)(?:Dù|Vào|Vao|[a-zA-Z]{1,4})\s*){0,2}(?:\s*\d+\s+)?(?:\b\d{1,2}:\d{2}(?::\d{2})?(?:\s*[\/|\\]\s*\d{1,2}[:.]\d{1,2}(?:[:.]\d{1,2})?)?\s*\d*\b|\b\d{1,2}\.\d{2}\s*[\/|\\]\s*\d{1,2}[:.]\d{1,2}\s*\d*\b)/gi, '').trim();
+
+    // OCR diacritic & spelling fallback corrections
+    raw = raw.replace(/\bMôi năm\b/gi, 'Mỗi năm');
+    raw = raw.replace(/\btôi tra được\b/gi, 'tôi trả được');
+    raw = raw.replace(/\bm[oô]t n[uư][aã] r[oồ]i\b/gi, 'một nửa rồi');
+    raw = raw.replace(/\bmột nữa\b/gi, 'một nửa');
+    raw = raw.replace(/\bMôt\b/g, 'Một').replace(/\bmôt\b/g, 'một');
+    raw = raw.replace(/\bcó có muốn\b/gi, 'cô có muốn');
+    raw = raw.replace(/\bmuôn uông\b/gi, 'muốn uống');
+    raw = raw.replace(/\bmuôn uống\b/gi, 'muốn uống');
+    raw = raw.replace(/\bmuốn uông\b/gi, 'muốn uống');
 
     // Dialogue subtitles: allow long sentences, monologues and multi-speaker dialogues up to 1000 chars or 200 words
     if (raw.length > 1000 || raw.split(/\s+/).length > 200) return;

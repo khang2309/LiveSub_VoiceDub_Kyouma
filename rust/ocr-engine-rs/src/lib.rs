@@ -255,4 +255,41 @@ mod tests {
             assert_eq!(output, expected);
         }
     }
+
+    #[test]
+    fn test_user_reported_issues() {
+        let engine = OcrEngine::new();
+        let samples = [
+            (
+                "Mỗi năm 1.000 lượng bạc, năm nay tôi trả được một nửa rồi.",
+                "Mỗi năm 1.000 lượng bạc, năm nay tôi trả được một nửa rồi.",
+            ),
+            (
+                "Môi năm 1.000 lượng bạc, năm nay tôi tra được môt nữa rồi.",
+                "Mỗi năm 1.000 lượng bạc, năm nay tôi trả được một nửa rồi.",
+            ),
+            (
+                "11:24 / 23:59 Mỗi năm 1.000 lượng bạc, năm nay tôi trả được một nửa rồi.",
+                "Mỗi năm 1.000 lượng bạc, năm nay tôi trả được một nửa rồi.",
+            ),
+            (
+                "cô có muốn uống thì không",
+                "cô có muốn uống thì không",
+            ),
+            (
+                "có có muôn uông thì không",
+                "cô có muốn uống thì không",
+            ),
+            (
+                "Nó mạnh hơn các loại rượu thông thường nên sẽ khiến người bình thường bất tỉnh.",
+                "Nó mạnh hơn các loại rượu thông thường nên sẽ khiến người bình thường bất tỉnh.",
+            ),
+        ];
+
+        for (input, expected) in samples {
+            let output = engine.restore_vietnamese(input);
+            println!("\n[USER TEST INPUT]    {}\n[USER TEST OUTPUT]   {}\n[EXPECTED]           {}", input, output, expected);
+            assert_eq!(output, expected);
+        }
+    }
 }
