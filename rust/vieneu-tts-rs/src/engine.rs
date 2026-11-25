@@ -495,7 +495,7 @@ impl VieneuEngine {
         let lengths = Array1::<i32>::from_shape_vec(1, vec![n_frames as i32])
             .map_err(|e| VieneuError::InvalidTensor(e.to_string()))?;
 
-        let mono_waveform = {
+        let mut mono_waveform = {
             let mut codec = self.sess_codec.lock().unwrap();
             let codec_inputs = ort::inputs![
                 "audio_codes" => Tensor::from_array(codes_arr)?,
@@ -513,6 +513,22 @@ impl VieneuEngine {
             }
             mono
         };
+
+        // Smooth cosine micro-fade at boundaries (fade-in ~10ms, fade-out ~15ms)
+        // to completely eliminate neural codec DC offset discontinuities / click-pop artifacts.
+        if mono_waveform.len() > 64 {
+            let fade_in_samples = (SAMPLE_RATE as usize * 10 / 1000).min(mono_waveform.len() / 4);
+            for i in 0..fade_in_samples {
+                let factor = 0.5 * (1.0 - (std::f32::consts::PI * i as f32 / fade_in_samples as f32).cos());
+                mono_waveform[i] *= factor;
+            }
+            let fade_out_samples = (SAMPLE_RATE as usize * 15 / 1000).min(mono_waveform.len() / 4);
+            let len = mono_waveform.len();
+            for i in 0..fade_out_samples {
+                let factor = 0.5 * (1.0 - (std::f32::consts::PI * i as f32 / fade_out_samples as f32).cos());
+                mono_waveform[len - 1 - i] *= factor;
+            }
+        }
 
         let mut cursor = Cursor::new(Vec::new());
         let spec = hound::WavSpec {

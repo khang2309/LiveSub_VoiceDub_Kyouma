@@ -25,10 +25,10 @@ fn default_voice() -> String {
     "vieneu:Trúc Ly".to_string()
 }
 fn default_source_lang() -> String {
-    "auto".to_string()
+    "vi-VN".to_string()
 }
 fn default_sub_mode() -> String {
-    "bilingual".to_string()
+    "vi_only".to_string()
 }
 fn default_true() -> bool {
     true
@@ -55,6 +55,11 @@ impl Default for UserSettings {
 }
 
 fn get_settings_path() -> PathBuf {
+    if let Ok(appdata) = std::env::var("LOCALAPPDATA") {
+        let dir = PathBuf::from(appdata).join("LiveSub Studio");
+        let _ = std::fs::create_dir_all(&dir);
+        return dir.join("livesub_settings.json");
+    }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             return dir.join("livesub_settings.json");

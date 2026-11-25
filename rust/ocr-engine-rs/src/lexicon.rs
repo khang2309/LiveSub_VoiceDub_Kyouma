@@ -361,6 +361,17 @@ fn has_tone_hoi(s: &str) -> bool {
     s.chars().any(|c| matches!(c, 'ả' | 'ẳ' | 'ẩ' | 'ẻ' | 'ể' | 'ỉ' | 'ỏ' | 'ổ' | 'ở' | 'ủ' | 'ử' | 'ỷ' | 'Ả' | 'Ẳ' | 'Ẩ' | 'Ẻ' | 'Ể' | 'Ỉ' | 'Ỏ' | 'Ổ' | 'Ở' | 'Ủ' | 'Ử' | 'Ỷ'))
 }
 
+fn has_distinctive_tone(s: &str) -> bool {
+    s.chars().any(|c| matches!(c,
+        'à' | 'ằ' | 'ầ' | 'è' | 'ề' | 'ì' | 'ò' | 'ồ' | 'ờ' | 'ù' | 'ừ' | 'ỳ' |
+        'À' | 'Ằ' | 'Ầ' | 'È' | 'Ề' | 'Ì' | 'Ò' | 'Ồ' | 'Ờ' | 'Ù' | 'Ừ' | 'Ỳ' |
+        'ã' | 'ẵ' | 'ẫ' | 'ẽ' | 'ễ' | 'ĩ' | 'õ' | 'ỗ' | 'ỡ' | 'ũ' | 'ữ' | 'ỹ' |
+        'Ã' | 'Ẵ' | 'Ẫ' | 'Ẽ' | 'Ễ' | 'Ĩ' | 'Õ' | 'Ỗ' | 'Ỡ' | 'Ũ' | 'Ữ' | 'Ỹ' |
+        'ạ' | 'ặ' | 'ậ' | 'ẹ' | 'ệ' | 'ị' | 'ọ' | 'ộ' | 'ợ' | 'ụ' | 'ự' | 'ỵ' |
+        'Ạ' | 'Ặ' | 'Ậ' | 'Ẹ' | 'Ệ' | 'Ị' | 'Ọ' | 'Ộ' | 'Ợ' | 'Ụ' | 'Ự' | 'Ỵ'
+    ))
+}
+
 fn is_sac_hoi_confusion(cand: &str, core_low: &str) -> bool {
     (has_tone_sac(cand) && has_tone_hoi(core_low)) || (has_tone_hoi(cand) && has_tone_sac(core_low))
 }
@@ -369,15 +380,16 @@ fn cand_unigram_score(lex: &Lexicon, cand: &str, core_low: &str, is_strictly_una
     let mut score = unigram_frequency_score(cand);
     if cand == core_low {
         if !is_strictly_unacc && lex.syllables.contains(cand) && !is_rare_override_syllable(cand) {
-            // When syllable has acute (sắc) or hook (hỏi) tone, OCR fonts commonly confuse them.
-            // Give a balanced +15 bonus so conversational bigrams and vocabulary frequencies
-            // can correct OCR diacritic confusion!
             let has_confusable_tone = has_tone_sac(cand) || has_tone_hoi(cand);
+            let has_distinctive = has_distinctive_tone(cand);
             if has_confusable_tone {
                 score += 15;
-            } else {
+            } else if has_distinctive {
                 // Legitimate diacritics (dấu nặng, huyền, ngã) are strongly preserved
-                score += 50;
+                score += 45;
+            } else {
+                // Vowel hat/horn without tone mark (e.g. "môi", "tra", "cơ") often dropped a tone mark in OCR
+                score += 15;
             }
         } else if is_strictly_unacc && lex.syllables.contains(cand) {
             // Unaccented inputs (like "thit", "ban", "chi", "lai") should NOT get a large bonus
@@ -809,6 +821,14 @@ pub fn pre_normalize_ocr_substitutions(text: &str) -> String {
         ("con truna", "côn trùng"),
         ("Con truna", "Côn trùng"),
         ("truna", "trùng"),
+        ("môi năm", "mỗi năm"),
+        ("Môi năm", "Mỗi năm"),
+        ("tôi tra được", "tôi trả được"),
+        ("Tôi tra được", "Tôi trả được"),
+        ("một nữa rồi", "một nửa rồi"),
+        ("Một nữa rồi", "Một nửa rồi"),
+        ("một nữa", "một nửa"),
+        ("Một nữa", "Một nửa"),
         ("nua", "nữa"),
         ("Nua", "Nữa"),
         ("aay ra", "gây ra"),

@@ -222,6 +222,8 @@ class LiveDubStudio {
     const savedLang = localStorage.getItem('livesub_sourcelang');
     if (savedLang && this.sourceLangSelect) {
       this.sourceLangSelect.value = savedLang;
+    } else if (this.sourceLangSelect) {
+      this.sourceLangSelect.value = 'vi-VN';
     }
     const savedSubMode = localStorage.getItem('livesub_sub_mode');
     if (savedSubMode && ['bilingual', 'vi_only', 'source_only', 'en_only'].includes(savedSubMode)) {
@@ -231,7 +233,11 @@ class LiveDubStudio {
       const sysRadio = Array.from(this.systemSubModeRadios || []).find(item => item.value === savedSubMode);
       if (sysRadio) sysRadio.checked = true;
     } else {
-      this.currentSubMode = 'bilingual';
+      this.currentSubMode = 'vi_only';
+      const radio = Array.from(this.subModeRadios || []).find(item => item.value === 'vi_only');
+      if (radio) radio.checked = true;
+      const sysRadio = Array.from(this.systemSubModeRadios || []).find(item => item.value === 'vi_only');
+      if (sysRadio) sysRadio.checked = true;
     }
     const savedZone = localStorage.getItem('livesub_ocr_zone');
     if (savedZone && this.ocrZoneSelect) {
@@ -601,6 +607,11 @@ class LiveDubStudio {
     try {
       if (typeof localStorage !== 'undefined') localStorage.setItem('livesub_sub_mode', mode);
     } catch (_) {}
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sub_mode: mode })
+    }).catch(() => {});
 
     (this.subModeRadios || []).forEach(r => { r.checked = (r.value === mode); });
     (this.systemSubModeRadios || []).forEach(r => { r.checked = (r.value === mode); });
@@ -799,6 +810,11 @@ class LiveDubStudio {
           }
         }
         localStorage.setItem('livesub_sourcelang', val);
+        fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source_lang: val })
+        }).catch(() => {});
         this.showToast(` Đã chọn ngôn ngữ gốc: ${name}`);
         this.updateAppliedSettings();
       });
@@ -2420,6 +2436,11 @@ class LiveDubStudio {
       .replace(/\bchắc chân không\b/gi, 'chắc chắn không')
       .replace(/\bHộo bị dụ\b/gi, 'Họ bị dụ')
       .replace(/\bHộo\b/g, 'Họ')
+      .replace(/\bMôi năm\b/gi, 'Mỗi năm')
+      .replace(/\btôi tra được\b/gi, 'tôi trả được')
+      .replace(/\bm[oô]t n[uư][aã] r[oồ]i\b/gi, 'một nửa rồi')
+      .replace(/\bmột nữa\b/gi, 'một nửa')
+      .replace(/\bMôt\b/g, 'Một').replace(/\bmôt\b/g, 'một')
       // Vietnamese tone mark disambiguation (sắc vs hỏi OCR font confusion)
       .replace(/\bcúa\b/gi, 'của')
       .replace(/\bcúa mình\b/gi, 'của mình')
@@ -3648,12 +3669,12 @@ class LiveDubStudio {
       }
     }
 
-    // 2. Stream chunking for long sentences: synthesize the first clause immediately (~250ms)
+    // 2. Stream chunking for long sentences: synthesize the first clause immediately (~250-350ms)
     // while the remaining clauses synthesize in parallel in the background, eliminating the 2-second wait!
     const finalClauses = [];
     for (const part of candidateParts) {
       const words = part.split(/\s+/).filter(Boolean);
-      if (words.length <= 11 && part.length <= 60) {
+      if (words.length <= 7 && part.length <= 42) {
         finalClauses.push(part);
         continue;
       }
@@ -3666,9 +3687,9 @@ class LiveDubStudio {
         const right = punctMatch[3].trim();
         const leftWords = left.split(/\s+/).filter(Boolean).length;
         const rightWords = right.split(/\s+/).filter(Boolean).length;
-        if (leftWords >= 4 && rightWords >= 3) {
+        if (leftWords >= 3 && rightWords >= 2) {
           finalClauses.push(left);
-          if (rightWords > 11) {
+          if (rightWords > 7) {
             finalClauses.push(...this.splitSentenceIntoClauses(right));
           } else {
             finalClauses.push(right);
@@ -3679,7 +3700,7 @@ class LiveDubStudio {
       if (splitDone) continue;
 
       // B. Conjunction split closest to the middle
-      const conjRegex = /\s+(nhưng|mà|vì|khi|nếu|để|thì|cho nên|do đó|trước khi|sau khi|và|hoặc|hôm nay|bởi vì)\s+/gi;
+      const conjRegex = /\s+(nhưng|mà|vì|khi|nếu|để|thì|nên|cho nên|do đó|trước khi|sau khi|và|hoặc|hôm nay|bởi vì|thế nên|rồi|sẽ|chứ|song|tuy)\s+/gi;
       let match;
       let bestSplitIndex = -1;
       let minDistanceToCenter = Infinity;
@@ -3688,7 +3709,7 @@ class LiveDubStudio {
       while ((match = conjRegex.exec(part)) !== null) {
         const leftSub = part.slice(0, match.index);
         const wCount = leftSub.split(/\s+/).filter(Boolean).length;
-        if (wCount >= 4 && (words.length - wCount) >= 3) {
+        if (wCount >= 3 && (words.length - wCount) >= 2) {
           const dist = Math.abs(wCount - midWordIdx);
           if (dist < minDistanceToCenter) {
             minDistanceToCenter = dist;
@@ -3700,9 +3721,8 @@ class LiveDubStudio {
       if (bestSplitIndex > 0) {
         let leftPart = part.slice(0, bestSplitIndex).trim();
         let rightPart = part.slice(bestSplitIndex).trim();
-        if (!/[,;:.!?…–—]$/.test(leftPart)) leftPart += ',';
         finalClauses.push(leftPart);
-        if (rightPart.split(/\s+/).filter(Boolean).length > 11) {
+        if (rightPart.split(/\s+/).filter(Boolean).length > 7) {
           finalClauses.push(...this.splitSentenceIntoClauses(rightPart));
         } else {
           finalClauses.push(rightPart);
@@ -3710,14 +3730,13 @@ class LiveDubStudio {
         continue;
       }
 
-      // C. Word boundary fallback if still >= 13 words
-      if (words.length >= 13) {
-        const splitPoint = Math.min(10, Math.max(6, Math.floor(words.length / 2)));
+      // C. Word boundary fallback if still >= 8 words
+      if (words.length >= 8) {
+        const splitPoint = Math.min(6, Math.max(4, Math.floor(words.length / 2)));
         let leftPart = words.slice(0, splitPoint).join(' ');
         let rightPart = words.slice(splitPoint).join(' ');
-        if (!/[,;:.!?…–—]$/.test(leftPart)) leftPart += ',';
         finalClauses.push(leftPart);
-        if (rightPart.split(/\s+/).filter(Boolean).length > 11) {
+        if (rightPart.split(/\s+/).filter(Boolean).length > 7) {
           finalClauses.push(...this.splitSentenceIntoClauses(rightPart));
         } else {
           finalClauses.push(rightPart);
@@ -3757,11 +3776,9 @@ class LiveDubStudio {
           !isFirst // isChained: true for all subsequent clauses
         );
       }
-      // Pipelined parallel prefetch: start synthesizing ALL clauses immediately!
-      if (effectiveVoice.startsWith('vieneu')) {
-        for (const clause of clauses) {
-          this.prefetchLiveTts(clause, effectiveVoice);
-        }
+      // Pipeline first clause immediately so first sound emits in ~250-350ms!
+      if (effectiveVoice.startsWith('vieneu') && clauses.length > 0) {
+        this.prefetchLiveTts(clauses[0], effectiveVoice);
       }
       return this.drainLiveDubbingQueue();
     }
@@ -3925,18 +3942,18 @@ class LiveDubStudio {
             this.displaySubtitle(item.sourceText, showText);
             if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = showText;
             if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = item.sourceText;
+            // Pipeline prefetch: start synthesizing next queued item in background the exact moment this one plays!
+            if (this.liveDubbingQueue.length > 0) {
+              const nextItem = this.liveDubbingQueue[0];
+              if (nextItem && nextItem.voice && nextItem.voice.startsWith('vieneu') && nextItem.text) {
+                this.prefetchLiveTts(nextItem.text, nextItem.voice);
+              }
+            }
           };
           const originalDuration = item.originalDuration || (item.finalizedAt && item.capturedAt ? Math.max(0, (item.finalizedAt - item.capturedAt) / 1000) : 0);
           const queueLagMs = item.enqueuedAt ? (performance.now() - item.enqueuedAt) : 0;
           const currentQueueDepth = this.liveDubbingQueue.length + 1;
           if (item.voice.startsWith('vieneu')) {
-            // Pipeline prefetch: start synthesizing next queued items in parallel while this one plays!
-            for (let i = 0; i < Math.min(2, this.liveDubbingQueue.length); i++) {
-              const nextItem = this.liveDubbingQueue[i];
-              if (nextItem && nextItem.voice && nextItem.voice.startsWith('vieneu') && nextItem.text) {
-                this.prefetchLiveTts(nextItem.text, nextItem.voice);
-              }
-            }
             await this.playStreamingTts(
               item.text,
               item.voice,
@@ -4589,8 +4606,15 @@ class LiveDubStudio {
       try {
         const srcEl = this.pipWindow.document.getElementById('pipSource');
         const viEl = this.pipWindow.document.getElementById('pipVi');
-        if (srcEl) srcEl.textContent = sourceText || '';
-        if (viEl) viEl.textContent = viText || '';
+        const showSource = (this.currentSubMode !== 'vi_only' && this.currentSubMode !== 'none');
+        if (srcEl) {
+          srcEl.textContent = showSource ? (sourceText || '') : '';
+          srcEl.style.display = (showSource && sourceText) ? 'block' : 'none';
+        }
+        if (viEl) {
+          viEl.textContent = (this.currentSubMode !== 'source_only' && this.currentSubMode !== 'none') ? (viText || '') : '';
+          viEl.style.display = (this.currentSubMode !== 'source_only' && this.currentSubMode !== 'none') ? 'block' : 'none';
+        }
       } catch (_) {}
     }
 
@@ -4789,10 +4813,11 @@ class LiveDubStudio {
         const currentSource = this.subSourceDisplay ? this.subSourceDisplay.textContent : '';
         const currentVi = this.subViDisplay ? this.subViDisplay.textContent || 'Đang chờ phụ đề…' : 'Đang chờ phụ đề…';
 
+        const showSource = (this.currentSubMode !== 'vi_only' && this.currentSubMode !== 'none');
         pip.document.body.innerHTML = `
           <div id="pipContainer" style="width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:4px 14px;background:rgba(10,12,18,0.92);box-sizing:border-box;user-select:none;font-family:var(--font-subtitle,sans-serif);text-align:center;overflow:hidden;border-radius:10px;">
-            <div id="pipSource" style="font-size:13px;color:rgba(255,255,255,0.8);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:98%;margin-bottom:2px;">${this.escapeHtml(currentSource)}</div>
-            <div id="pipVi" style="font-size:24px;color:#FFE600;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:98%;text-shadow:0 2px 6px rgba(0,0,0,0.95);">${this.escapeHtml(currentVi)}</div>
+            <div id="pipSource" style="font-size:13px;color:rgba(255,255,255,0.8);font-weight:600;white-space:normal;word-break:break-word;max-width:98%;margin-bottom:2px;display:${showSource && currentSource ? 'block' : 'none'};">${this.escapeHtml(currentSource)}</div>
+            <div id="pipVi" style="font-size:24px;color:#FFE600;font-weight:800;white-space:normal;word-break:break-word;overflow-wrap:break-word;line-height:1.25;max-width:98%;text-shadow:0 2px 6px rgba(0,0,0,0.95);">${this.escapeHtml(currentVi)}</div>
           </div>
         `;
 
