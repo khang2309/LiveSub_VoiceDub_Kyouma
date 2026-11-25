@@ -728,18 +728,23 @@ class LiveDubStudio {
       this.btnStartLocalDubbing.addEventListener('click', () => this.startLocalVideoDubbing());
     }
 
+    const closeLocalVideoHandler = () => this.closeLocalVideo();
     if (this.btnCloseLocalVideo) {
-      this.btnCloseLocalVideo.addEventListener('click', () => {
-        this.stopLocalVideoDubbing();
-        if (this.localVideoPlayer) {
-          this.localVideoPlayer.pause();
-          this.localVideoPlayer.src = '';
-        }
-        if (this.localVideoContainer) this.localVideoContainer.style.display = 'none';
-        if (this.localVideoFileInfo) this.localVideoFileInfo.style.display = 'none';
-        if (this.localVideoDropZone) this.localVideoDropZone.style.display = 'flex';
-      });
+      this.btnCloseLocalVideo.addEventListener('click', closeLocalVideoHandler);
     }
+    const btnCloseBar = document.getElementById('btnCloseLocalVideoBar');
+    if (btnCloseBar) {
+      btnCloseBar.addEventListener('click', closeLocalVideoHandler);
+    }
+    const btnCloseFloat = document.getElementById('btnCloseLocalVideoFloating');
+    if (btnCloseFloat) {
+      btnCloseFloat.addEventListener('click', closeLocalVideoHandler);
+    }
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.activeSource === 'local') {
+        closeLocalVideoHandler();
+      }
+    });
 
     // Local Video Events
     if (this.localVideoPlayer) {
@@ -1800,6 +1805,11 @@ class LiveDubStudio {
     this.stopListening();
     this.activeSource = 'local';
     this.isListening = true;
+    this.isHybridModeActive = true;
+    this.hasActiveHardSubtitles = false;
+    this.hasSeenHardSubtitles = false;
+    this._hasNotifiedVietsubMode = false;
+    this.lastHardSubTime = 0;
     try {
       this.ensureAudioUnlocked();
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -1834,8 +1844,11 @@ class LiveDubStudio {
         await this.startHardSubtitleOCR(this.localVideoPlayer);
       }
 
-      if (this.localVideoPlayer && this.localVideoPlayer.paused) {
-        await this.localVideoPlayer.play().catch(e => console.warn('Video play error:', e));
+      if (this.localVideoPlayer) {
+        this.localVideoPlayer.muted = false;
+        if (this.localVideoPlayer.paused) {
+          await this.localVideoPlayer.play().catch(e => console.warn('Video play error:', e));
+        }
       }
       if (this.btnStartLocalDubbing) {
         this.btnStartLocalDubbing.textContent = '⏹ Dừng Thuyết Minh';
@@ -1860,6 +1873,20 @@ class LiveDubStudio {
       this.btnStartLocalDubbing.classList.add('btn-primary');
     }
     this.showToast('⏹️ Đã dừng thuyết minh video');
+  }
+
+  closeLocalVideo() {
+    this.stopLocalVideoDubbing();
+    if (this.localVideoPlayer) {
+      this.localVideoPlayer.pause();
+      this.localVideoPlayer.removeAttribute('src');
+      this.localVideoPlayer.load();
+    }
+    if (this.localVideoContainer) this.localVideoContainer.style.display = 'none';
+    if (this.localVideoFileInfo) this.localVideoFileInfo.style.display = 'none';
+    if (this.localVideoDropZone) this.localVideoDropZone.style.display = 'flex';
+    this.activeSource = null;
+    this.showToast('Đã đóng video cục bộ');
   }
 
   // --- SOURCE 3: MICROPHONE ---
@@ -2046,6 +2073,8 @@ class LiveDubStudio {
   }
 
   async startHardSubtitleOCR(streamOrVideo) {
+    this.stopHardSubtitleOCR();
+
     let videoEl = null;
     let isExternalVideo = false;
     if (streamOrVideo instanceof HTMLVideoElement) {
@@ -2066,13 +2095,11 @@ class LiveDubStudio {
       videoEl = this.ocrVideo;
     }
 
-    this.stopHardSubtitleOCR();
     this.ocrVideo = videoEl;
     this._isOcrVideoExternal = isExternalVideo;
     this.isListening = true;
     this.isOCRModeActive = true;
     this.activeSource = isExternalVideo ? 'local' : 'system';
-    if (this.neuralVAD) await this.neuralVAD.pause();
     if (this.activeAbortController) this.activeAbortController.abort();
     while (this.speechQueue.length) this.speechQueue.shift().resolve();
     this.lastOCRText = '';
@@ -2222,27 +2249,31 @@ class LiveDubStudio {
           this.handleOCRSubtitle(data);
         } else {
           this.ocrConsecutiveEmpty = (this.ocrConsecutiveEmpty || 0) + 1;
-          if (this.ocrConsecutiveEmpty >= 1) {
-            // As soon as subtitle clears (1 empty frame ~80ms), reset lastOCRText so repeated or next dialogue line speaks in full
+          if (this.ocrConsecutiveEmpty >= 2) {
+            // After ~160ms of empty gap, reset lastOCRText so repeated dialogue lines speak in full
             this.lastOCRText = '';
             this.lastCleanText = '';
           }
-          if (this.ocrConsecutiveEmpty >= 3) {
-            if (this.isHybridModeActive && !this.hasSeenHardSubtitles && (performance.now() - (this.lastHardSubTime || 0)) > 6000) {
-              if (this.hasActiveHardSubtitles) {
-                this.hasActiveHardSubtitles = false;
-                if (this.neuralVAD && this.neuralVADActive) {
-                  try { this.neuralVAD.resume(); } catch (_) {}
-                }
-                if (this.oneTouchDetectionPill) {
-                  this.oneTouchDetectionPill.innerHTML = '🎙️ <strong>Chế độ 1 Chạm:</strong> Whisper GPU đang nghe âm thanh trực tiếp';
-                }
+          if (this.ocrConsecutiveEmpty >= 6) {
+            // After ~500ms without hard subtitles, release active lock so Whisper can process speech
+            if (this.hasActiveHardSubtitles) {
+              this.hasActiveHardSubtitles = false;
+              if (this.neuralVAD && this.neuralVADActive) {
+                try { this.neuralVAD.resume(); } catch (_) {}
+              }
+              if (this.oneTouchDetectionPill) {
+                this.oneTouchDetectionPill.innerHTML = '🎙️ <strong>Chế độ 1 Chạm:</strong> Whisper GPU đang nghe âm thanh trực tiếp';
               }
             }
+          }
+          if (this.ocrConsecutiveEmpty >= 20) {
+            // After ~1.6s of silence / no subtitle, clear on-screen display
             if (this.currentSubMode !== 'none' && typeof this.displaySubtitle === 'function') {
               this.displaySubtitle('', '');
               if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = '';
               if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = '';
+              if (this.invideoSubVi) this.invideoSubVi.textContent = '';
+              if (this.invideoSubSource) this.invideoSubSource.textContent = '';
             }
           }
         }
@@ -3260,7 +3291,7 @@ class LiveDubStudio {
     // pauses are much less likely to split an actor in the middle of a line.
     // Audio is returned at Whisper-native 16 kHz and never leaves the browser
     // until a complete phrase has been detected.
-    if (!this.isOCRModeActive && window.vad && window.vad.MicVAD) {
+    if ((!this.isOCRModeActive || this.isHybridModeActive) && window.vad && window.vad.MicVAD) {
       try {
         const vadStream = audioStream;
         this.neuralVAD = await window.vad.MicVAD.new({
@@ -3298,7 +3329,7 @@ class LiveDubStudio {
             }
           },
           onSpeechEnd: (audio) => {
-            if (!this.isListening || this.isOCRModeActive || this.hasSeenHardSubtitles || !audio || audio.length < 3200) return;
+            if (!this.isListening || (this.isOCRModeActive && this.hasActiveHardSubtitles) || !audio || audio.length < 3200) return;
             const wavBlob = this.encodeWAV16k([audio], 16000);
             wavBlob.livesubCapturedAt = this.captureStartedAt || performance.now();
             wavBlob.livesubFinalizedAt = performance.now();
@@ -3346,7 +3377,7 @@ class LiveDubStudio {
 
       // Silero owns phrase endpointing. This ScriptProcessor remains connected
       // only for the level meter and the missing-shared-audio warning.
-      if (this.neuralVADActive || this.isOCRModeActive || this.hasSeenHardSubtitles) return;
+      if (this.neuralVADActive || (this.isOCRModeActive && this.hasActiveHardSubtitles)) return;
 
       // 2. Speech state machine with ~170 ms pre-roll. Long stretches of
       // silence are not uploaded to Whisper, which cuts ASR time noticeably.
@@ -3471,7 +3502,7 @@ class LiveDubStudio {
   }
 
   enqueueSpeechPhrase(audioBlob) {
-    if (this.isOCRModeActive) return Promise.resolve();
+    if (this.isOCRModeActive && this.hasActiveHardSubtitles) return Promise.resolve();
     if (!audioBlob || (typeof audioBlob.size === 'number' && audioBlob.size < 1000)) {
       return Promise.resolve();
     }
@@ -3511,7 +3542,7 @@ class LiveDubStudio {
   }
 
   async processSpeechPhrase(audioBlob, sequence = 0, captureMeta = null) {
-    if (this.isOCRModeActive) return;
+    if (this.isOCRModeActive && this.hasActiveHardSubtitles) return;
 
     this.isTranscribing = true;
     this.setStatus('active', 'AI nhận diện GPU & dịch...');
@@ -3548,7 +3579,7 @@ class LiveDubStudio {
 
       const data = await response.json();
       if (data.timings) this.realtimeMetrics.lastServerTimings = data.timings;
-      if (this.isOCRModeActive) return;
+      if (this.isOCRModeActive && this.hasActiveHardSubtitles) return;
       if (selectedSourceLang === 'auto' && data.detected_lang && data.detected_lang !== 'auto') {
         this.autoDetectedSourceLang = data.detected_lang;
       }
@@ -4374,11 +4405,23 @@ class LiveDubStudio {
     if (this.subSourceDisplay) this.subSourceDisplay.textContent = sourceText || '';
     if (this.subViDisplay) this.subViDisplay.textContent = viText || '';
 
-    if (this.invideoSubSource) this.invideoSubSource.textContent = sourceText || '';
-    if (this.invideoSubVi) this.invideoSubVi.textContent = viText || '';
+    if (this.invideoSubSource) {
+      this.invideoSubSource.textContent = sourceText || '';
+      this.invideoSubSource.style.display = (sourceText && this.currentSubMode !== 'vi_only' && this.currentSubMode !== 'none') ? 'block' : 'none';
+    }
+    if (this.invideoSubVi) {
+      this.invideoSubVi.textContent = viText || '';
+      this.invideoSubVi.style.display = (viText && this.currentSubMode !== 'source_only' && this.currentSubMode !== 'none') ? 'block' : 'none';
+    }
 
-    if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = sourceText || '';
-    if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = viText || '';
+    if (this.invideoWebSubSource) {
+      this.invideoWebSubSource.textContent = sourceText || '';
+      this.invideoWebSubSource.style.display = (sourceText && this.currentSubMode !== 'vi_only' && this.currentSubMode !== 'none') ? 'block' : 'none';
+    }
+    if (this.invideoWebSubVi) {
+      this.invideoWebSubVi.textContent = viText || '';
+      this.invideoWebSubVi.style.display = (viText && this.currentSubMode !== 'source_only' && this.currentSubMode !== 'none') ? 'block' : 'none';
+    }
 
     if (this.pipWindow && !this.pipWindow.closed) {
       try {

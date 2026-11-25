@@ -1258,6 +1258,15 @@ select:focus-visible {
   object-fit: contain !important;
 }
 
+.btn-close-floating {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.btn-close-floating:hover {
+  background: rgba(220, 38, 38, 0.9) !important;
+  border-color: rgba(239, 68, 68, 0.8) !important;
+  transform: scale(1.04);
+}
+
 .web-video-wrapper:fullscreen .invideo-subtitle-overlay,
 .web-video-wrapper:-webkit-full-screen .invideo-subtitle-overlay {
   position: fixed !important;
