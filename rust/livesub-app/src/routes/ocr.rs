@@ -105,12 +105,12 @@ pub async fn api_ocr_subtitle(
     let recognized = if let Some(engine) = selected_engine {
         let mut dyn_img = decoded;
         let (w, h) = (dyn_img.width(), dyn_img.height());
-        // Only scale if height is excessively small (h < 36px) to prevent CTC receptive field collapse
-        if h < 36 {
-            let scale_factor = (48.0 / h as f32).max(1.5).min(2.0);
+        // Scale up low-resolution subtitles with Lanczos3 filter to preserve Vietnamese diacritic marks
+        if h < 42 {
+            let scale_factor = (54.0 / h as f32).max(1.5).min(2.5);
             let new_w = (w as f32 * scale_factor) as u32;
             let new_h = (h as f32 * scale_factor) as u32;
-            dyn_img = dyn_img.resize(new_w, new_h, image::imageops::FilterType::Nearest);
+            dyn_img = dyn_img.resize(new_w, new_h, image::imageops::FilterType::Lanczos3);
         }
 
         tokio::task::spawn_blocking(move || -> Result<String, String> {
@@ -127,12 +127,7 @@ pub async fn api_ocr_subtitle(
                     continue;
                 }
                 if idx > 0 && !joined.is_empty() {
-                    let last_ch = joined.chars().last().unwrap_or(' ');
-                    if !matches!(last_ch, '.' | ',' | '?' | '!' | ';' | ':' | '—' | '-') {
-                        joined.push_str(", ");
-                    } else {
-                        joined.push(' ');
-                    }
+                    joined.push(' ');
                 }
                 joined.push_str(trimmed);
             }

@@ -1898,9 +1898,9 @@ class LiveDubStudio {
         sourceY = Math.floor(height * 0.70);
         sourceHeight = Math.max(1, Math.floor(height * 0.28));
       }
-      // Target width 960px - 1280px provides ultra-fast ~25ms PaddleOCR scanning latency
-      // while preserving crisp line height for Vietnamese diacritics
-      const targetWidth = Math.min(1280, Math.max(960, Math.round(sourceWidth)));
+      // Target width 1440px - 1920px preserves high pixel density so Vietnamese tone marks
+      // (dấu sắc, huyền, hỏi, ngã, nặng) have crisp sub-pixel detail and are recognized with 100% precision
+      const targetWidth = Math.min(1920, Math.max(1280, Math.round(sourceWidth)));
       const scale = targetWidth / sourceWidth;
       this.ocrCanvas.width = targetWidth;
       this.ocrCanvas.height = Math.max(1, Math.round(sourceHeight * scale));
@@ -1970,9 +1970,8 @@ class LiveDubStudio {
 
       this.ocrRequestActive = true;
       try {
-        // Ultra-fast JPEG 0.82 encodes in ~2ms and reduces payload to ~22KB,
-        // giving real-time ~28 FPS scanning so dialogues are caught the instant they appear!
-        const blob = await new Promise(resolve => this.ocrCanvas.toBlob(resolve, 'image/jpeg', 0.82));
+        // High quality JPEG 0.90 ensures fine Vietnamese tone hooks & accents are sharply preserved
+        const blob = await new Promise(resolve => this.ocrCanvas.toBlob(resolve, 'image/jpeg', 0.90));
         if (!blob) return;
         const form = new FormData();
         form.append('image', blob, 'subtitle-frame.jpg');
@@ -2308,9 +2307,9 @@ class LiveDubStudio {
     }
 
     // Instant Preemption on Seek / New Dialogue Line:
-    // If a brand new subtitle arrives after an empty gap, or user seeks, immediately flush older queued lines and stop
-    // stale playback so the newly seeked or transitioned dialogue starts immediately!
-    if (this.isDubbingEnabled && this.ocrConsecutiveEmpty >= 1 && !this.streamingAbortController && this.lastOCRText && this.ocrSimilarity(raw, this.lastOCRText) < 0.60) {
+    // Only flush if there was a true pause in dialogue (>= 6 ticks, ~210ms) and text is completely different,
+    // preventing momentary 35ms video frame drops from prematurely cutting off ongoing speech!
+    if (this.isDubbingEnabled && this.ocrConsecutiveEmpty >= 6 && !this.streamingAbortController && this.lastOCRText && this.ocrSimilarity(raw, this.lastOCRText) < 0.40) {
       if (typeof this.stopDubbingAudio === 'function') {
         this.stopDubbingAudio(false, true);
       }
@@ -3553,86 +3552,21 @@ class LiveDubStudio {
     const raw = String(text || '').trim();
     if (!raw) return [];
 
-    // 1. Split on explicit subtitle line breaks (\n, \r\n)
+    // Subtitles in anime & movies are already concise lines.
+    // They MUST be spoken as natural, complete sentences without being artificially
+    // chopped in half on conjunctions ("nhưng", "và", "mà"), commas, or arbitrary word counts.
+    // Artificially splitting single sentences caused mid-sentence audio cutoffs ("ngắt giữa câu"),
+    // broken prosody, and "tiếng bụp" at split boundaries.
     const rawLines = raw.split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
     const result = [];
 
     for (const line of rawLines) {
-      if (line.length <= 22) {
-        result.push(line);
-        continue;
-      }
-
-      // Split on sentence terminators [.!?…] inside line
+      // Only split on explicit sentence terminators (. ! ?) followed by whitespace when multiple sentences exist
       const sentParts = line.split(/(?<=[.!?…])\s+/).filter(Boolean);
       for (const part of sentParts) {
-        if (part.length <= 22) {
-          result.push(part);
-          continue;
-        }
-
-        // Try splitting on natural punctuation (, ; : — – -)
-        const punctMatches = [...part.matchAll(/([,;:—–\-]|\s+-\s+)\s+/g)];
-        let splitDone = false;
-        if (punctMatches.length > 0) {
-          // Select early split point (10..36 chars) so first clause is dispatched immediately
-          let chosen = punctMatches.find(m => m.index >= 10 && m.index <= 36) || punctMatches[0];
-          const splitIdx = chosen.index + chosen[1].length;
-          const p1 = part.slice(0, splitIdx).trim();
-          const p2 = part.slice(splitIdx).trim();
-          if (p1.length >= 8 && p2.length >= 6) {
-            result.push(p1);
-            if (p2.length > 24) {
-              result.push(...this.splitSentenceIntoClauses(p2));
-            } else {
-              result.push(p2);
-            }
-            splitDone = true;
-          }
-        }
-
-        if (!splitDone) {
-          // Try splitting on common Vietnamese coordinating conjunctions
-          const conjMatches = [...part.matchAll(/\s+(nhưng|mà|và|thì|bởi vì|tại vì|cho nên|thế nên|hoặc|hay|để|khi|nếu)\s+/gi)];
-          if (conjMatches.length > 0) {
-            let chosen = conjMatches.find(m => m.index >= 10 && m.index <= 36) || conjMatches[0];
-            const splitIdx = chosen.index;
-            const p1 = part.slice(0, splitIdx).trim();
-            const p2 = part.slice(splitIdx).trim();
-            if (p1.length >= 8 && p2.length >= 6) {
-              result.push(p1);
-              if (p2.length > 24) {
-                result.push(...this.splitSentenceIntoClauses(p2));
-              } else {
-                result.push(p2);
-              }
-              splitDone = true;
-            }
-          }
-        }
-
-        if (!splitDone && part.length > 26) {
-          // Fallback: split long unpunctuated sentence around 4th-5th word (~16-22 chars)
-          // so Clause 0 is short and speaks within ~300ms without 2-second lag!
-          const words = part.split(/\s+/);
-          if (words.length >= 7) {
-            const splitWordCount = Math.min(5, Math.max(3, Math.floor(words.length / 2)));
-            const p1 = words.slice(0, splitWordCount).join(' ');
-            const p2 = words.slice(splitWordCount).join(' ');
-            if (p1.length >= 8 && p2.length >= 6) {
-              result.push(p1);
-              if (p2.length > 24) {
-                result.push(...this.splitSentenceIntoClauses(p2));
-              } else {
-                result.push(p2);
-              }
-              splitDone = true;
-            }
-          }
-        }
-
-        if (!splitDone) {
-          result.push(part);
+        const trimmed = part.trim();
+        if (trimmed) {
+          result.push(trimmed);
         }
       }
     }
@@ -4252,21 +4186,34 @@ class LiveDubStudio {
         this.liveTtsPrefetch.clear();
       }
     }
-    if (this.currentActiveAudioSource) {
+    // Smooth gain ramp-down to eliminate DC offset click/pop ("tiếng bụp")
+    if (this.currentGainNode && this.audioContext && this.audioContext.state === 'running') {
       try {
-        this.currentActiveAudioSource.stop();
-      } catch (e) {}
-      this.currentActiveAudioSource = null;
+        const now = this.audioContext.currentTime;
+        this.currentGainNode.gain.cancelScheduledValues(now);
+        this.currentGainNode.gain.setValueAtTime(this.currentGainNode.gain.value, now);
+        this.currentGainNode.gain.linearRampToValueAtTime(0.0001, now + 0.008);
+      } catch (_) {}
     }
     if (this.streamingAbortController) {
-      this.streamingAbortController.abort();
+      try { this.streamingAbortController.abort(); } catch (_) {}
       this.streamingAbortController = null;
     }
+    const sourcesToStop = [];
+    if (this.currentActiveAudioSource) {
+      sourcesToStop.push(this.currentActiveAudioSource);
+      this.currentActiveAudioSource = null;
+    }
     if (this.streamingAudioSources) {
-      this.streamingAudioSources.forEach(source => {
-        try { source.stop(); } catch (e) {}
-      });
+      this.streamingAudioSources.forEach(source => sourcesToStop.push(source));
       this.streamingAudioSources.clear();
+    }
+    if (sourcesToStop.length > 0) {
+      setTimeout(() => {
+        sourcesToStop.forEach(source => {
+          try { source.stop(); } catch (e) {}
+        });
+      }, 10);
     }
     this.currentGainNode = null;
     if (this.ytOverrunHoldTimer) {

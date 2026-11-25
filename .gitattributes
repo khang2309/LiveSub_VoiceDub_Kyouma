@@ -1,29 +1,22 @@
-# GitHub Linguist Overrides - Mark vendored frontend assets, web code, scripts and models
-# so GitHub correctly identifies the repository as Pure Rust (100%)
+# GitHub Linguist Overrides - Exclude frontend assets, web code, scripts and web bundles
+# so GitHub correctly calculates repository language breakdown as 100% Pure Rust
 
-*.js linguist-vendored
-*.mjs linguist-vendored
-*.css linguist-vendored
-*.html linguist-vendored
-*.bat linguist-vendored
-*.ps1 linguist-vendored
-*.vbs linguist-vendored
-*.json linguist-vendored
-*.toml linguist-vendored
+*.js linguist-vendored linguist-detectable=false
+*.mjs linguist-vendored linguist-detectable=false
+*.css linguist-vendored linguist-detectable=false
+*.html linguist-vendored linguist-detectable=false
+*.bat linguist-vendored linguist-detectable=false
+*.ps1 linguist-vendored linguist-detectable=false
+*.vbs linguist-vendored linguist-detectable=false
+*.json linguist-vendored linguist-detectable=false
+*.toml linguist-vendored linguist-detectable=false
 
-public/* linguist-vendored
-public/**/* linguist-vendored
-extension/* linguist-vendored
-extension/**/* linguist-vendored
-scripts/* linguist-vendored
-scripts/**/* linguist-vendored
-tests/* linguist-vendored
-tests/**/* linguist-vendored
-data/* linguist-vendored
-data/**/* linguist-vendored
-models/* linguist-vendored
-models/**/* linguist-vendored
-src-tauri/* linguist-vendored
-src-tauri/**/* linguist-vendored
+public/** linguist-vendored linguist-detectable=false
+extension/** linguist-vendored linguist-detectable=false
+scripts/** linguist-vendored linguist-detectable=false
+tests/** linguist-vendored linguist-detectable=false
+data/** linguist-vendored linguist-detectable=false
+models/** linguist-vendored linguist-detectable=false
+src-tauri/** linguist-vendored linguist-detectable=false
 
-*.rs linguist-detectable=true
+*.rs linguist-vendored=false linguist-detectable=true
