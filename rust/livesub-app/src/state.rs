@@ -56,8 +56,8 @@ impl OcrEnginePool {
                 "PP-OCRv3 Korean Dedicated Model (Hangul Chuyên dụng)",
             ),
             _ => (
-                self.english.clone().or_else(|| self.vietnamese.clone()),
-                "LiveSub Dynamic Model Auto Route (PP-OCRv4 Latin/English Primary)",
+                self.vietnamese.clone().or_else(|| self.english.clone()),
+                "LiveSub Dynamic Model Auto Route (VieSVTR Vietnamese/Latin Primary)",
             ),
         }
     }

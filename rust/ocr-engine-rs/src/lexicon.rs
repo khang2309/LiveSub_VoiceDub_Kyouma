@@ -368,22 +368,18 @@ fn is_sac_hoi_confusion(cand: &str, core_low: &str) -> bool {
 fn cand_unigram_score(lex: &Lexicon, cand: &str, core_low: &str, is_strictly_unacc: bool) -> i32 {
     let mut score = unigram_frequency_score(cand);
     if cand == core_low {
-        if !is_strictly_unacc && lex.syllables.contains(cand) && !is_rare_override_syllable(cand) {
-            // When syllable has acute (sắc) or hook (hỏi) tone, OCR fonts commonly confuse them.
-            // Give a balanced +15 bonus (instead of overwhelming +55) so conversational bigrams and
-            // vocabulary frequencies can correct OCR diacritic confusion!
-            let has_confusable_tone = has_tone_sac(cand) || has_tone_hoi(cand);
-            if has_confusable_tone {
-                score += 15;
-            } else {
-                score += 50;
-            }
+        if !is_strictly_unacc && lex.syllables.contains(cand) {
+            // Syllable was read directly with diacritics by neural OCR and is a valid Vietnamese word.
+            // Strongly protect the actual neural OCR reading (+120 bonus) so dictionary unigrams
+            // never overwrite valid diacritics (like dấu nặng, hỏi vs sắc)!
+            score += 120;
+        } else {
+            score += 50;
         }
     } else if !is_strictly_unacc && is_sac_hoi_confusion(cand, core_low) {
-        let cand_freq = unigram_frequency_score(cand);
-        let core_freq = unigram_frequency_score(core_low);
-        if cand_freq > core_freq {
-            score += 16;
+        // Only consider confusion if the original word is NOT a known valid syllable
+        if !lex.syllables.contains(core_low) {
+            score += 15;
         }
     }
     if core_low.starts_with('đ') && cand.starts_with('đ') {

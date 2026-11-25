@@ -3006,7 +3006,17 @@ class LiveDubStudio {
       sourceNode.playbackRate.value = effectiveRate;
 
       const gainNode = this.audioContext.createGain();
-      gainNode.gain.value = (parseInt(this.volumeRange.value, 10) || 100) / 100;
+      const targetGain = (parseInt(this.volumeRange.value, 10) || 100) / 100;
+      const now = this.audioContext.currentTime;
+      // Micro fade-in (6ms) and fade-out (8ms) to completely eliminate DC offset clicks / pops
+      gainNode.gain.setValueAtTime(0.0001, now);
+      gainNode.gain.linearRampToValueAtTime(targetGain, now + 0.006);
+      const playDuration = audioBuffer.duration / (sourceNode.playbackRate.value || 1.0);
+      const endTime = now + playDuration;
+      if (playDuration > 0.02) {
+        gainNode.gain.setValueAtTime(targetGain, Math.max(now + 0.006, endTime - 0.008));
+        gainNode.gain.linearRampToValueAtTime(0.0001, endTime);
+      }
 
       const voiceNodes = this.createVoiceNodes(voice);
       let lastNode = sourceNode;
@@ -3824,7 +3834,17 @@ class LiveDubStudio {
       sourceNode.playbackRate.value = effectiveRate;
 
       const gainNode = this.audioContext.createGain();
-      gainNode.gain.value = (parseInt(this.volumeRange.value, 10) || 100) / 100;
+      const targetGain = (parseInt(this.volumeRange.value, 10) || 100) / 100;
+      const now = this.audioContext.currentTime;
+      // Micro fade-in (6ms) and fade-out (8ms) to completely eliminate DC offset clicks / pops
+      gainNode.gain.setValueAtTime(0.0001, now);
+      gainNode.gain.linearRampToValueAtTime(targetGain, now + 0.006);
+      const playDuration = audioBuffer.duration / (sourceNode.playbackRate.value || 1.0);
+      const endTime = now + playDuration;
+      if (playDuration > 0.02) {
+        gainNode.gain.setValueAtTime(targetGain, Math.max(now + 0.006, endTime - 0.008));
+        gainNode.gain.linearRampToValueAtTime(0.0001, endTime);
+      }
 
       sourceNode.connect(gainNode);
       gainNode.connect(this.audioContext.destination);
@@ -3882,7 +3902,17 @@ class LiveDubStudio {
       sourceNode.playbackRate.value = this.getSafeStreamingPlaybackRate(queueDepth, 2.0, originalDuration, textLength, queueLagMs);
 
       const gainNode = this.audioContext.createGain();
-      gainNode.gain.value = (parseInt(this.volumeRange.value, 10) || 100) / 100;
+      const targetGain = (parseInt(this.volumeRange.value, 10) || 100) / 100;
+      const now = this.audioContext.currentTime;
+      // Micro fade-in (6ms) and fade-out (8ms) to completely eliminate DC offset clicks / pops
+      gainNode.gain.setValueAtTime(0.0001, now);
+      gainNode.gain.linearRampToValueAtTime(targetGain, now + 0.006);
+      const playDuration = audioBuffer.duration / (sourceNode.playbackRate.value || 1.0);
+      const endTime = now + playDuration;
+      if (playDuration > 0.02) {
+        gainNode.gain.setValueAtTime(targetGain, Math.max(now + 0.006, endTime - 0.008));
+        gainNode.gain.linearRampToValueAtTime(0.0001, endTime);
+      }
 
       const voiceNodes = this.createVoiceNodes(voice);
       let lastNode = sourceNode;
@@ -3990,7 +4020,17 @@ class LiveDubStudio {
       const sampleRate = prefetchedData ? prefetchedData.sampleRate : parseInt(response.headers.get('X-Audio-Sample-Rate') || '48000', 10);
       const serverRateCap = prefetchedData ? prefetchedData.serverRateCap : parseFloat(response.headers.get('X-Safe-Playback-Rate') || '1.0');
       const gainNode = this.audioContext.createGain();
-      gainNode.gain.value = (parseInt(this.volumeRange.value, 10) || 100) / 100;
+      const targetGain = (parseInt(this.volumeRange.value, 10) || 100) / 100;
+      const now = this.audioContext.currentTime;
+      // Micro fade-in (6ms) and fade-out (8ms) to completely eliminate DC offset clicks / pops
+      gainNode.gain.setValueAtTime(0.0001, now);
+      gainNode.gain.linearRampToValueAtTime(targetGain, now + 0.006);
+      const playDuration = audioBuffer.duration / (sourceNode.playbackRate.value || 1.0);
+      const endTime = now + playDuration;
+      if (playDuration > 0.02) {
+        gainNode.gain.setValueAtTime(targetGain, Math.max(now + 0.006, endTime - 0.008));
+        gainNode.gain.linearRampToValueAtTime(0.0001, endTime);
+      }
       gainNode.connect(this.audioContext.destination);
       this.currentGainNode = gainNode;
       this.dubbingIndicator.classList.add('active');

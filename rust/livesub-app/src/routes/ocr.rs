@@ -207,9 +207,9 @@ pub async fn api_ocr_subtitle(
             .filter(|c| "àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ".contains(*c))
             .count();
         let has_common_vi_word = crate::state::get_re_vi().is_match(&rec_trimmed);
-        let is_genuine_vi = vi_markers_count >= 2 || (vi_markers_count >= 1 && has_common_vi_word);
+        let is_genuine_vi = vi_markers_count >= 1 || has_common_vi_word;
 
-        if is_genuine_vi && (rec_trimmed.contains(' ') || rec_trimmed.chars().count() > 3) {
+        if is_genuine_vi {
             let restored = state.ocr.restore_vietnamese(&rec_trimmed);
             (restored.clone(), restored)
         } else {

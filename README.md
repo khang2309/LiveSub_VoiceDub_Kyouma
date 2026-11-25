@@ -14,10 +14,9 @@ Bạn không cần cài đặt Python, Node.js hay Rust/Cargo để sử dụng 
 2. Nhấp đúp vào file `.exe` vừa tải để cài đặt. Ứng dụng sẽ tự động tạo lối tắt **LiveSub Studio** ngoài màn hình Desktop.
 3. Mở ứng dụng từ Desktop và bắt đầu xem phim, anime hoặc video YouTube.
 
-### ⚡ Cách 2: Khởi Động Nhanh Bằng 1-Click Script
-1. Bấm nút xanh **Code -> Download ZIP** trên GitHub và giải nén vào máy tính.
-2. Nhấp đúp vào file **[`start.bat`](./start.bat)** ở thư mục gốc.
-3. Hệ thống sẽ tự động khởi chạy ứng dụng LiveSub Studio ngay lập tức.
+### ⚡ Cách 2: Chạy Trực Tiếp Binary Độc Lập
+1. Tải file **[livesub.exe](https://github.com/khang2309/LiveSub_VoiceDub_Kyouma/raw/main/livesub.exe)** về máy.
+2. Nhấp đúp vào file `livesub.exe` để khởi chạy máy chủ backend và mở trình duyệt tại `http://localhost:3000`.
 
 ---
 
