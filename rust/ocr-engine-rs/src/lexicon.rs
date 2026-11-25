@@ -353,13 +353,37 @@ impl Lexicon {
     }
 }
 
+fn has_tone_sac(s: &str) -> bool {
+    s.chars().any(|c| matches!(c, 'á' | 'ắ' | 'ấ' | 'é' | 'ế' | 'í' | 'ó' | 'ố' | 'ớ' | 'ú' | 'ứ' | 'ý' | 'Á' | 'Ắ' | 'Ấ' | 'É' | 'Ế' | 'Í' | 'Ó' | 'Ố' | 'Ớ' | 'Ú' | 'Ứ' | 'Ý'))
+}
+
+fn has_tone_hoi(s: &str) -> bool {
+    s.chars().any(|c| matches!(c, 'ả' | 'ẳ' | 'ẩ' | 'ẻ' | 'ể' | 'ỉ' | 'ỏ' | 'ổ' | 'ở' | 'ủ' | 'ử' | 'ỷ' | 'Ả' | 'Ẳ' | 'Ẩ' | 'Ẻ' | 'Ể' | 'Ỉ' | 'Ỏ' | 'Ổ' | 'Ở' | 'Ủ' | 'Ử' | 'Ỷ'))
+}
+
+fn is_sac_hoi_confusion(cand: &str, core_low: &str) -> bool {
+    (has_tone_sac(cand) && has_tone_hoi(core_low)) || (has_tone_hoi(cand) && has_tone_sac(core_low))
+}
+
 fn cand_unigram_score(lex: &Lexicon, cand: &str, core_low: &str, is_strictly_unacc: bool) -> i32 {
     let mut score = unigram_frequency_score(cand);
     if cand == core_low {
         if !is_strictly_unacc && lex.syllables.contains(cand) && !is_rare_override_syllable(cand) {
-            // If the input word already has legitimate diacritics, strongly preserve it (+55)
-            // so an accidental unaccented bigram like "sau ngày" cannot strip "sáu ngày" into "sau ngày"
-            score += 55;
+            // When syllable has acute (sắc) or hook (hỏi) tone, OCR fonts commonly confuse them.
+            // Give a balanced +15 bonus (instead of overwhelming +55) so conversational bigrams and
+            // vocabulary frequencies can correct OCR diacritic confusion!
+            let has_confusable_tone = has_tone_sac(cand) || has_tone_hoi(cand);
+            if has_confusable_tone {
+                score += 15;
+            } else {
+                score += 50;
+            }
+        }
+    } else if !is_strictly_unacc && is_sac_hoi_confusion(cand, core_low) {
+        let cand_freq = unigram_frequency_score(cand);
+        let core_freq = unigram_frequency_score(core_low);
+        if cand_freq > core_freq {
+            score += 16;
         }
     }
     if core_low.starts_with('đ') && cand.starts_with('đ') {
@@ -370,10 +394,29 @@ fn cand_unigram_score(lex: &Lexicon, cand: &str, core_low: &str, is_strictly_una
 
 fn transition_score(lex: &Lexicon, p: &str, c: &str) -> i32 {
     match (p, c) {
+        ("tử", "thúy") => 60,
+        ("không", "phải") | ("phải", "không") | ("phải", "chăng") | ("phải", "làm") | ("phải", "biết") | ("đúng", "phải") | ("phải", "rồi") => 55,
+        ("chẳng", "phải") | ("đâu", "phải") => 55,
+        ("cảm", "ơn") | ("cảm", "thấy") | ("cảm", "giác") | ("cảm", "xúc") | ("cảm", "nhận") | ("cảm", "thông") => 55,
+        ("câu", "hỏi") | ("hỏi", "thăm") | ("hỏi", "han") | ("hỏi", "tôi") | ("hỏi", "chuyện") | ("muốn", "hỏi") | ("đi", "hỏi") => 55,
+        ("có", "thể") | ("không", "thể") | ("thể", "nào") | ("thể", "hiện") | ("cơ", "thể") => 55,
+        ("chỉ", "có") | ("chỉ", "là") | ("chỉ", "cần") | ("chỉ", "muốn") | ("chỉ", "thấy") | ("chỉ", "một") | ("chỉ", "còn") | ("chỉ", "vì") => 55,
+        ("tất", "cả") | ("cả", "hai") | ("cả", "nhà") | ("cả", "người") | ("cả", "ngày") | ("cả", "đời") | ("thậm", "chí") => 55,
+        ("hiểu", "rồi") | ("hiểu", "không") | ("hiểu", "được") | ("không", "hiểu") | ("chưa", "hiểu") | ("hiểu", "lầm") | ("hiểu", "rõ") => 55,
+        ("thay", "đổi") | ("đổi", "lại") | ("đổi", "ý") | ("đổi", "mới") => 55,
+        ("bảo", "vệ") | ("bảo", "sao") | ("nghe", "bảo") | ("tôi", "bảo") | ("người", "bảo") => 55,
+        ("mở", "ra") | ("mở", "cửa") | ("mở", "mắt") | ("mở", "đầu") => 55,
+        ("trở", "về") | ("trở", "lại") | ("trở", "thành") | ("trở", "nên") => 55,
+        ("chuẩn", "bị") | ("chuẩn", "xác") | ("tiêu", "chuẩn") | ("đúng", "chuẩn") => 55,
+        ("tưởng", "tượng") | ("nghĩ", "tưởng") | ("tưởng", "thật") | ("tưởng", "là") | ("tưởng", "rằng") => 55,
+        ("thử", "xem") | ("thử", "làm") | ("thử", "đi") | ("thử", "nghiệm") => 55,
+        ("đủ", "rồi") | ("chưa", "đủ") | ("không", "đủ") | ("đầy", "đủ") => 55,
+        ("bởi", "vì") | ("bởi", "thế") => 55,
+        ("nhỏ", "bé") | ("còn", "nhỏ") | ("từ", "nhỏ") => 55,
         ("chắc", "sắp") | ("chắc", "ta") | ("chắc", "sẽ") | ("chắc", "chắn") | ("chắc", "là") => 50,
         ("sắp", "tan") | ("tan", "làm") | ("làm", "rồi") | ("xong", "việc") | ("việc", "rồi") => 50,
         ("cũng", "không") | ("không", "cần") | ("cần", "giám") | ("giám", "sát") | ("sát", "đâu") => 50,
-        ("đâu", "thể") | ("có", "thể") | ("không", "thể") | ("thể", "hoàn") => 50,
+        ("đâu", "thể") | ("thể", "hoàn") => 50,
         ("hay", "để") | ("để", "em") | ("để", "làm") | ("để", "cho") => 50,
         ("nếu", "em") | ("nếu", "anh") | ("nếu", "ta") | ("xảy", "ra") | ("ra", "chuyện") | ("chuyện", "gì") => 50,
         ("đại", "nhân") | ("mắt", "ngôi") | ("nổi", "đóa") | ("với", "anh") => 50,
@@ -387,7 +430,8 @@ fn transition_score(lex: &Lexicon, p: &str, c: &str) -> i32 {
         ("tạm", "biệt") => 85,
         ("trước", "khi") | ("khi", "nấu") | ("nấu", "châu") | ("châu", "chấu") | ("phải", "loại") | ("loại", "bỏ") | ("bỏ", "nội") | ("nội", "tạng") => 50,
         ("rỗng", "ruột") | ("nhớ", "ra") | ("ra", "chợ") | ("chợ", "mua") | ("mua", "ít") => 50,
-        ("một", "lượt") | ("lượt", "tắm") | ("tắm", "sáng") | ("một", "bữa") | ("bữa", "sáng") | ("chưa", "đủ") | ("bủn", "xỉn") => 50,
+        ("và", "cá") | ("con", "cá") | ("tôm", "cá") => 50,
+        ("một", "lượt") | ("lượt", "tắm") | ("tắm", "sáng") | ("một", "bữa") | ("bữa", "sáng") | ("bủn", "xỉn") => 50,
         ("thế", "còn") | ("thế", "nào") | ("thế", "ạ") => 50,
         ("vừa", "nói") | ("trời", "đất") | ("đất", "ơi") | ("không", "có") | ("vẫn", "ăn") => 50,
         ("ăn", "được") | ("lặng", "mà") | ("ăn", "đi") | ("ăn", "hết") => 50,
@@ -398,12 +442,12 @@ fn transition_score(lex: &Lexicon, p: &str, c: &str) -> i32 {
         ("còn", "giữ") | ("giữ", "một") | ("một", "cuốn") | ("số", "còn") | ("không", "lấy") => 50,
         ("những", "cuốn") | ("cuốn", "còn") | ("cuốn", "nữa") | ("vẫn", "lấy") | ("lấy", "về") | ("về", "được") => 50,
         ("anh", "ta") | ("ta", "đã") | ("đã", "bán") | ("thì", "lại") | ("lại", "gay") | ("gay", "go") => 50,
-        ("mới", "chỉ") | ("chỉ", "có") | ("có", "bán") | ("côn", "trùng") | ("có", "hứa") | ("không", "tố") | ("tố", "giác") => 50,
+        ("mới", "chỉ") | ("có", "bán") | ("côn", "trùng") | ("có", "hứa") | ("không", "tố") | ("tố", "giác") => 50,
         ("còn", "tùy") | ("tùy", "vào") | ("thái", "độ") | ("đừng", "dọa") | ("dọa", "anh") | ("anh", "đói") | ("đói", "không") => 50,
         ("lý", "do") | ("do", "riêng") | ("cứ", "ở") | ("cái", "này") | ("đồ", "thừa") | ("bọn", "tôi") => 50,
         ("có", "vẻ") | ("vẻ", "anh") | ("chật", "vật") | ("đến", "được") | ("được", "kinh") | ("kinh", "thành") => 50,
         ("vẫn", "còn") | ("nguyên", "trạng") | ("hết", "cách") | ("phải", "bán") | ("không", "nghĩ") | ("người", "xấu") => 50,
-        ("dù", "thế") | ("cương", "nhu") | ("đúng", "lúc") | ("không", "ưa") | ("đâu", "phải") => 50,
+        ("dù", "thế") | ("cương", "nhu") | ("đúng", "lúc") | ("không", "ưa") => 50,
         ("cào", "cào") | ("cào", "mà") | ("con", "này") | ("còn", "con") | ("còn", "cái") | ("còn", "người") => 50,
         ("phân", "biệt") | ("biệt", "được") | ("còn", "cào") | ("và", "ăn") => 50,
         ("lẫn", "vào") | ("vào", "đây") | ("tương", "tự") | ("thực", "tế") | ("nạn", "đói") | ("cũng", "nghĩ") => 50,
@@ -419,7 +463,7 @@ fn transition_score(lex: &Lexicon, p: &str, c: &str) -> i32 {
         ("đoán", "mùa") | ("đoạn", "mùa") | ("mùa", "màng") | ("mùa", "vụ") | ("vụ", "kém") | ("chẳng", "biết") | ("biết", "nữa") => 50,
         ("có", "lấy") | ("lấy", "đường") | ("đắt", "tiền") | ("tiền", "ngào") | ("ngào", "mấy") | ("mấy", "con") | ("dễ", "bảo") | ("bảo", "quản") => 50,
         ("chuyện", "mình") | ("từng", "làm") | ("từng", "chết") | ("làm", "việc") | ("như", "một") | ("giấc", "mơ") | ("mơ", "vậy") | ("gì", "cơ") => 50,
-        ("chết", "đi") | ("đi", "sống") | ("sống", "lại") | ("khiến", "một") | ("một", "phần") | ("phần", "cơ") | ("cơ", "thể") => 50,
+        ("chết", "đi") | ("đi", "sống") | ("sống", "lại") | ("khiến", "một") | ("một", "phần") | ("phần", "cơ") => 50,
         ("thằng", "bé") | ("tê", "liệt") | ("nó", "cũng") | ("cũng", "mất") | ("mất", "đi") => 50,
         ("nhớ", "lại") | ("lại", "đi") | ("dùng", "tay") => 50,
         _ => {
@@ -436,7 +480,16 @@ fn transition_score(lex: &Lexicon, p: &str, c: &str) -> i32 {
 pub fn is_rare_override_syllable(s: &str) -> bool {
     matches!(
         s,
-        "chác"
+        "phái"
+            | "cám"
+            | "hói"
+            | "chí"
+            | "hiếu"
+            | "mớ"
+            | "trớ"
+            | "bới"
+            | "tháo"
+            | "chác"
             | "sáp"
             | "rối"
             | "nêu"
@@ -551,7 +604,7 @@ fn unigram_frequency_score(cand: &str) -> i32 {
         | "cháu" | "cô" | "chú" | "bác" | "chúng" | "họ" | "nó" | "hắn" | "ta" | "mình"
         | "ăn" | "uống" | "ngủ" | "nhìn" | "chạy" | "đứng" | "mua" | "bán"
         | "để" | "ngồi" | "đau" | "sợ" | "buồn" | "vui" | "yêu" | "thương" | "ghét" | "giúp" | "bỏ"
-        | "thịt" | "cơm" | "nước" | "bánh" | "chợ" | "nhà" | "trường" | "lớp" | "đường"
+        | "thịt" | "cá" | "cơm" | "nước" | "bánh" | "chợ" | "nhà" | "trường" | "lớp" | "đường"
         | "xe" | "ngày" | "tháng" | "năm" | "giờ" | "phút" | "trước" | "sau" | "giữa"
         | "đầu" | "cuối" | "bên" | "trên" | "dưới" | "ngoài" | "phải" | "trái"
         | "đúng" | "sai" | "tốt" | "xấu" | "đẹp" | "hay" | "khó" | "dễ" | "nhỏ" | "lớn"

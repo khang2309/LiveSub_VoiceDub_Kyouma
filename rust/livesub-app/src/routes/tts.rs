@@ -38,7 +38,7 @@ pub async fn api_tts_batch(
         .map(|arr| {
             arr.iter()
                 .filter_map(|item| item.as_str().map(|s| s.to_string()))
-                .take(3)
+                .take(16)
                 .collect()
         })
         .unwrap_or_default();

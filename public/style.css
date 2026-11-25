@@ -1107,6 +1107,20 @@ select:focus-visible {
   margin: 0 auto;
 }
 
+.invideo-sub-vi:empty,
+.invideo-sub-source:empty,
+.invideo-sub-vi[data-empty="true"],
+.invideo-sub-source[data-empty="true"] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
 /* FULLSCREEN VIDEO & SUBTITLE OVERLAY */
 .web-video-wrapper:fullscreen,
 .web-video-wrapper:-webkit-full-screen {

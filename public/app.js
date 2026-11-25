@@ -285,6 +285,12 @@ class LiveDubStudio {
     this.btnCloseLocalVideo = document.getElementById('btnCloseLocalVideo');
     this.invideoSubSource = document.getElementById('invideoSubSource');
     this.invideoSubVi = document.getElementById('invideoSubVi');
+    this.btnLocalModeHybrid = document.getElementById('btnLocalModeHybrid');
+    this.btnLocalModeSub = document.getElementById('btnLocalModeSub');
+    this.btnLocalModeAudio = document.getElementById('btnLocalModeAudio');
+    this.localOcrZoneSelect = document.getElementById('localOcrZoneSelect');
+    this.localSourceLangSelect = document.getElementById('localSourceLangSelect');
+    this.currentLocalMode = 'hybrid';
 
     // Source 3: Mic
     this.btnToggleMic = document.getElementById('btnToggleMic');
@@ -739,6 +745,28 @@ class LiveDubStudio {
     const btnCloseFloat = document.getElementById('btnCloseLocalVideoFloating');
     if (btnCloseFloat) {
       btnCloseFloat.addEventListener('click', closeLocalVideoHandler);
+    }
+    if (this.btnLocalModeHybrid) {
+      this.btnLocalModeHybrid.addEventListener('click', () => this.setLocalMode('hybrid'));
+    }
+    if (this.btnLocalModeSub) {
+      this.btnLocalModeSub.addEventListener('click', () => this.setLocalMode('ocr'));
+    }
+    if (this.btnLocalModeAudio) {
+      this.btnLocalModeAudio.addEventListener('click', () => this.setLocalMode('whisper'));
+    }
+    if (this.localOcrZoneSelect) {
+      this.localOcrZoneSelect.addEventListener('change', (e) => {
+        this.ocrScanZone = e.target.value;
+        const name = e.target.selectedOptions && e.target.selectedOptions[0] ? e.target.selectedOptions[0].text : e.target.value;
+        this.showToast(`📐 Đã đổi vùng quét video: ${name}`);
+      });
+    }
+    if (this.localSourceLangSelect) {
+      this.localSourceLangSelect.addEventListener('change', (e) => {
+        const name = e.target.selectedOptions && e.target.selectedOptions[0] ? e.target.selectedOptions[0].text : e.target.value;
+        this.showToast(`🌐 Đã đổi ngôn ngữ video: ${name}`);
+      });
     }
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && this.activeSource === 'local') {
@@ -1695,6 +1723,24 @@ class LiveDubStudio {
     }
   }
 
+  setLocalMode(mode) {
+    this.currentLocalMode = mode;
+    if (this.btnLocalModeHybrid) this.btnLocalModeHybrid.classList.toggle('active', mode === 'hybrid');
+    if (this.btnLocalModeSub) this.btnLocalModeSub.classList.toggle('active', mode === 'ocr');
+    if (this.btnLocalModeAudio) this.btnLocalModeAudio.classList.toggle('active', mode === 'whisper');
+
+    const modeLabels = {
+      hybrid: '⚡ Chế độ Hybrid: Tự động nhận diện phụ đề OCR kết hợp nghe Whisper',
+      ocr: '📷 Chế độ Quét chữ OCR: Đọc phụ đề in trên khung hình video',
+      whisper: '🎙️ Chế độ Nghe Whisper: Nhận diện tiếng nói từ âm thanh video'
+    };
+    this.showToast(modeLabels[mode] || mode);
+
+    if (this.isListening && this.activeSource === 'local') {
+      this.startLocalVideoDubbing(true);
+    }
+  }
+
   async toggleSystemAudio() {
     if (this.isListening && this.activeSource === 'system') {
       this.stopListening();
@@ -1794,22 +1840,43 @@ class LiveDubStudio {
       this.localVideoContainer.scrollIntoView({ behavior: 'smooth' });
     }
     this.showToast(`📁 Đã nạp file: ${file.name}`);
-    this.startLocalVideoDubbing();
+
+    // Wait until video has metadata before starting recognition and dubbing
+    const startWhenReady = () => {
+      this.localVideoPlayer.removeEventListener('loadedmetadata', startWhenReady);
+      this.localVideoPlayer.removeEventListener('canplay', startWhenReady);
+      this.startLocalVideoDubbing(true);
+    };
+
+    if (this.localVideoPlayer && this.localVideoPlayer.readyState >= 1) {
+      this.startLocalVideoDubbing(true);
+    } else if (this.localVideoPlayer) {
+      this.localVideoPlayer.addEventListener('loadedmetadata', startWhenReady);
+      this.localVideoPlayer.addEventListener('canplay', startWhenReady);
+    }
   }
 
-  async startLocalVideoDubbing() {
-    if (this.isListening && this.activeSource === 'local') {
+  async startLocalVideoDubbing(isRestart = false) {
+    if (!isRestart && this.isListening && this.activeSource === 'local') {
       this.stopLocalVideoDubbing();
       return;
     }
     this.stopListening();
     this.activeSource = 'local';
     this.isListening = true;
-    this.isHybridModeActive = true;
+
+    const mode = this.currentLocalMode || 'hybrid';
+    const isWhisperMode = (mode === 'whisper');
+    const isOcrMode = (mode === 'ocr');
+    const isHybridMode = (mode === 'hybrid');
+
+    this.isOCRModeActive = !isWhisperMode;
+    this.isHybridModeActive = isHybridMode;
     this.hasActiveHardSubtitles = false;
     this.hasSeenHardSubtitles = false;
     this._hasNotifiedVietsubMode = false;
     this.lastHardSubTime = 0;
+
     try {
       this.ensureAudioUnlocked();
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -1820,27 +1887,45 @@ class LiveDubStudio {
         await this.audioContext.resume().catch(() => {});
       }
 
-      if (!this._localSourceNode && this.localVideoPlayer) {
+      if (this.localOcrZoneSelect) {
+        this.ocrScanZone = this.localOcrZoneSelect.value || 'bottom';
+      }
+
+      // 1. Audio setup for Whisper / Hybrid
+      if (!isOcrMode && this.localVideoPlayer) {
+        let stream = null;
         try {
-          this._localSourceNode = this.audioContext.createMediaElementSource(this.localVideoPlayer);
-          this._localDestination = this.audioContext.createMediaStreamDestination();
-          this._localGainNode = this.audioContext.createGain();
-          this._localGainNode.gain.value = 0.35;
-          this._localSourceNode.connect(this._localGainNode);
-          this._localGainNode.connect(this.audioContext.destination);
-          this._localSourceNode.connect(this._localDestination);
-        } catch (e) {
-          console.warn('createMediaElementSource warning:', e);
+          if (typeof this.localVideoPlayer.captureStream === 'function') {
+            stream = this.localVideoPlayer.captureStream();
+          } else if (typeof this.localVideoPlayer.mozCaptureStream === 'function') {
+            stream = this.localVideoPlayer.mozCaptureStream();
+          }
+        } catch (_) {}
+
+        if (stream && stream.getAudioTracks && stream.getAudioTracks().length > 0) {
+          await this.setupVADAndRecording(stream);
+        } else if (!this._localSourceNode) {
+          try {
+            this._localSourceNode = this.audioContext.createMediaElementSource(this.localVideoPlayer);
+            this._localGainNode = this.audioContext.createGain();
+            this._localGainNode.gain.value = 1.0;
+            this._localSourceNode.connect(this._localGainNode);
+            this._localGainNode.connect(this.audioContext.destination);
+
+            this.mediaStreamSource = this._localSourceNode;
+            const sampleRate = this.audioContext.sampleRate || 48000;
+            const scriptNode = this.audioContext.createScriptProcessor(4096, 1, 1);
+            this.scriptNode = scriptNode;
+            this._localSourceNode.connect(scriptNode);
+            scriptNode.connect(this.audioContext.destination);
+          } catch (e) {
+            console.warn('Local video Web Audio connect warning:', e);
+          }
         }
       }
 
-      // 1. Setup VAD & Whisper on local video audio track
-      if (this._localDestination && this._localDestination.stream && this._localDestination.stream.getAudioTracks().length > 0) {
-        await this.setupVADAndRecording(this._localDestination.stream);
-      }
-
       // 2. Start Realtime Subtitle OCR directly on local video frames
-      if (this.localVideoPlayer) {
+      if (!isWhisperMode && this.localVideoPlayer) {
         await this.startHardSubtitleOCR(this.localVideoPlayer);
       }
 
@@ -1964,6 +2049,10 @@ class LiveDubStudio {
   }
 
   resolveOCRLanguage() {
+    if (this.activeSource === 'local' && this.localSourceLangSelect) {
+      const selectedLocal = this.localSourceLangSelect.value;
+      if (selectedLocal && selectedLocal !== 'auto') return selectedLocal;
+    }
     const selectedSpeech = this.sourceLangSelect ? this.sourceLangSelect.value : 'auto';
     if (selectedSpeech && selectedSpeech !== 'auto') return selectedSpeech;
     if (typeof this.getRadioGroupValue === 'function') {
@@ -2589,7 +2678,55 @@ class LiveDubStudio {
       .replace(/\bcần xé\b/gi, 'cắn xé')
       .replace(/\bchắc chân không\b/gi, 'chắc chắn không')
       .replace(/\bHộo bị dụ\b/gi, 'Họ bị dụ')
-      .replace(/\bHộo\b/g, 'Họ');
+      .replace(/\bHộo\b/g, 'Họ')
+      // Vietnamese tone mark disambiguation (sắc vs hỏi OCR font confusion)
+      .replace(/\bkhông phái\b/gi, 'không phải')
+      .replace(/\bphái không\b/gi, 'phải không')
+      .replace(/\bchẳng phái\b/gi, 'chẳng phải')
+      .replace(/\bphái làm\b/gi, 'phải làm')
+      .replace(/\bphái biết\b/gi, 'phải biết')
+      .replace(/\bphái chăng\b/gi, 'phải chăng')
+      .replace(/\bcám ơn\b/gi, 'cảm ơn')
+      .replace(/\bcám thấy\b/gi, 'cảm thấy')
+      .replace(/\bcám giác\b/gi, 'cảm giác')
+      .replace(/\bcám xúc\b/gi, 'cảm xúc')
+      .replace(/\bcâu hói\b/gi, 'câu hỏi')
+      .replace(/\bhói thăm\b/gi, 'hỏi thăm')
+      .replace(/\bhói han\b/gi, 'hỏi han')
+      .replace(/\bmuốn hói\b/gi, 'muốn hỏi')
+      .replace(/\bđi hói\b/gi, 'đi hỏi')
+      .replace(/\bcó thế\b/gi, 'có thể')
+      .replace(/\bkhông thế\b/gi, 'không thể')
+      .replace(/\bchí là\b/gi, 'chỉ là')
+      .replace(/\bchí có\b/gi, 'chỉ có')
+      .replace(/\bchí cần\b/gi, 'chỉ cần')
+      .replace(/\bchí muốn\b/gi, 'chỉ muốn')
+      .replace(/\btất cá\b/gi, 'tất cả')
+      .replace(/\bcá hai\b/gi, 'cả hai')
+      .replace(/\bcá nhà\b/gi, 'cả nhà')
+      .replace(/\bhiếu rồi\b/gi, 'hiểu rồi')
+      .replace(/\bhiếu không\b/gi, 'hiểu không')
+      .replace(/\bhiếu được\b/gi, 'hiểu được')
+      .replace(/\bkhông hiếu\b/gi, 'không hiểu')
+      .replace(/\bthay đối\b/gi, 'thay đổi')
+      .replace(/\bđối lại\b/gi, 'đổi lại')
+      .replace(/\bbáo vệ\b/gi, 'bảo vệ')
+      .replace(/\bnghe báo\b/gi, 'nghe bảo')
+      .replace(/\btôi báo\b/gi, 'tôi bảo')
+      .replace(/\bmớ cửa\b/gi, 'mở cửa')
+      .replace(/\bmớ ra\b/gi, 'mở ra')
+      .replace(/\btrớ về\b/gi, 'trở về')
+      .replace(/\btrớ lại\b/gi, 'trở lại')
+      .replace(/\btrớ thành\b/gi, 'trở thành')
+      .replace(/\bchúẩn\b/gi, 'chuẩn')
+      .replace(/\bchúẩn bị\b/gi, 'chuẩn bị')
+      .replace(/\bthứ xem\b/gi, 'thử xem')
+      .replace(/\bđú rồi\b/gi, 'đủ rồi')
+      .replace(/\bchưa đú\b/gi, 'chưa đủ')
+      .replace(/\bkhông đú\b/gi, 'không đủ')
+      .replace(/\bbới vì\b/gi, 'bởi vì')
+      .replace(/\bnhó bé\b/gi, 'nhỏ bé')
+      .replace(/\bcòn nhó\b/gi, 'còn nhỏ');
     const cleanNorm = stripAccents(cleanRaw);
 
     // Discard trailing sub-fragments (e.g. "thành trì" after "phục kích thành trì", or "lắng xuống. - Xin chào" after "Không khí Tết đã lắng xuống. - Xin chào")
@@ -2773,11 +2910,13 @@ class LiveDubStudio {
         const languageNames = { vi: 'Tiếng Việt', en: 'English', ja: '日本語', ko: '한국어', zh: '中文' };
         const languageLabel = languageNames[data.caption_language] || (data.caption_language || 'Tiếng gốc').toUpperCase();
         const sourceLabel = data.caption_source === 'manual' ? 'CC thủ công' : 'CC tự động';
-        this.setSourceIntelligenceState('success', `${languageLabel} · ${sourceLabel}`, `Đang dùng ${sourceLabel} (${languageLabel}) làm mốc thời gian và dịch sang tiếng Việt.`);
-        this.showToast(` Đã nạp ${data.segments.length} câu thoại phụ đề từ video!`);
+        this.setSourceIntelligenceState('loading', 'Đang nạp giọng đọc...', 'Đang tải trước giọng lồng tiếng (1-2s)...');
+        this.showToast('⏳ Đang tải trước giọng lồng tiếng (1-2s)...');
         this.audioPreCache.clear();
-        this.prefetchUpcomingAudio(0);
-        this.subViDisplay.textContent = '▶️ Hãy bấm nút Play trên video để bắt đầu xem & nghe lồng tiếng!';
+        await this.prebufferYouTubeInitialTracks(0, 3, loadGeneration);
+        this.setSourceIntelligenceState('success', `${languageLabel} · ${sourceLabel}`, `Đang phát và lồng tiếng tự động.`);
+        this.showToast(`🚀 Đã nạp ${data.segments.length} câu thoại phụ đề từ video! Bắt đầu phát.`);
+        this.subViDisplay.textContent = '▶️ Đang phát video và lồng tiếng...';
         this.subSourceDisplay.textContent = `Đã đồng bộ ${data.segments.length} câu thoại`;
       } else {
         this.webSyncNotice.innerHTML = `ℹ️ ${data.error || 'Video không có phụ đề sẵn'}. Bạn hãy chọn nguồn <strong>"Màn hình / Tab Phim"</strong> để LiveSub quét phụ đề OCR trực tiếp trên video!`;
@@ -2793,6 +2932,70 @@ class LiveDubStudio {
     // 2. Initialize YouTube Player
     if (loadGeneration === this.youtubeLoadGeneration) {
       this.initOrUpdateYouTubePlayer(videoId);
+    }
+  }
+
+  async prebufferYouTubeInitialTracks(fromIdx = 0, count = 3, loadGeneration = null) {
+    if (!this.isDubbingEnabled || !this.ytSegments || this.ytSegments.length === 0) return;
+    const toIdx = Math.min(this.ytSegments.length, fromIdx + count);
+    const generation = this.voiceGeneration;
+    const voice = this.getEffectiveVoice();
+    const pending = [];
+    for (let i = fromIdx; i < toIdx; i++) {
+      const seg = this.ytSegments[i];
+      if (!seg || !seg.translated) continue;
+      const fetchKey = `${generation}:${i}`;
+      if (!this.audioPreCache.has(i) && !this.isFetchingPreCache.has(fetchKey)) {
+        this.isFetchingPreCache.add(fetchKey);
+        pending.push({ index: i, segment: seg, fetchKey });
+      }
+    }
+    if (!pending.length) return;
+
+    try {
+      const fetchPromise = fetch('/api/tts-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texts: pending.map(item => item.segment.translated), voice })
+      });
+      const timeoutPromise = new Promise(resolve => setTimeout(resolve, 2000));
+      const res = await Promise.race([fetchPromise, timeoutPromise]);
+      if (res && res.ok) {
+        const data = await res.json();
+        if (loadGeneration !== null && loadGeneration !== this.youtubeLoadGeneration) return;
+        const items = data && Array.isArray(data.items) ? data.items : [];
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!this.audioContext || this.audioContext.state === 'closed') this.audioContext = new AudioCtx();
+
+        await Promise.all(pending.map(async (entry, pos) => {
+          const audio = items[pos];
+          if (!audio || !audio.audio_base64) return;
+          try {
+            const binary = atob(audio.audio_base64);
+            const bytes = new Uint8Array(binary.length);
+            for (let b = 0; b < binary.length; b++) bytes[b] = binary.charCodeAt(b);
+            let decoded = await this.audioContext.decodeAudioData(bytes.buffer.slice(0));
+            const profile = this.getVoiceProfile(voice);
+            if (decoded && decoded._livesubVoice !== profile.id) {
+              decoded = this.applyVoiceCharacteristics(decoded, voice);
+              decoded._livesubVoice = profile.id;
+            }
+            this.audioPreCache.set(entry.index, {
+              buffer: decoded,
+              translated: entry.segment.translated,
+              original: entry.segment.original,
+              voice,
+              voiceGeneration: generation
+            });
+          } catch (e) {
+            console.warn('Initial prebuffer decode error:', e);
+          } finally {
+            this.isFetchingPreCache.delete(entry.fetchKey);
+          }
+        }));
+      }
+    } catch (e) {
+      console.warn('Initial prebuffer error:', e);
     }
   }
 
@@ -3153,7 +3356,10 @@ class LiveDubStudio {
   prefetchUpcomingAudio(fromIdx) {
     if (!this.isDubbingEnabled || !this.ytSegments || this.ytSegments.length === 0) return;
 
-    const toIdx = Math.min(this.ytSegments.length, fromIdx + 1);
+    // Prefetch all remaining if track count <= 25, otherwise prefetch rolling window of 6 tracks ahead
+    const toIdx = (this.ytSegments.length <= 25)
+      ? this.ytSegments.length
+      : Math.min(this.ytSegments.length, fromIdx + 6);
     const generation = this.voiceGeneration;
     const selectedVoice = this.voiceSelect ? this.voiceSelect.value : 'auto-fast';
     const voice = this.getEffectiveVoice();
@@ -3628,50 +3834,80 @@ class LiveDubStudio {
 
   splitSentenceIntoClauses(text) {
     const raw = String(text || '').trim();
-    if (!raw || raw.length <= 50) return [raw];
+    if (!raw) return [];
 
-    const mid = Math.floor(raw.length / 2);
-    // 1. Split at natural punctuation (comma, semicolon, colon, dash) near middle
-    const punctMatches = [...raw.matchAll(/([,;:—–\-]|\s+-\s+)\s+/g)];
-    if (punctMatches.length > 0) {
-      let best = punctMatches[0];
-      let bestDist = Math.abs(best.index - mid);
-      for (let i = 1; i < punctMatches.length; i++) {
-        const dist = Math.abs(punctMatches[i].index - mid);
-        if (dist < bestDist) {
-          best = punctMatches[i];
-          bestDist = dist;
-        }
+    // 1. Split on explicit subtitle line breaks (\n, \r\n)
+    const rawLines = raw.split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
+    const result = [];
+
+    for (const line of rawLines) {
+      if (line.length <= 26) {
+        result.push(line);
+        continue;
       }
-      const splitIdx = best.index + best[1].length;
-      const p1 = raw.slice(0, splitIdx).trim();
-      const p2 = raw.slice(splitIdx).trim();
-      if (p1.length >= 14 && p2.length >= 14) {
-        return [p1, p2];
+
+      // Split on sentence terminators [.!?…] inside line
+      const sentParts = line.split(/(?<=[.!?…])\s+/).filter(Boolean);
+      for (const part of sentParts) {
+        if (part.length <= 26) {
+          result.push(part);
+          continue;
+        }
+
+        // Try splitting on natural punctuation (, ; : — – -)
+        const punctMatches = [...part.matchAll(/([,;:—–\-]|\s+-\s+)\s+/g)];
+        let splitDone = false;
+        if (punctMatches.length > 0) {
+          const mid = Math.floor(part.length / 2);
+          let best = punctMatches[0];
+          let bestDist = Math.abs(best.index - mid);
+          for (let i = 1; i < punctMatches.length; i++) {
+            const dist = Math.abs(punctMatches[i].index - mid);
+            if (dist < bestDist) {
+              best = punctMatches[i];
+              bestDist = dist;
+            }
+          }
+          const splitIdx = best.index + best[1].length;
+          const p1 = part.slice(0, splitIdx).trim();
+          const p2 = part.slice(splitIdx).trim();
+          if (p1.length >= 10 && p2.length >= 10) {
+            result.push(p1, p2);
+            splitDone = true;
+          }
+        }
+
+        if (!splitDone) {
+          // Try splitting on common Vietnamese coordinating conjunctions
+          const conjMatches = [...part.matchAll(/\s+(nhưng|mà|và|thì|bởi vì|tại vì|cho nên|thế nên|hoặc|hay|để|khi|nếu)\s+/gi)];
+          if (conjMatches.length > 0) {
+            const mid = Math.floor(part.length / 2);
+            let best = conjMatches[0];
+            let bestDist = Math.abs(best.index - mid);
+            for (let i = 1; i < conjMatches.length; i++) {
+              const dist = Math.abs(conjMatches[i].index - mid);
+              if (dist < bestDist) {
+                best = conjMatches[i];
+                bestDist = dist;
+              }
+            }
+            const splitIdx = best.index;
+            const p1 = part.slice(0, splitIdx).trim();
+            const p2 = part.slice(splitIdx).trim();
+            if (p1.length >= 10 && p2.length >= 10) {
+              result.push(p1, p2);
+              splitDone = true;
+            }
+          }
+        }
+
+        if (!splitDone) {
+          result.push(part);
+        }
       }
     }
 
-    // 2. Split at common Vietnamese coordinating conjunctions
-    const conjMatches = [...raw.matchAll(/\s+(nhưng|mà|và|thì|bởi vì|tại vì|cho nên|thế nên|hoặc|hay)\s+/gi)];
-    if (conjMatches.length > 0) {
-      let best = conjMatches[0];
-      let bestDist = Math.abs(best.index - mid);
-      for (let i = 1; i < conjMatches.length; i++) {
-        const dist = Math.abs(conjMatches[i].index - mid);
-        if (dist < bestDist) {
-          best = conjMatches[i];
-          bestDist = dist;
-        }
-      }
-      const splitIdx = best.index;
-      const p1 = raw.slice(0, splitIdx).trim();
-      const p2 = raw.slice(splitIdx).trim();
-      if (p1.length >= 14 && p2.length >= 14) {
-        return [p1, p2];
-      }
-    }
-
-    return [raw];
+    return result.length > 0 ? result : [raw];
   }
 
   enqueueLiveDubbing(text, historyId, sourceText = '', capturedAt = null, finalizedAt = null, serverTimings = null, originalDuration = 0, source = 'unknown') {
@@ -4405,22 +4641,49 @@ class LiveDubStudio {
     if (this.subSourceDisplay) this.subSourceDisplay.textContent = sourceText || '';
     if (this.subViDisplay) this.subViDisplay.textContent = viText || '';
 
+    const hasSource = Boolean(sourceText && String(sourceText).trim() && this.currentSubMode !== 'vi_only' && this.currentSubMode !== 'none');
+    const hasVi = Boolean(viText && String(viText).trim() && this.currentSubMode !== 'source_only' && this.currentSubMode !== 'none');
+
     if (this.invideoSubSource) {
-      this.invideoSubSource.textContent = sourceText || '';
-      this.invideoSubSource.style.display = (sourceText && this.currentSubMode !== 'vi_only' && this.currentSubMode !== 'none') ? 'block' : 'none';
+      this.invideoSubSource.textContent = hasSource ? sourceText : '';
+      if (hasSource) {
+        this.invideoSubSource.removeAttribute('data-empty');
+        this.invideoSubSource.style.display = 'block';
+      } else {
+        this.invideoSubSource.setAttribute('data-empty', 'true');
+        this.invideoSubSource.style.display = 'none';
+      }
     }
     if (this.invideoSubVi) {
-      this.invideoSubVi.textContent = viText || '';
-      this.invideoSubVi.style.display = (viText && this.currentSubMode !== 'source_only' && this.currentSubMode !== 'none') ? 'block' : 'none';
+      this.invideoSubVi.textContent = hasVi ? viText : '';
+      if (hasVi) {
+        this.invideoSubVi.removeAttribute('data-empty');
+        this.invideoSubVi.style.display = 'inline-block';
+      } else {
+        this.invideoSubVi.setAttribute('data-empty', 'true');
+        this.invideoSubVi.style.display = 'none';
+      }
     }
 
     if (this.invideoWebSubSource) {
-      this.invideoWebSubSource.textContent = sourceText || '';
-      this.invideoWebSubSource.style.display = (sourceText && this.currentSubMode !== 'vi_only' && this.currentSubMode !== 'none') ? 'block' : 'none';
+      this.invideoWebSubSource.textContent = hasSource ? sourceText : '';
+      if (hasSource) {
+        this.invideoWebSubSource.removeAttribute('data-empty');
+        this.invideoWebSubSource.style.display = 'block';
+      } else {
+        this.invideoWebSubSource.setAttribute('data-empty', 'true');
+        this.invideoWebSubSource.style.display = 'none';
+      }
     }
     if (this.invideoWebSubVi) {
-      this.invideoWebSubVi.textContent = viText || '';
-      this.invideoWebSubVi.style.display = (viText && this.currentSubMode !== 'source_only' && this.currentSubMode !== 'none') ? 'block' : 'none';
+      this.invideoWebSubVi.textContent = hasVi ? viText : '';
+      if (hasVi) {
+        this.invideoWebSubVi.removeAttribute('data-empty');
+        this.invideoWebSubVi.style.display = 'inline-block';
+      } else {
+        this.invideoWebSubVi.setAttribute('data-empty', 'true');
+        this.invideoWebSubVi.style.display = 'none';
+      }
     }
 
     if (this.pipWindow && !this.pipWindow.closed) {

@@ -211,6 +211,46 @@
             <h3 style="font-size: 1.05rem; margin-bottom: 4px;">📁 Nạp Video từ máy tính (MP4, MKV, WebM, AVI)</h3>
             <p style="font-size: 0.82rem; color: var(--text-dim);">Chọn file video để phát trực tiếp và tự động nhận diện phụ đề / lồng tiếng realtime</p>
           </div>
+
+          <!-- Tùy chọn dịch & lồng tiếng cho video cục bộ -->
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; flex-wrap: wrap;">
+            <div class="control-cell">
+              <span class="control-label" style="font-size: 0.78rem; color: var(--text-muted); font-weight: 600; margin-right: 6px;">Chế độ nhận diện:</span>
+              <div class="mode-toggle-group">
+                <button type="button" id="btnLocalModeHybrid" class="btn-mode active" title="Tự động nhận diện: Ưu tiên đọc phụ đề trên video, kết hợp nghe Whisper">
+                  ⚡ Tự Động Hybrid
+                </button>
+                <button type="button" id="btnLocalModeSub" class="btn-mode" title="Quét chữ phụ đề in trên khung hình video">
+                  📷 Đọc Sub OCR
+                </button>
+                <button type="button" id="btnLocalModeAudio" class="btn-mode" title="Nhận diện tiếng nói từ âm thanh video qua Whisper">
+                  🎙️ Nghe Whisper
+                </button>
+              </div>
+            </div>
+
+            <div class="control-cell-zone" id="cellLocalOcrZone" title="Chọn vùng quét phụ đề trên video">
+              <label for="localOcrZoneSelect" class="control-label" style="font-size: 0.78rem; color: var(--text-muted); font-weight: 600; margin-right: 6px;">Vùng Quét Sub:</label>
+              <select id="localOcrZoneSelect" class="form-control form-control-compact select-zone">
+                <option value="bottom" selected>📍 1/3 Đáy (Phim)</option>
+                <option value="split">📺 Nửa Dưới (50%)</option>
+                <option value="full">🖥️ Toàn Video</option>
+              </select>
+            </div>
+
+            <div class="control-cell" title="Ngôn ngữ gốc của video">
+              <label for="localSourceLangSelect" class="control-label" style="font-size: 0.78rem; color: var(--text-muted); font-weight: 600; margin-right: 6px;">Ngôn Ngữ:</label>
+              <select id="localSourceLangSelect" class="form-control form-control-compact select-lang" style="min-width: 140px;">
+                <option value="auto" selected>🌐 Tự động nhận diện</option>
+                <option value="vi-VN">🇻🇳 Tiếng Việt (Vietsub)</option>
+                <option value="en-US">🇬🇧 Tiếng Anh</option>
+                <option value="ja-JP">🇯🇵 Tiếng Nhật</option>
+                <option value="zh-CN">🇨🇳 Tiếng Trung</option>
+                <option value="ko-KR">🇰🇷 Tiếng Hàn</option>
+              </select>
+            </div>
+          </div>
+
           <div id="localVideoDropZone" style="border: 2px dashed var(--border-color); border-radius: 12px; padding: 22px; text-align: center; cursor: pointer; background: var(--bg-primary); transition: all 0.2s;">
             <p style="font-size: 1rem; margin-bottom: 4px; pointer-events: none;">📂 <strong>Kéo thả file video vào đây</strong> hoặc bấm để chọn file</p>
             <span style="font-size: 0.8rem; color: var(--text-dim); pointer-events: none;">Hỗ trợ MP4, MKV, WebM, AVI, MOV, FLV, TS</span>
@@ -233,8 +273,8 @@
               </button>
               <video id="localVideoPlayer" controls playsinline style="width: 100%; border-radius: 10px; background: #000;"></video>
               <div class="invideo-subtitle-overlay">
-                <div id="invideoSubSource" class="invideo-sub-source"></div>
-                <div id="invideoSubVi" class="invideo-sub-vi"></div>
+                <div id="invideoSubSource" class="invideo-sub-source" style="display: none;" data-empty="true"></div>
+                <div id="invideoSubVi" class="invideo-sub-vi" style="display: none;" data-empty="true"></div>
               </div>
             </div>
             <div style="display: flex; justify-content: flex-end; margin-top: 8px;">
@@ -265,8 +305,8 @@
             <div class="video-element-container">
               <div id="webVideoPlayer" class="iframe-element-container"></div>
               <div class="invideo-subtitle-overlay">
-                <div id="invideoWebSubSource" class="invideo-sub-source" style="display: none;"></div>
-                <div id="invideoWebSubVi" class="invideo-sub-vi" style="display: none;"></div>
+                <div id="invideoWebSubSource" class="invideo-sub-source" style="display: none;" data-empty="true"></div>
+                <div id="invideoWebSubVi" class="invideo-sub-vi" style="display: none;" data-empty="true"></div>
               </div>
             </div>
             <div id="webSyncNotice" class="web-sync-notice" style="display: none !important;"></div>
