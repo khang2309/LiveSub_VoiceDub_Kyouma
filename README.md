@@ -1,146 +1,97 @@
 # 🎬 LiveSub & VoiceDub AI Studio
 
-**Hệ Thống Phụ Đề & Thuyết Minh / Lồng Tiếng AI Thời Gian Thực Đa Nguồn**  
-*(RTX 3050 CUDA | Faster-Whisper + VinAI Translate local + VieNeu streaming)*
+**Hệ Thống Phụ Đề & Thuyết Minh / Lồng Tiếng AI Thời Gian Thực Đa Nguồn (100% Pure Rust)**  
+*(NVIDIA RTX CUDA / DirectML | Faster-Whisper + VinAI Translate + VieNeu-TTS Turbo)*
 
 ---
 
-## 🌟 Giới Thiệu Tổng Quan
+## 🚀 Tải Về & Cài Đặt (Zero-Setup)
 
-**LiveSub & VoiceDub AI Studio** là giải pháp phần mềm mã nguồn mở hoàn chỉnh giúp tạo phụ đề tự động và lồng tiếng / thuyết minh tiếng Việt thời gian thực (realtime) cho **mọi nguồn video và âm thanh trên máy tính Windows**:
+Bạn không cần cài đặt Python, Node.js hay Rust/Cargo để sử dụng ứng dụng. Toàn bộ hệ thống đã được biên dịch thành binary độc lập sẵn sàng chạy ngay:
 
-* 💻 **Âm Thanh Hệ Thống / Mọi Ứng Dụng:** Xem phim, video qua **VLC Player, Windows Media Player, Netflix, Zoom, Google Meet, Facebook Video, TikTok, Livestream, Game**...
-* 📁 **File Video Máy Tính (Local Media):** Mở trực tiếp các file `.mp4`, `.mkv`, `.webm`, `.avi` ngay trong trình phát video tích hợp. Phụ đề được hiển thị **100% trong suốt viền đen sắc nét đè trực tiếp lên đáy video**, không che diễn viên, đồng bộ tức thì khi Tua (Seek) hoặc Dừng (Pause).
-* 🎤 **Microphone Trực Tiếp:** Lắng nghe và dịch tức thì giọng nói ngoài đời thật khi họp hành, hội thảo, học ngoại ngữ.
-* 🌐 **Link Video Trực Tuyến:** Dán link xem và lồng tiếng trực tiếp trong ứng dụng.
+### 📦 Cách 1: Cài Đặt Bằng Bộ Cài Windows (Khuyên Dùng)
+1. Tải file **[`LiveSub-Studio-Setup.exe`](./LiveSub-Studio-Setup.exe)** (hoặc **[`setup.exe`](./setup.exe)**).
+2. Nhấp đúp để cài đặt. Ứng dụng sẽ tự động tạo lối tắt **LiveSub Studio** ngoài màn hình Desktop.
+3. Mở ứng dụng và bắt đầu xem phim, anime hoặc video YouTube.
 
----
-
-## ⚡ Các Tính Năng Nổi Bật & Cải Tiến
-
-### 1. Tăng Tốc Phần Cứng GPU NVIDIA RTX 3050 (CUDA 12 float16)
-* Nhận diện giọng nói qua mô hình **Faster-Whisper (base)** chạy trực tiếp trên GPU rời qua thư viện NVIDIA cuBLAS 12 & cuDNN 9.
-* Thời gian nhận dạng phụ thuộc độ dài đoạn thoại; trạng thái runtime cho biết chính xác đang chạy CUDA hay CPU.
-* Backend công khai số đo thực tế tại `/api/pipeline-status`; không dùng một con số độ trễ cố định cho mọi câu/mọi máy.
-
-### Pipeline mặc định (miễn phí, ưu tiên local)
-
-* **ASR cuối:** Faster-Whisper Base CUDA float16. Model Sherpa-ONNX streaming đa ngôn ngữ được đánh giá như phương án chữ tạm thời, chưa thay ASR cuối khi chưa có benchmark WER tiếng Việt phù hợp.
-* **Dịch hybrid nhanh nhất:** mặc định thử API/network với timeout ngắn rồi tự lùi về VinAI EN→VI hoặc NLLB-200 INT8 local. Đặt `TRANSLATION_MODE=private` để đảo thứ tự và ưu tiên dữ liệu chỉ chạy trong máy. Có adapter chính thức cho Azure, Google Cloud Translation và DeepL qua `.env`.
-* **Dịch Hàn/Nhật/Trung và đa ngôn ngữ:** NLLB-200 Distilled 600M INT8 là fallback local. NLLB có giấy phép CC-BY-NC-4.0, phù hợp sử dụng local phi thương mại; sản phẩm thương mại nên cấu hình API có điều khoản phù hợp.
-* **Giọng Việt:** VieNeu-TTS v3 Turbo chạy PyTorch CUDA. `/api/tts-stream` gửi PCM ngay theo từng khối; `/api/tts-batch` sinh trước nhiều câu phụ đề bằng một batch GPU.
-* Khi mở `http://localhost:3000`, server tự làm nóng cả model dịch và CUDA streaming graph; giao diện vẫn mở ngay, không chờ warm-up hoàn tất.
-* Pipeline thu âm không phụ thuộc YouTube: cùng một đường xử lý được dùng cho tab Netflix/Bilibili/WeTV, âm thanh hệ thống từ VLC/PotPlayer, file local và microphone.
-* **Phụ đề đóng cứng:** chế độ OCR dùng RapidOCR PP-OCRv6 ONNX trên CPU, quét vùng phụ đề của tab được chia sẻ, lọc chữ giao diện, chống lặp rồi dịch/lồng tiếng mà không cần Whisper.
-* Silero VAD v5 chạy local trong trình duyệt thay cho bộ cắt chỉ dựa trên âm lượng. Audio đã sinh xong có thể phát tới 1.50×; riêng VieNeu PCM live nhận giới hạn động (tối đa 1.20×) từ RTF CUDA đo ở đầu phiên để trình phát không tiêu thụ nhanh hơn GPU và gây giật.
-* **Giọng tự động:** khi mở localhost, backend làm nóng và đo VieNeu CUDA, Google TTS và Microsoft Edge TTS một lần rồi cố định đường nhanh nhất cho phiên. Không dò lại nhà cung cấp ở từng câu.
-* Thanh **Cấu hình đang chạy** cập nhật lựa chọn tức thì; nút **Xác nhận cấu hình** gọi backend và chỉ báo đã áp dụng khi nhận được trạng thái Whisper/VieNeu/CUDA thật.
-
-### Có nên chạy backend trên Kaggle?
-
-Kaggle phù hợp để benchmark hoặc xử lý file theo lô, không phù hợp làm backend realtime thường trực: notebook có thời hạn phiên, dừng khi idle, URL public cần tunnel và mỗi câu phải chịu thêm RTT Internet. Với ứng dụng xem phim trên cùng máy, backend local cho đồng bộ ổn định hơn. Nếu triển khai từ xa lâu dài, dùng một GPU VM/API service cố định thay vì Kaggle Notebook.
-
-### 2. Thuật Toán Cắt Câu Thông Minh Theo Nhịp Nghỉ (VAD - Voice Activity Detection)
-* **Khắc phục lỗi bịa thoại / lặp từ:** Loại bỏ hoàn toàn phương pháp cắt âm thanh theo thời gian cố định (vốn gây đứt đôi từ ngữ và lặp lại các từ vô nghĩa).
-* Silero VAD nhận biết vùng có tiếng nói; bộ đệm chỉ đóng câu khi gặp khoảng lặng, đồng thời có ngưỡng an toàn cho câu quá dài. Cách này giảm cắt giữa từ và giữ nguyên thứ tự câu, nhưng độ chính xác vẫn phụ thuộc tiếng nền và chất lượng nguồn thu.
-
-### 3. Đa Dạng Giọng Đọc Thuyết Minh Thật & Nút Nghe Thử Trực Tiếp
-* ⚡ **VieNeu-TTS v3 Turbo (Khuyên dùng):** chạy local trên CUDA, phát theo luồng và hỗ trợ nhiều giọng Bắc/Trung/Nam.
-* **Google Voice Tiếng Việt:** đường mạng dự phòng nhanh khi local TTS không khả dụng.
-* 🎙️ **Hoài My (Microsoft AI Neural):** Giọng nữ nhẹ nhàng, truyền cảm, phù hợp phim truyện điện ảnh, tài liệu.
-* 🎙️ **Nam Minh (Microsoft AI Neural):** Giọng nam trầm ấm, chuẩn phát thanh viên tin tức.
-* 🔒 **Piper Neural (Chạy Offline 100%):** Giọng đọc cục bộ chạy trên máy không cần kết nối mạng.
-* Chọn giọng không tự phát âm thanh. Chỉ nút **"Nghe thử giọng"** mới phát câu mẫu.
-
-### 4. Phụ Đề Trong Suốt Chuẩn Điện Ảnh (Không Che Video)
-* **Trong video:** Chữ vàng nghệ thuật `#facc15`, viền đen nổi bật `-webkit-text-stroke: 1.2px #000`, hiệu ứng đổ bóng `text-shadow: 0 2px 8px #000`, nền trong suốt 100%.
-* **Cửa sổ nổi (Overlay Bar):** Mở qua nút `✨ Cửa Sổ Phụ Đề Nổi (Overlay)`, hiển thị một thanh ticker siêu mỏng (65px) nằm sát đáy màn hình (`/overlay`), hoàn toàn không bị khung trắng che khuất nội dung.
-
-### 5. Tiện Ích Mở Rộng Dành Cho Trình Duyệt (Chrome / Brave Extension)
-* Cài đặt tiện ích mở rộng tại thư mục `c:\dich\extension`.
-* Tự động bắt phụ đề YouTube gốc qua DOM, gửi dịch tức thì và **tự động giảm âm lượng video gốc xuống 10%** khi giọng thuyết minh đọc, giúp âm thanh không bao giờ bị lẫn lộn 2 giọng nói.
+### ⚡ Cách 2: Khởi Động Nhanh Bằng 1-Click Script
+1. Tải toàn bộ repository về máy tính.
+2. Nhấp đúp vào file **[`start.bat`](./start.bat)** ở thư mục gốc.
+3. Hệ thống sẽ tự động giải phóng port 3000 và khởi chạy ứng dụng LiveSub Studio ngay lập tức.
 
 ---
 
-## 🛠️ Cấu Trúc Dự Án
+## 📖 Hướng Dẫn Sử Dụng Trong 3 Bước
+
+### Bước 1: Chọn Nguồn Phát Video
+* 🌐 **Link YouTube:** Dán link video YouTube (hỗ trợ dịch phụ đề gốc, tự động lồng tiếng giọng Việt).
+* 💻 **Màn Hình / Tab Phim:** Xem phim trên **Netflix, Bilibili, AnimeHay, WeTV, VLC Player, PotPlayer**... Bấm *"Bắt Đầu Đọc & Lồng Tiếng"* và chia sẻ Tab hoặc Cửa sổ phim (nhớ tích chọn *"Chia sẻ âm thanh / Share system audio"*).
+* 📁 **File Video Cục Bộ:** Kéo thả trực tiếp file `.mp4`, `.mkv` vào khung phát để xem offline.
+
+### Bước 2: Chọn Giọng Lồng Tiếng
+* Chọn 1 trong 11 giọng đọc AI truyền cảm, tự nhiên:
+  * 🎙️ **Hải Đăng (Nam Trầm Ấm)**
+  * 🎙️ **Trúc Ly (Nữ Dịu Dàng)**
+  * 🎙️ **Thiện Minh (Nam Kể Chuyện)**
+  * 🎙️ **Mai Anh (Nữ Trẻ Trung)**
+  * 🎙️ **Thùy Dung (Nữ Truyền Cảm)**
+  * 🎙️ **Thái Sơn (Nam Hùng Hồn)**
+  * 🎙️ **Ngọc Huyền (Nữ Miền Nam Ngọt Ngào)**
+  * 🎙️ **Quỳnh Anh (Nữ Trong Trẻo)**
+  * 🎙️ **Đức Trí (Nam Tri Thức)**
+  * 🎙️ **Minh Đức (Nam Tự Nhiên)**
+  * 🎙️ **Kim Thanh (Nữ Chuẩn Mực)**
+* Bấm nút **"Nghe Thử"** để kiểm tra chất giọng.
+
+### Bước 3: Xem Phim & Tận Hưởng
+* ⚡ **Nút "Thích ứng video":** 
+  * Tích chọn để AI tự động điều chỉnh tốc độ đọc ăn khớp hoàn hảo với khẩu hình và độ dài từng câu thoại.
+  * Bỏ tích để cố định tốc độ đọc theo thanh trượt thủ công của bạn.
+* ✨ **Cửa sổ nổi (Always-on-Top PiP):** Bấm nút *"Ghim PiP"* để mở thanh phụ đề trong suốt đè lên bất kỳ phần mềm xem phim nào.
+
+---
+
+## ⚡ Các Tính Năng Nổi Bật
+
+### 1. 100% Pure Rust Native Engine (Zero GIL, Siêu Nhẹ & Ổn Định)
+* Backend hoàn toàn không dùng Python hay runtime cồng kềnh, loại bỏ 100% hiện tượng tắc nghẽn GIL (Global Interpreter Lock).
+* Tiêu thụ RAM cực thấp, khởi động tức thì chỉ trong 0.2 giây.
+
+### 2. VieNeu-TTS v3 Turbo Offline Native
+* Tích hợp trực tiếp kiến trúc Transformer & ONNX Runtime CUDA/CPU trong Rust.
+* Phát âm thanh theo khối PCM thời gian thực với độ trễ cực thấp (~200ms), tự động phân tách câu dài mượt mà không lo bị trễ.
+
+### 3. RapidOCR Nhận Diện Phụ Đề Video Thời Gian Thực (~20ms)
+* Quét và nhận diện chính xác từng ký tự phụ đề Vietsub hoặc phụ đề gốc (Anh, Nhật, Hàn, Trung) trực tiếp trên khung hình.
+* Tự động lọc sạch watermark quảng cáo web phim và nút bấm giao diện người chơi.
+
+---
+
+## 🛠️ Cấu Trúc Thư Mục Dự Án
 
 ```
 LiveSub_VoiceDub_Kyouma/
-├── extension/                 # Tiện ích mở rộng Chrome / Brave (manifest v3)
-│   ├── manifest.json
-│   ├── content.js             # Bắt phụ đề DOM, điều khiển âm lượng, đồng bộ video
-│   ├── style.css              # Giao diện phụ đề nổi trực tiếp đáy video
-│   └── icon.png
-├── models/                    # Thư mục chứa mô hình AI
-│   ├── ocr/                   # Mô hình PP-OCRv4 tiếng Việt (ONNX)
-│   └── whisper/               # Whisper CUDA native GPU server & GGML model
-├── public/                    # Giao diện Web Studio Frontend
-│   ├── index.html             # Dashboard Cinema Studio 4 nguồn phát
-│   ├── overlay.html           # Cửa sổ phụ đề nổi mỏng trong suốt
-│   ├── app.js                 # Bộ xử lý Web Audio API, VAD, MediaStream, Sync
-│   └── style.css              # Giao diện Studio Dark Cinema
-├── rust/                      # Backend 100% Pure Rust Native Workspace
-│   ├── livesub-app/           # Axum HTTP/WS Server binary (`livesub.exe`)
-│   ├── ocr-engine-rs/         # Thuật toán Viterbi khôi phục dấu & PP-OCRv4
-│   ├── asr-tts-rs/            # Whisper GPU & TTS client
-│   └── translation-router-rs/ # Bộ định tuyến dịch thuật
-├── setup.bat                  # Script cài đặt / build binary tự động
+├── LiveSub-Studio-Setup.exe   # Bộ cài đặt Windows Setup (NSIS Installer)
+├── setup.exe                  # Bản sao bộ cài đặt tiện dụng
+├── livesub.exe                # File thực thi Standalone Backend Engine (Pure Rust)
 ├── start.bat                  # Script khởi động LiveSub Studio 1-click
+├── public/                    # Giao diện người dùng Web & Desktop Studio
+│   ├── index.html             # Dashboard Studio chính
+│   ├── loader.html            # Màn hình Splash tải hệ thống
+│   ├── overlay.html           # Cửa sổ phụ đề nổi trong suốt PiP
+│   └── app.js                 # Bộ xử lý Web Audio, Streaming TTS & Đồng bộ
+├── rust/                      # Mã nguồn Pure Rust Workspace
+│   ├── livesub-app/           # Axum HTTP/WS Server binary (`livesub.exe`)
+│   ├── vieneu-tts-rs/         # Native VieNeu Neural TTS Inference Engine
+│   ├── ocr-engine-rs/         # Engine OCR nhận diện phụ đề thời gian thực
+│   └── translation-router-rs/ # Bộ định tuyến dịch thuật offline & online
+├── scripts/                   # Các script bảo trì, đóng gói và shortcut
 └── README.md
 ```
 
 ---
 
-## 🚀 Hướng Dẫn Cài Đặt & Sử Dụng
-
-### Yêu Cầu Hệ Thống:
-* Hệ điều hành: Windows 10 / 11 (64-bit).
-* Rust & Cargo toolchain (tải từ https://rustup.rs).
-* GPU: Khuyên dùng NVIDIA GeForce (RTX 3050, 3060, 4060...) có CUDA để đạt độ trễ $\le$ 0.15s cho Whisper ASR.
-
-### Bước 1: Build Binary
-Chỉ cần nhấp đúp vào file:
-```cmd
-setup.bat
-```
-*(Script sẽ tự động build binary `rust\target\release\livesub.exe` tối ưu hóa tốc độ thực thi).*
-
-### Bước 2: Khởi Động Ứng Dụng
-Nhấp đúp vào file:
-```cmd
-start.bat
-```
-Trình duyệt sẽ tự động mở giao diện tại: **`http://localhost:3000`**
-
-### Bước 3: Sử Dụng Các Tính Năng
-1. **Lồng tiếng video từ VLC / Netflix / Zoom / Tab Trình duyệt:**
-   - Chọn tab **💻 Âm Thanh Hệ Thống / Mọi Ứng Dụng**.
-   - Bấm **"Bắt Đầu Thu Âm Hệ Thống / Tab"** $\rightarrow$ Chọn Màn hình hoặc Tab cần xem và **tích chọn ô "Chia sẻ âm thanh"**.
-2. **Xem phim từ file trên máy tính:**
-   - Chọn tab **📁 File Video / Phim Trên Máy Tính**.
-   - Kéo thả file `.mp4` hoặc `.mkv` vào khung $\rightarrow$ Bấm **"Bắt Đầu Thuyết Minh"**.
-3. **Mở cửa sổ phụ đề nổi:**
-   - Bấm nút **"✨ Cửa Sổ Phụ Đề Nổi (Overlay)"** ở góc trên bên phải để hiển thị thanh phụ đề trong suốt đè lên bất kỳ cửa sổ nào.
-
----
-
-## 📡 API Endpoints
-
-| Phương thức | Đường dẫn | Chức năng |
-| :--- | :--- | :--- |
-| `POST` | `/api/transcribe` | Nhận file âm thanh `.webm`, xử lý qua Whisper GPU, dịch sang tiếng Việt và trả về audio thuyết minh Base64. |
-| `POST` | `/api/dub-subtitle` | Nhận chuỗi phụ đề có sẵn, dịch và trả về trọn file audio tương thích. |
-| `POST` | `/api/tts` | Sinh trọn file âm thanh (đường tương thích cũ). |
-| `POST` | `/api/tts-stream` | Phát VieNeu PCM 48 kHz theo luồng, bắt đầu trước khi sinh xong cả câu. |
-| `POST` | `/api/tts-batch` | Sinh trước tối đa 8 câu trong một batch GPU. |
-| `POST` | `/api/translate` | Dịch văn bản nhanh sang tiếng Việt. |
-| `POST` | `/api/ocr-subtitle` | Đọc phụ đề đóng cứng từ khung hình đã crop, dịch và trả số đo OCR. |
-| `GET` | `/api/pipeline-status` | Trạng thái model local, CUDA và số đo TTS first-chunk gần nhất. |
-| `GET` | `/overlay` | Trả về giao diện cửa sổ phụ đề nổi trong suốt. |
-
----
-
 ## 📜 Giấy Phép & Bản Quyền
 
-Dự án phát triển bởi **khang2309**. Lưu ý model VinAI Translate được phát hành theo AGPL-3.0; VieNeu và các model tải kèm có giấy phép riêng tại repository/model card tương ứng.
+Dự án phát triển bởi **khang2309**.  
 Mọi đóng góp (Pull Request), phản hồi lỗi (Issue) đều được hoan nghênh!

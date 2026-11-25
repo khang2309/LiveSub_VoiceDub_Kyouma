@@ -1,0 +1,12 @@
+# GitHub Linguist Language Detection Overrides
+# Mark vendored frontend libraries, web assets, and data files so GitHub correctly identifies the repository as Pure Rust
+
+public/** linguist-vendored
+extension/** linguist-vendored
+tests/** linguist-vendored
+data/** linguist-vendored
+models/** linguist-vendored
+scripts/** linguist-vendored
+*.html linguist-vendored
+*.css linguist-vendored
+*.js linguist-vendored

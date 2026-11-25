@@ -234,8 +234,8 @@ impl VieneuEngine {
             (last_h, pk, pv)
         };
 
-        let max_expected = (24.0 + (2.0 * phonemes.len() as f32).ceil()) as usize;
-        let max_frames = max_expected.min(300);
+        let max_expected = (16.0 + (1.6 * phone_ids.len() as f32).ceil()) as usize;
+        let max_frames = max_expected.min(220);
 
         let temperature = 0.8f32;
         let top_k = 25usize;
@@ -405,7 +405,8 @@ impl VieneuEngine {
                 }
             }
 
-            let eos = best_text_idx as i64 == EOS_SPEECH;
+            let eos = best_text_idx as i64 == EOS_SPEECH
+                || (t > 14 && text_logits[EOS_SPEECH as usize] >= best_text_val - 1.2);
 
             let mut frame_i32 = [0i32; 16];
             for k in 0..16 {

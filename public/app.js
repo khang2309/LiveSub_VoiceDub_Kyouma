@@ -3507,8 +3507,78 @@ class LiveDubStudio {
     }
   }
 
+  splitSentenceIntoClauses(text) {
+    const raw = String(text || '').trim();
+    if (!raw || raw.length <= 50) return [raw];
+
+    const mid = Math.floor(raw.length / 2);
+    // 1. Split at natural punctuation (comma, semicolon, colon, dash) near middle
+    const punctMatches = [...raw.matchAll(/([,;:—–\-]|\s+-\s+)\s+/g)];
+    if (punctMatches.length > 0) {
+      let best = punctMatches[0];
+      let bestDist = Math.abs(best.index - mid);
+      for (let i = 1; i < punctMatches.length; i++) {
+        const dist = Math.abs(punctMatches[i].index - mid);
+        if (dist < bestDist) {
+          best = punctMatches[i];
+          bestDist = dist;
+        }
+      }
+      const splitIdx = best.index + best[1].length;
+      const p1 = raw.slice(0, splitIdx).trim();
+      const p2 = raw.slice(splitIdx).trim();
+      if (p1.length >= 14 && p2.length >= 14) {
+        return [p1, p2];
+      }
+    }
+
+    // 2. Split at common Vietnamese coordinating conjunctions
+    const conjMatches = [...raw.matchAll(/\s+(nhưng|mà|và|thì|bởi vì|tại vì|cho nên|thế nên|hoặc|hay)\s+/gi)];
+    if (conjMatches.length > 0) {
+      let best = conjMatches[0];
+      let bestDist = Math.abs(best.index - mid);
+      for (let i = 1; i < conjMatches.length; i++) {
+        const dist = Math.abs(conjMatches[i].index - mid);
+        if (dist < bestDist) {
+          best = conjMatches[i];
+          bestDist = dist;
+        }
+      }
+      const splitIdx = best.index;
+      const p1 = raw.slice(0, splitIdx).trim();
+      const p2 = raw.slice(splitIdx).trim();
+      if (p1.length >= 14 && p2.length >= 14) {
+        return [p1, p2];
+      }
+    }
+
+    return [raw];
+  }
+
   enqueueLiveDubbing(text, historyId, sourceText = '', capturedAt = null, finalizedAt = null, serverTimings = null, originalDuration = 0, source = 'unknown') {
     if (!text || !this.isDubbingEnabled) return Promise.resolve();
+
+    const clauses = this.splitSentenceIntoClauses(text);
+    if (clauses.length > 1) {
+      const totalLen = text.length;
+      for (let i = 0; i < clauses.length; i++) {
+        const clause = clauses[i];
+        const clauseRatio = clause.length / Math.max(1, totalLen);
+        const clauseDuration = originalDuration ? (originalDuration * clauseRatio) : 0;
+        this.enqueueSingleLiveDubbing(clause, historyId, sourceText, capturedAt, finalizedAt, serverTimings, clauseDuration, source, text);
+        if (i === 0 && clauses[1] && this.getEffectiveVoice().startsWith('vieneu')) {
+          this.prefetchLiveTts(clauses[1], this.getEffectiveVoice());
+        }
+      }
+      return this.drainLiveDubbingQueue();
+    }
+
+    this.enqueueSingleLiveDubbing(text, historyId, sourceText, capturedAt, finalizedAt, serverTimings, originalDuration, source, text);
+    return this.drainLiveDubbingQueue();
+  }
+
+  enqueueSingleLiveDubbing(text, historyId, sourceText = '', capturedAt = null, finalizedAt = null, serverTimings = null, originalDuration = 0, source = 'unknown', fullText = null) {
+    if (!text || !this.isDubbingEnabled) return;
     // Cross-source dedup: if an equivalent sourceText from a different source
     // (e.g. OCR vs ASR) is already queued, skip the duplicate.
     const normSource = String(sourceText || '').replace(/\s+/g, ' ').trim().toLowerCase().replace(/[.!?,;:]+$/, '');
@@ -3516,7 +3586,7 @@ class LiveDubStudio {
       for (const queued of this.liveDubbingQueue) {
         const qNorm = String(queued.sourceText || '').replace(/\s+/g, ' ').trim().toLowerCase().replace(/[.!?,;:]+$/, '');
         if (qNorm && qNorm === normSource && queued.source !== source) {
-          return Promise.resolve(); // cross-source duplicate
+          return; // cross-source duplicate
         }
       }
     }
@@ -3529,6 +3599,7 @@ class LiveDubStudio {
     this.lastEnqueueTime = now;
     this.liveDubbingQueue.push({
       text,
+      fullText: fullText || text,
       sourceText,
       historyId,
       capturedAt,
@@ -3544,24 +3615,11 @@ class LiveDubStudio {
     if (this.isProcessingLiveDubbing && effectiveVoice.startsWith('vieneu')) {
       this.prefetchLiveTts(text, effectiveVoice);
     }
-    return this.drainLiveDubbingQueue();
   }
 
   getLivePcmBufferPolicy(text) {
-    const len = (text || '').length;
-    // Bounded adaptive jitter buffer for 48kHz mono 16-bit PCM (96,000 bytes/sec):
-    // For normal dialogue subtitles (< 130 chars), VieNeu finishes synthesis on RTX 3050 CUDA
-    // in ~90-180ms. Accumulating the complete sentence ensures 100% smooth, continuous playback
-    // as ONE audio buffer without boundary clicks, slice jitter, or buffer underrun ("không bị khựng giật").
-    if (len >= 80) {
-      return { initialBytes: 57600, sliceBytes: 38400, fullLinePreferred: len < 130 };
-    }
-    // Medium sentences (40-79 chars)
-    if (len >= 40) {
-      return { initialBytes: 38400, sliceBytes: 28800, fullLinePreferred: true };
-    }
-    // Short dialogue (< 40 chars): ~250ms initial buffer (24,000 bytes)
-    return { initialBytes: 24000, sliceBytes: 24000, fullLinePreferred: true };
+    // Ultra-low latency 48kHz mono 16-bit PCM buffer policy (~200ms initial response time)
+    return { initialBytes: 24000, sliceBytes: 19200, fullLinePreferred: false };
   }
 
   prefetchLiveTts(text, voice) {
@@ -3662,8 +3720,9 @@ class LiveDubStudio {
               this.realtimeMetrics.samples.push(endToVoiceMs);
               if (this.realtimeMetrics.samples.length > 100) this.realtimeMetrics.samples.shift();
             }
-            this.displaySubtitle(item.sourceText, item.text);
-            if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = item.text;
+            const showText = item.fullText || item.text;
+            this.displaySubtitle(item.sourceText, showText);
+            if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = showText;
             if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = item.sourceText;
           };
           const originalDuration = item.originalDuration || (item.finalizedAt && item.capturedAt ? Math.max(0, (item.finalizedAt - item.capturedAt) / 1000) : 0);
@@ -4027,11 +4086,7 @@ class LiveDubStudio {
           // For short subtitle lines (< 130 chars), collect full PCM (GPU finishes in ~150-250ms)
           // so the complete sentence plays as ONE uninterrupted buffer, preserving the final syllable completely.
           const threshold = started ? MIN_SLICE_BYTES : INITIAL_PREBUFFER_BYTES;
-          const shouldSchedule = (
-            (bufferPolicy.fullLinePreferred && !started)
-              ? (done || pendingBytesLen >= 480000)
-              : (pendingBytesLen >= threshold || (done && pendingBytesLen > 0))
-          );
+          const shouldSchedule = (pendingBytesLen >= threshold || (done && pendingBytesLen > 0));
           if (shouldSchedule) {
             let sliceBytes;
             if (pendingChunks.length === 1) {
