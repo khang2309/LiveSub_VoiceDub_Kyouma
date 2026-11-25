@@ -2,6 +2,7 @@ use std::io::Cursor;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use ndarray::{Array1, Array2, Array3, Array4, ArrayView1, Axis};
+use ort::ep::{CUDA, DirectML, ExecutionProvider};
 use ort::session::builder::GraphOptimizationLevel;
 use ort::session::Session;
 use ort::value::Tensor;
@@ -83,43 +84,48 @@ impl VieneuEngine {
         .max(2)
         .min(4);
 
+        let ep_name = if CUDA::is_available().unwrap_or(false) {
+            "NVIDIA CUDA Hardware GPU"
+        } else if DirectML::is_available().unwrap_or(false) {
+            "DirectML DirectX 12 Hardware GPU (NVIDIA RTX 3050)"
+        } else {
+            "CPU High-Performance P-cores"
+        };
+
         tracing::info!(
-            "Loading VieNeu-TTS models from {:?} with {} threads",
+            "Loading VieNeu-TTS models from {:?} with {} threads ({})",
             config.onnx_dir,
-            intra_threads
+            intra_threads,
+            ep_name
         );
+        println!("🚀 VieNeu-TTS: Đang kích hoạt tăng tốc phần cứng -> {}", ep_name);
 
         let prefill_path = config.onnx_dir.join("vieneu_prefill.onnx");
         let decode_path = config.onnx_dir.join("vieneu_decode_step.onnx");
         let acoustic_path = config.onnx_dir.join("vieneu_acoustic_cached.onnx");
 
-        let sess_pre = Session::builder(&env)?
-            .with_optimization_level(GraphOptimizationLevel::Level3)
-            .unwrap_or_else(|e| e.recover())
-            .with_intra_threads(intra_threads)
-            .unwrap_or_else(|e| e.recover())
-            .commit_from_file(&prefill_path)?;
+        let make_builder = || -> Result<ort::session::builder::SessionBuilder, VieneuError> {
+            let mut b = Session::builder(&env)?
+                .with_optimization_level(GraphOptimizationLevel::Level3)
+                .unwrap_or_else(|e| e.recover())
+                .with_intra_threads(intra_threads)
+                .unwrap_or_else(|e| e.recover());
 
-        let sess_dec = Session::builder(&env)?
-            .with_optimization_level(GraphOptimizationLevel::Level3)
-            .unwrap_or_else(|e| e.recover())
-            .with_intra_threads(intra_threads)
-            .unwrap_or_else(|e| e.recover())
-            .commit_from_file(&decode_path)?;
+            if CUDA::is_available().unwrap_or(false) {
+                b = b.with_execution_providers([CUDA::default().build()])
+                    .unwrap_or_else(|e| e.recover());
+            } else if DirectML::is_available().unwrap_or(false) {
+                b = b.with_execution_providers([DirectML::default().build()])
+                    .unwrap_or_else(|e| e.recover());
+            }
 
-        let sess_ac = Session::builder(&env)?
-            .with_optimization_level(GraphOptimizationLevel::Level3)
-            .unwrap_or_else(|e| e.recover())
-            .with_intra_threads(intra_threads)
-            .unwrap_or_else(|e| e.recover())
-            .commit_from_file(&acoustic_path)?;
+            Ok(b)
+        };
 
-        let sess_codec = Session::builder(&env)?
-            .with_optimization_level(GraphOptimizationLevel::Level3)
-            .unwrap_or_else(|e| e.recover())
-            .with_intra_threads(intra_threads)
-            .unwrap_or_else(|e| e.recover())
-            .commit_from_file(&config.codec_onnx_path)?;
+        let sess_pre = make_builder()?.commit_from_file(&prefill_path)?;
+        let sess_dec = make_builder()?.commit_from_file(&decode_path)?;
+        let sess_ac = make_builder()?.commit_from_file(&acoustic_path)?;
+        let sess_codec = make_builder()?.commit_from_file(&config.codec_onnx_path)?;
 
         let tokenizer = Tokenizer::from_file(&config.tokenizer_path)
             .map_err(|e| VieneuError::Tokenizer(e.to_string()))?;

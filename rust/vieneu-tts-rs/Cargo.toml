@@ -9,7 +9,7 @@ description = "Pure Rust native inference engine for VieNeu-TTS v3 Turbo via ONN
 crate-type = ["rlib"]
 
 [dependencies]
-ort = { version = "2.0.0-rc.15", features = ["download-binaries", "tls-rustls", "ndarray"] }
+ort = { version = "2.0.0-rc.15", features = ["download-binaries", "tls-rustls", "ndarray", "directml", "cuda"] }
 ndarray = "0.17"
 tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
 sea-g2p-rs = { path = "../../tools/sea-g2p", default-features = false }
