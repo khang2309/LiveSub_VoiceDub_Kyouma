@@ -411,6 +411,9 @@ fn cand_unigram_score(lex: &Lexicon, cand: &str, core_low: &str, is_strictly_una
 
 fn transition_score(lex: &Lexicon, p: &str, c: &str) -> i32 {
     match (p, c) {
+        ("phơi", "khô") => 75,
+        ("làm", "từ") | ("từ", "rễ") | ("rễ", "ô") | ("ô", "đầu") | ("rễ", "cây") | ("nhổ", "rễ") => 70,
+        ("sao", "anh") | ("anh", "ta") | ("ta", "lại") | ("lại", "biết") | ("ai", "biết") | ("đã", "biết") => 60,
         ("tử", "thúy") => 60,
         ("mỗi", "năm") | ("mỗi", "ngày") | ("mỗi", "tháng") | ("mỗi", "người") | ("mỗi", "lần") | ("mỗi", "khi") | ("mỗi", "thứ") => 65,
         ("tôi", "trả") | ("trả", "được") | ("trả", "nợ") | ("trả", "lại") | ("trả", "giá") | ("trả", "tiền") | ("trả", "công") => 60,
@@ -465,7 +468,7 @@ fn transition_score(lex: &Lexicon, p: &str, c: &str) -> i32 {
         ("kể", "cho") | ("cho", "ngài") | ("ngài", "ấy") | ("thị", "trấn") => 50,
         ("còn", "giữ") | ("giữ", "một") | ("một", "cuốn") | ("số", "còn") | ("không", "lấy") => 50,
         ("những", "cuốn") | ("cuốn", "còn") | ("cuốn", "nữa") | ("vẫn", "lấy") | ("lấy", "về") | ("về", "được") => 50,
-        ("anh", "ta") | ("ta", "đã") | ("đã", "bán") | ("thì", "lại") | ("lại", "gay") | ("gay", "go") => 50,
+        ("ta", "đã") | ("đã", "bán") | ("thì", "lại") | ("lại", "gay") | ("gay", "go") => 50,
         ("mới", "chỉ") | ("có", "bán") | ("côn", "trùng") | ("có", "hứa") | ("không", "tố") | ("tố", "giác") => 50,
         ("còn", "tùy") | ("tùy", "vào") | ("thái", "độ") | ("đừng", "dọa") | ("dọa", "anh") | ("anh", "đói") | ("đói", "không") => 50,
         ("lý", "do") | ("do", "riêng") | ("cứ", "ở") | ("cái", "này") | ("đồ", "thừa") | ("bọn", "tôi") => 50,
@@ -627,7 +630,7 @@ fn unigram_frequency_score(cand: &str) -> i32 {
         | "thôi" | "nhé" | "ạ" | "hả" | "hở" | "ơi" | "ôi" | "ơ" | "dạ" | "vâng" | "ừ"
         | "tôi" | "bạn" | "anh" | "em" | "chị" | "ông" | "bà" | "bố" | "mẹ" | "con"
         | "cháu" | "cô" | "chú" | "bác" | "chúng" | "họ" | "nó" | "hắn" | "ta" | "mình"
-        | "ăn" | "uống" | "muốn" | "rượu" | "trả" | "nửa" | "mỗi" | "ngủ" | "nhìn" | "chạy" | "đứng" | "mua" | "bán"
+        | "ăn" | "uống" | "muốn" | "rượu" | "trả" | "nửa" | "mỗi" | "khô" | "rễ" | "ô" | "phơi" | "ngủ" | "nhìn" | "chạy" | "đứng" | "mua" | "bán"
         | "để" | "ngồi" | "đau" | "sợ" | "buồn" | "vui" | "yêu" | "thương" | "ghét" | "giúp" | "bỏ"
         | "thịt" | "cá" | "cơm" | "nước" | "bánh" | "chợ" | "nhà" | "trường" | "lớp" | "đường"
         | "xe" | "ngày" | "tháng" | "năm" | "giờ" | "phút" | "trước" | "sau" | "giữa"
@@ -737,6 +740,13 @@ pub fn pre_normalize_ocr_substitutions(text: &str) -> String {
         regex::Regex::new(r"(?i)(?:(?:^|\s+)(?:Dù|Vào|Vao|[a-zA-Z]{1,4})\s*){0,2}(?:\s*\d+\s+)?(?:\b\d{1,2}:\d{2}(?::\d{2})?(?:\s*[/|\\]\s*\d{1,2}[:.]\d{1,2}(?:[:.]\d{1,2})?)?\s*\d*\b|\b\d{1,2}\.\d{2}\s*[/|\\]\s*\d{1,2}[:.]\d{1,2}\s*\d*\b)").unwrap()
     });
     s = re_timecode.replace_all(&s, "").to_string();
+
+    // 2.5 Strip trailing video player seek buttons / OSD icons (e.g. "Dù 10", "Dù 5", "Tua 10", "? 10", "? Dù 10")
+    static RE_PLAYER_BUTTON: OnceLock<regex::Regex> = OnceLock::new();
+    let re_player_btn = RE_PLAYER_BUTTON.get_or_init(|| {
+        regex::Regex::new(r"(?i)\s+(?:Dù|Vào|Vao|Tua|Lùi)\s*\d+\s*$|\s+(?:Dù|Vào|Vao|Tua|Lùi)?\s*(?:10|5|15|30|0)\s*$").unwrap()
+    });
+    s = re_player_btn.replace(&s, "").to_string();
 
     // 3. Clean trailing stray slashes or whitespace left from OSD stripping
     s = s.trim().trim_end_matches(|c: char| c == '/' || c == '\\').trim().to_string();
@@ -1020,6 +1030,19 @@ pub fn pre_normalize_ocr_substitutions(text: &str) -> String {
         ("muôn uông", "muốn uống"),
         ("muôn uống", "muốn uống"),
         ("muốn uông", "muốn uống"),
+        ("phơi khó", "phơi khô"),
+        ("Phơi khó", "Phơi khô"),
+        ("từ rê ở đâu", "từ rễ ô đầu"),
+        ("từ rễ ở đâu", "từ rễ ô đầu"),
+        ("rê ở đâu phơi", "rễ ô đầu phơi"),
+        ("rễ ở đâu phơi", "rễ ô đầu phơi"),
+        ("rê ở đâu", "rễ ô đầu"),
+        ("rễ ở đâu", "rễ ô đầu"),
+        ("rê ô đầu", "rễ ô đầu"),
+        ("từ rê", "từ rễ"),
+        ("làm từ rê", "làm từ rễ"),
+        ("biêt", "biết"),
+        ("Biêt", "Biết"),
     ];
     for (k, v) in subs {
         s = s.replace(k, v);

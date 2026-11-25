@@ -61,6 +61,10 @@ pub async fn synthesize_tts(state: &AppState, text: &str, voice: Option<&str>) -
             header::CACHE_CONTROL,
             HeaderValue::from_static("public, max-age=86400"),
         );
+        res.headers_mut().insert(
+            axum::http::HeaderName::from_static("x-safe-playback-rate"),
+            HeaderValue::from_static("2.0"),
+        );
         res
     } else {
         (

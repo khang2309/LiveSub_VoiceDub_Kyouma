@@ -555,50 +555,43 @@ class LiveDubStudio {
 
   getSafeStreamingPlaybackRate(queueDepth = 0, serverCap = 2.0, originalDuration = 0, textLength = 0, queueLagMs = 0) {
     const manualRate = parseFloat(this.rateRange && this.rateRange.value) || 1.15;
+    const safeCap = (serverCap && serverCap >= 1.5) ? serverCap : 2.0;
     if (!this.isAdaptiveSpeedEnabled) {
-      return Math.min(2.0, Math.max(0.5, manualRate));
+      return Math.min(safeCap, Math.max(0.5, manualRate));
     }
     let rate = manualRate;
 
-    // Only apply backlog / lag overdrive when there is actual backlog or fast dialogue
-    if (queueLagMs > 0 || (queueDepth > 0 && queueDepth <= 5) || (this.lastSentenceArrivalGapMs && this.lastSentenceArrivalGapMs < 2500)) {
-      if (this.lastSentenceArrivalGapMs && this.lastSentenceArrivalGapMs < 1400) {
-        rate = Math.max(rate, 1.65);
-      } else if (this.lastSentenceArrivalGapMs && this.lastSentenceArrivalGapMs < 2400) {
-        rate = Math.max(rate, 1.45);
-      }
-
-      if (queueLagMs > 1800) {
-        rate = Math.max(rate, 1.95);
-      } else if (queueLagMs > 1000) {
-        rate = Math.max(rate, 1.70);
-      } else if (queueLagMs > 450) {
-        rate = Math.max(rate, 1.50);
-      } else if (queueLagMs > 200) {
-        rate = Math.max(rate, 1.35);
-      }
-
-      if (queueDepth >= 3 && queueDepth <= 5) {
-        rate = Math.max(rate, 1.25);
-      } else if (queueDepth >= 1 && queueDepth <= 2) {
-        rate = Math.max(rate, 1.18);
-      }
+    // Realtime Lag Overdrive:
+    // Anime & movie dialogue is fast-paced (~4.8-5.5 syllables/sec).
+    // If the queue lags behind the video, immediately accelerate speech rate to eliminate cumulative delay.
+    if (queueLagMs > 1200) {
+      rate = Math.max(rate, 1.70);
+    } else if (queueLagMs > 700) {
+      rate = Math.max(rate, 1.50);
+    } else if (queueLagMs > 350) {
+      rate = Math.max(rate, 1.35);
+    } else if (queueLagMs > 150) {
+      rate = Math.max(rate, 1.25);
     }
 
-    // 4. Adaptive Speech Pacing: Ép tốc độ đọc để vừa khít với thời lượng thoại
+    if (queueDepth >= 2) {
+      rate = Math.max(rate, 1.30);
+    }
+
+    // Adaptive Speech Pacing: fit dialogue length to anime frame duration
     if (textLength > 0) {
       const estimatedSyllables = Math.max(1, textLength / 3.8);
-      const estimatedSpeechSeconds = estimatedSyllables * 0.21;
+      const estimatedSpeechSeconds = estimatedSyllables * 0.22;
       const targetDuration = originalDuration > 0
         ? originalDuration
-        : Math.min(2.5, Math.max(1.2, textLength * 0.045));
+        : Math.max(1.0, textLength * 0.045);
       if (targetDuration > 0 && estimatedSpeechSeconds > targetDuration) {
         const fitRate = estimatedSpeechSeconds / targetDuration;
         rate = Math.max(rate, fitRate);
       }
     }
 
-    return Math.min(serverCap !== undefined ? serverCap : 2.0, Math.max(0.8, rate));
+    return Math.min(safeCap, Math.max(0.8, rate));
   }
 
   setSubMode(mode) {
@@ -2369,6 +2362,18 @@ class LiveDubStudio {
     raw = raw.replace(/\bmuôn uông\b/gi, 'muốn uống');
     raw = raw.replace(/\bmuôn uống\b/gi, 'muốn uống');
     raw = raw.replace(/\bmuốn uông\b/gi, 'muốn uống');
+    raw = raw.replace(/\bphơi khó\b/gi, 'phơi khô');
+    raw = raw.replace(/\bPhơi khó\b/g, 'Phơi khô');
+    raw = raw.replace(/\btừ rê ở đâu\b/gi, 'từ rễ ô đầu');
+    raw = raw.replace(/\btừ rễ ở đâu\b/gi, 'từ rễ ô đầu');
+    raw = raw.replace(/\brê ở đâu\b/gi, 'rễ ô đầu');
+    raw = raw.replace(/\brễ ở đâu\b/gi, 'rễ ô đầu');
+    raw = raw.replace(/\brê ô đầu\b/gi, 'rễ ô đầu');
+    raw = raw.replace(/\btừ rê\b/gi, 'từ rễ');
+    raw = raw.replace(/\bbiêt\b/g, 'biết');
+    raw = raw.replace(/\bBiêt\b/g, 'Biết');
+    // Strip trailing video player seek buttons / OSD tags (e.g. "? Dù 10", "Dù 10", "Tua 10")
+    raw = raw.replace(/\s+(?:Dù|Vào|Vao|Tua|Lùi)\s*\d+\s*$/i, '').replace(/\s+(?:Dù|Vào|Vao|Tua|Lùi)?\s*(?:10|5|15|30|0)\s*$/i, '').trim();
 
     // Dialogue subtitles: allow long sentences, monologues and multi-speaker dialogues up to 1000 chars or 200 words
     if (raw.length > 1000 || raw.split(/\s+/).length > 200) return;
@@ -2387,15 +2392,19 @@ class LiveDubStudio {
     }
 
     // Instant Preemption on Seek / New Dialogue Line:
-    // Only flush if there was a true pause in dialogue (>= 6 ticks, ~210ms) and text is completely different,
-    // preventing momentary 35ms video frame drops from prematurely cutting off ongoing speech!
-    if (this.isDubbingEnabled && this.ocrConsecutiveEmpty >= 6 && !this.streamingAbortController && this.lastOCRText && this.ocrSimilarity(raw, this.lastOCRText) < 0.40) {
-      if (typeof this.stopDubbingAudio === 'function') {
-        this.stopDubbingAudio(false, true);
+    // If a truly new dialogue line appears (similarity < 0.35) and audio has been speaking for > 900ms,
+    // smoothly fade out the previous line so the new line starts immediately without lag!
+    if (this.isDubbingEnabled && this.ocrConsecutiveEmpty >= 5 && this.lastOCRText && this.ocrSimilarity(raw, this.lastOCRText) < 0.35) {
+      const nowMs = performance.now();
+      const speechDurationMs = this.lastDubbingStartedAt ? (nowMs - this.lastDubbingStartedAt) : 0;
+      if (speechDurationMs > 900) {
+        if (typeof this.stopDubbingAudio === 'function') {
+          this.stopDubbingAudio(false, false);
+        }
+        this.liveDubbingQueue = [];
+        this.speechQueue = [];
+        this.playbackGeneration = (this.playbackGeneration || 0) + 1;
       }
-      this.liveDubbingQueue = [];
-      this.speechQueue = [];
-      this.playbackGeneration = (this.playbackGeneration || 0) + 1;
     }
 
     const now = performance.now();
@@ -2413,6 +2422,7 @@ class LiveDubStudio {
       cleanRaw = cleanRaw.replace(/^[a-zA-Z]\s+(?=[a-zA-Zà-ỹÀ-Ỹ]{3,})/i, '');
     }
     cleanRaw = cleanRaw.replace(/(\.{2,}|…)\s*\.+/g, '$1').replace(/\s+([.,!?:;…])/g, '$1').trim();
+    cleanRaw = cleanRaw.replace(/\s+(?:Dù|Vào|Vao|Tua|Lùi)\s*\d+\s*$/i, '').replace(/\s+(?:Dù|Vào|Vao|Tua|Lùi)?\s*(?:10|5|15|30|0)\s*$/i, '').trim();
     cleanRaw = cleanRaw
       .replace(/\bđứa tre\b/gi, 'đứa trẻ')
       .replace(/\bxấu xí lăm\b/gi, 'xấu xí lắm')
@@ -2441,6 +2451,16 @@ class LiveDubStudio {
       .replace(/\bm[oô]t n[uư][aã] r[oồ]i\b/gi, 'một nửa rồi')
       .replace(/\bmột nữa\b/gi, 'một nửa')
       .replace(/\bMôt\b/g, 'Một').replace(/\bmôt\b/g, 'một')
+      .replace(/\bphơi khó\b/gi, 'phơi khô')
+      .replace(/\bPhơi khó\b/g, 'Phơi khô')
+      .replace(/\btừ rê ở đâu\b/gi, 'từ rễ ô đầu')
+      .replace(/\btừ rễ ở đâu\b/gi, 'từ rễ ô đầu')
+      .replace(/\brê ở đâu\b/gi, 'rễ ô đầu')
+      .replace(/\brễ ở đâu\b/gi, 'rễ ô đầu')
+      .replace(/\brê ô đầu\b/gi, 'rễ ô đầu')
+      .replace(/\btừ rê\b/gi, 'từ rễ')
+      .replace(/\bbiêt\b/g, 'biết')
+      .replace(/\bBiêt\b/g, 'Biết')
       // Vietnamese tone mark disambiguation (sắc vs hỏi OCR font confusion)
       .replace(/\bcúa\b/gi, 'của')
       .replace(/\bcúa mình\b/gi, 'của mình')
@@ -3874,7 +3894,7 @@ class LiveDubStudio {
           ok: true,
           pcmBytes: merged,
           sampleRate: parseInt(res.headers.get('X-Audio-Sample-Rate') || '48000', 10),
-          serverRateCap: parseFloat(res.headers.get('X-Safe-Playback-Rate') || '1.0')
+          serverRateCap: parseFloat(res.headers.get('X-Safe-Playback-Rate') || '2.0')
         };
       } catch (err) {
         if (this.liveTtsPrefetch) this.liveTtsPrefetch.delete(key);
@@ -3890,9 +3910,21 @@ class LiveDubStudio {
     this.isProcessingLiveDubbing = true;
     try {
       while (this.liveDubbingQueue.length > 0) {
-        // Backlog management for fast-paced dialogue / rapid exchanges ("nói nhanh nói nhiều"):
-        // Drops stale backlog when queue > 4 to completely prevent cumulative delay ("trễ cộng dồn").
-        if (this.liveDubbingQueue.length > 4) {
+        const nowMs = performance.now();
+        // Aggressive zero-latency backlog management for anime & fast dialogue:
+        // If 2 or more distinct sentences are queued, drop the audio of stale ones (> 1200ms)
+        // while displaying their subtitle so dubbing immediately aligns with the current video frame!
+        while (this.liveDubbingQueue.length > 1) {
+          const head = this.liveDubbingQueue[0];
+          const headAge = nowMs - (head.enqueuedAt || nowMs);
+          if (headAge > 1200) {
+            const stale = this.liveDubbingQueue.shift();
+            this.displaySubtitle(stale.sourceText, stale.text);
+          } else {
+            break;
+          }
+        }
+        if (this.liveDubbingQueue.length > 3) {
           const dropped = this.liveDubbingQueue.splice(0, this.liveDubbingQueue.length - 2);
           for (const d of dropped) {
             this.displaySubtitle(d.sourceText, d.text);
@@ -3906,18 +3938,9 @@ class LiveDubStudio {
         );
         if (isStale()) continue;
 
-        // Avalanche prevention: nếu hàng đợi ứ đọng từ 4 câu trở lên do video nói quá nhanh dồn dập,
-        // giữ lại 2 câu mới nhất để lồng tiếng bám sát khung hình hiện tại của video
-        if (this.liveDubbingQueue.length >= 4) {
-          const dropped = this.liveDubbingQueue.splice(0, this.liveDubbingQueue.length - 2);
-          for (const d of dropped) {
-            this.displaySubtitle(d.sourceText, d.text);
-          }
-        }
-
-        // Chỉ loại bỏ các câu quá cũ (> 5 giây) nếu đã có câu mới hơn thay thế
-        const queuedAgeMs = item.enqueuedAt ? (performance.now() - item.enqueuedAt) : 0;
-        if (queuedAgeMs > 5000 && this.liveDubbingQueue.length > 0) {
+        // Skip any item older than 1800ms if newer item exists
+        const queuedAgeMs = item.enqueuedAt ? (nowMs - item.enqueuedAt) : 0;
+        if (queuedAgeMs > 1800 && this.liveDubbingQueue.length > 0) {
           this.displaySubtitle(item.sourceText, item.text);
           continue;
         }
@@ -4217,7 +4240,7 @@ class LiveDubStudio {
       }
 
       const sampleRate = prefetchedData ? prefetchedData.sampleRate : parseInt(response.headers.get('X-Audio-Sample-Rate') || '48000', 10);
-      const serverRateCap = prefetchedData ? prefetchedData.serverRateCap : parseFloat(response.headers.get('X-Safe-Playback-Rate') || '1.0');
+      const serverRateCap = prefetchedData ? prefetchedData.serverRateCap : parseFloat(response.headers.get('X-Safe-Playback-Rate') || '2.0');
       const gainNode = this.audioContext.createGain();
       const targetGain = (parseInt(this.volumeRange.value, 10) || 100) / 100;
       const now = this.audioContext.currentTime;

@@ -284,6 +284,14 @@ mod tests {
                 "Nó mạnh hơn các loại rượu thông thường nên sẽ khiến người bình thường bất tỉnh.",
                 "Nó mạnh hơn các loại rượu thông thường nên sẽ khiến người bình thường bất tỉnh.",
             ),
+            (
+                "Sao anh ta lại biết tên dược liệu thô làm từ rê ở đâu phơi khó? Dù 10",
+                "Sao anh ta lại biết tên dược liệu thô làm từ rễ ô đầu phơi khô?",
+            ),
+            (
+                "Sao anh ta lại biêt tên dược liệu thô làm từ rê ở đâu phơi khó? Dù 10",
+                "Sao anh ta lại biết tên dược liệu thô làm từ rễ ô đầu phơi khô?",
+            ),
         ];
 
         for (input, expected) in samples {
