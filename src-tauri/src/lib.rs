@@ -94,7 +94,7 @@ pub fn run() {
                             tauri::WebviewUrl::External("http://localhost:3000/overlay".parse().unwrap()),
                         )
                         .title("LiveSub - Phụ Đề Nổi (PiP Always-on-Top)")
-                        .inner_size(840.0, 130.0)
+                        .inner_size(920.0, 150.0)
                         .min_inner_size(400.0, 80.0)
                         .always_on_top(true)
                         .decorations(true)

@@ -2391,21 +2391,8 @@ class LiveDubStudio {
       }
     }
 
-    // Instant Preemption on Seek / New Dialogue Line:
-    // If a truly new dialogue line appears (similarity < 0.35) and audio has been speaking for > 900ms,
-    // smoothly fade out the previous line so the new line starts immediately without lag!
-    if (this.isDubbingEnabled && this.ocrConsecutiveEmpty >= 5 && this.lastOCRText && this.ocrSimilarity(raw, this.lastOCRText) < 0.35) {
-      const nowMs = performance.now();
-      const speechDurationMs = this.lastDubbingStartedAt ? (nowMs - this.lastDubbingStartedAt) : 0;
-      if (speechDurationMs > 900) {
-        if (typeof this.stopDubbingAudio === 'function') {
-          this.stopDubbingAudio(false, false);
-        }
-        this.liveDubbingQueue = [];
-        this.speechQueue = [];
-        this.playbackGeneration = (this.playbackGeneration || 0) + 1;
-      }
-    }
+    // Zero-drop real-time speech policy:
+    // Never abruptly interrupt ongoing dialogue or purge the speech queue; let every sentence play smoothly to completion.
 
     const now = performance.now();
     if (!this.recentOCRHistory) this.recentOCRHistory = [];
@@ -2424,6 +2411,24 @@ class LiveDubStudio {
     cleanRaw = cleanRaw.replace(/(\.{2,}|…)\s*\.+/g, '$1').replace(/\s+([.,!?:;…])/g, '$1').trim();
     cleanRaw = cleanRaw.replace(/\s+(?:Dù|Vào|Vao|Tua|Lùi)\s*\d+\s*$/i, '').replace(/\s+(?:Dù|Vào|Vao|Tua|Lùi)?\s*(?:10|5|15|30|0)\s*$/i, '').trim();
     cleanRaw = cleanRaw
+      .replace(/\bsẽ khiên\b/gi, 'sẽ khiến')
+      .replace(/\bkhiên người\b/gi, 'khiến người')
+      .replace(/\bkhiên một\b/gi, 'khiến một')
+      .replace(/\bkhiên cho\b/gi, 'khiến cho')
+      .replace(/\bbât tỉnh\b/gi, 'bất tỉnh')
+      .replace(/\bbât ngờ\b/gi, 'bất ngờ')
+      .replace(/\bbât an\b/gi, 'bất an')
+      .replace(/\bbât cứ\b/gi, 'bất cứ')
+      .replace(/\bthường bât\b/gi, 'thường bất')
+      .replace(/\bmôi năm\b/gi, 'mỗi năm')
+      .replace(/\bMôi năm\b/g, 'Mỗi năm')
+      .replace(/\btra được\b/gi, 'trả được')
+      .replace(/\btôi tra được\b/gi, 'tôi trả được')
+      .replace(/\bmôt nữa\b/gi, 'một nửa')
+      .replace(/\bmột nữa\b/gi, 'một nửa')
+      .replace(/\bmôt nửa\b/gi, 'một nửa')
+      .replace(/\bMôt\b/g, 'Một').replace(/\bmôt\b/g, 'một')
+      .replace(/\bnữa rồi\b/gi, 'nửa rồi')
       .replace(/\bđứa tre\b/gi, 'đứa trẻ')
       .replace(/\bxấu xí lăm\b/gi, 'xấu xí lắm')
       .replace(/\bkhống chỉ\b/gi, 'không chỉ')
@@ -3796,16 +3801,9 @@ class LiveDubStudio {
           !isFirst // isChained: true for all subsequent clauses
         );
       }
-      // Pipeline first clause immediately so first sound emits in ~250-350ms!
-      if (effectiveVoice.startsWith('vieneu') && clauses.length > 0) {
-        this.prefetchLiveTts(clauses[0], effectiveVoice);
-      }
       return this.drainLiveDubbingQueue();
     }
 
-    if (effectiveVoice.startsWith('vieneu')) {
-      this.prefetchLiveTts(text, effectiveVoice);
-    }
     this.enqueueSingleLiveDubbing(text, historyId, sourceText, capturedAt, finalizedAt, serverTimings, originalDuration, source, text, onStart, false);
     return this.drainLiveDubbingQueue();
   }
@@ -3846,10 +3844,6 @@ class LiveDubStudio {
       onStart,
       isChained
     });
-    // Parallel TTS synthesis prefetch: if audio is currently playing, start synthesising this sentence immediately
-    if (this.isProcessingLiveDubbing && effectiveVoice.startsWith('vieneu')) {
-      this.prefetchLiveTts(text, effectiveVoice);
-    }
   }
 
   getLivePcmBufferPolicy(text) {
@@ -3910,40 +3904,13 @@ class LiveDubStudio {
     this.isProcessingLiveDubbing = true;
     try {
       while (this.liveDubbingQueue.length > 0) {
-        const nowMs = performance.now();
-        // Aggressive zero-latency backlog management for anime & fast dialogue:
-        // If 2 or more distinct sentences are queued, drop the audio of stale ones (> 1200ms)
-        // while displaying their subtitle so dubbing immediately aligns with the current video frame!
-        while (this.liveDubbingQueue.length > 1) {
-          const head = this.liveDubbingQueue[0];
-          const headAge = nowMs - (head.enqueuedAt || nowMs);
-          if (headAge > 1200) {
-            const stale = this.liveDubbingQueue.shift();
-            this.displaySubtitle(stale.sourceText, stale.text);
-          } else {
-            break;
-          }
-        }
-        if (this.liveDubbingQueue.length > 3) {
-          const dropped = this.liveDubbingQueue.splice(0, this.liveDubbingQueue.length - 2);
-          for (const d of dropped) {
-            this.displaySubtitle(d.sourceText, d.text);
-          }
-        }
-
         const item = this.liveDubbingQueue.shift();
+        if (!item) break;
         const isStale = () => (
           !this.isDubbingEnabled
           || item.generation !== this.dubbingGeneration
         );
         if (isStale()) continue;
-
-        // Skip any item older than 1800ms if newer item exists
-        const queuedAgeMs = item.enqueuedAt ? (nowMs - item.enqueuedAt) : 0;
-        if (queuedAgeMs > 1800 && this.liveDubbingQueue.length > 0) {
-          this.displaySubtitle(item.sourceText, item.text);
-          continue;
-        }
 
         // Start the current line before submitting another GPU synthesis request.
         try {

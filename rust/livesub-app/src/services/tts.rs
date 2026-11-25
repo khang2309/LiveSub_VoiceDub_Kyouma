@@ -27,6 +27,9 @@ pub async fn synthesize_tts_bytes(state: &AppState, text: &str, voice: Option<&s
     }
 
     // 2. Pure Rust native offline VieNeu-TTS synthesis (torch-free, python-free)
+    // Serialized single-flight GPU execution: prevents mutex contention, threadpool clogging, and latency buildup over time
+    let _permit = state.tts_sem.acquire().await;
+
     let vieneu = state.vieneu.clone();
     let text_clone = target_text.clone();
     let voice_clone = selected_voice.to_string();

@@ -411,6 +411,7 @@ fn cand_unigram_score(lex: &Lexicon, cand: &str, core_low: &str, is_strictly_una
 
 fn transition_score(lex: &Lexicon, p: &str, c: &str) -> i32 {
     match (p, c) {
+        ("sẽ", "khiến") | ("khiến", "người") | ("người", "bình") | ("bình", "thường") | ("thường", "bất") | ("bất", "tỉnh") => 75,
         ("phơi", "khô") => 75,
         ("làm", "từ") | ("từ", "rễ") | ("rễ", "ô") | ("ô", "đầu") | ("rễ", "cây") | ("nhổ", "rễ") => 70,
         ("sao", "anh") | ("anh", "ta") | ("ta", "lại") | ("lại", "biết") | ("ai", "biết") | ("đã", "biết") => 60,
@@ -1043,6 +1044,20 @@ pub fn pre_normalize_ocr_substitutions(text: &str) -> String {
         ("làm từ rê", "làm từ rễ"),
         ("biêt", "biết"),
         ("Biêt", "Biết"),
+        ("sẽ khiên", "sẽ khiến"),
+        ("khiên người", "khiến người"),
+        ("khiên một", "khiến một"),
+        ("khiên cho", "khiến cho"),
+        ("bât tỉnh", "bất tỉnh"),
+        ("bât ngờ", "bất ngờ"),
+        ("bât an", "bất an"),
+        ("bât cứ", "bất cứ"),
+        ("thường bât", "thường bất"),
+        ("bât", "bất"),
+        ("Bât", "Bất"),
+        ("môi năm", "mỗi năm"),
+        ("Môi năm", "Mỗi năm"),
+        ("nữa rồi", "nửa rồi"),
     ];
     for (k, v) in subs {
         s = s.replace(k, v);

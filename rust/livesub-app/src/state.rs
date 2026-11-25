@@ -78,4 +78,5 @@ pub struct AppState {
     pub key_tx: tokio::sync::broadcast::Sender<String>,
     pub _whisper_child: Arc<Mutex<Option<Child>>>,
     pub _whisper_en_child: Arc<Mutex<Option<Child>>>,
+    pub tts_sem: Arc<tokio::sync::Semaphore>,
 }

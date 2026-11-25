@@ -72,6 +72,7 @@ pub async fn run_server(config: AppConfig) {
         key_tx,
         _whisper_child: Arc::new(Mutex::new(whisper_child)),
         _whisper_en_child: Arc::new(Mutex::new(whisper_en_child)),
+        tts_sem: Arc::new(tokio::sync::Semaphore::new(1)),
     };
 
     let app = routes::build_router(state, &config.public_dir);
