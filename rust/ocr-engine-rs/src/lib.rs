@@ -300,6 +300,42 @@ mod tests {
                 "Sao anh ta lại biêt tên dược liệu thô làm từ rê ở đâu phơi khó? Dù 10",
                 "Sao anh ta lại biết tên dược liệu thô làm từ rễ ô đầu phơi khô?",
             ),
+            (
+                "Bọn con được cho.:59",
+                "Bọn con được cho.",
+            ),
+            (
+                "Con lấy ô đầu ra?",
+                "Con lấy ở đâu ra?",
+            ),
+            (
+                "Tôi không thể mật tiếp một thành viên nữa trong nhà đâu!",
+                "Tôi không thể mất tiếp một thành viên nữa trong nhà đâu!",
+            ),
+            (
+                "Làm ơn hay cứu con bé!",
+                "Làm ơn hãy cứu con bé!",
+            ),
+            (
+                "Đồng từ cũng giãn. Và cá.",
+                "Đồng tử cũng giãn. Và cả.",
+            ),
+            (
+                "Trong như bị bỏng lạnh",
+                "Trông như bị bỏng lạnh",
+            ),
+            (
+                "Xin lồi vì đã lôi anh theo",
+                "Xin lỗi vì đã lôi anh theo",
+            ),
+            (
+                "Tôi thể sẽ trả tiền.:59",
+                "Tôi thề sẽ trả tiền.",
+            ),
+            (
+                "Con tôi đổ bệnh rồi. 2 Y",
+                "Con tôi đổ bệnh rồi.",
+            ),
         ];
 
         for (input, expected) in samples {

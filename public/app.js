@@ -2378,15 +2378,22 @@ class LiveDubStudio {
     // Dialogue subtitles: allow long sentences, monologues and multi-speaker dialogues up to 1000 chars or 200 words
     if (raw.length > 1000 || raw.split(/\s+/).length > 200) return;
 
-    // Single-word check:
+    // Single or short word check (eliminate phantom OCR noise on empty screen):
     const rawTokens = raw.split(/\s+/).filter(Boolean);
     const isCjkText = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/.test(raw);
-    if (!isCjkText && rawTokens.length === 1) {
+    if (!isCjkText && isVietsubMode && rawTokens.length <= 2) {
+      const validViWords = ['cha', 'ba', 'mẹ', 'bố', 'con', 'anh', 'em', 'ông', 'bà', 'chị', 'cô', 'chú', 'bác', 'cháu', 'hắn', 'nó', 'họ', 'ta', 'mình', 'đúng', 'không', 'phải', 'chào', 'sao', 'dạ', 'vâng', 'ừ', 'thật', 'hả', 'này', 'vậy', 'hở', 'ôi', 'ơ', 'chứ', 'rồi', 'xong', 'đi', 'được', 'nghe', 'tại', 'cứu', 'chạy', 'mau', 'khoan', 'chết', 'nguy', 'bắn', 'tránh', 'cút', 'dừng', 'đứng', 'buông', 'đợi', 'thôi', 'im', 'rõ', 'ai', 'gì', 'đâu', 'nào', 'có', 'biết', 'hiểu', 'nhớ', 'quên', 'xem', 'nói', 'thấy', 'chắc', 'kìa', 'đây', 'đó', 'lại', 'ngay', 'mỗi', 'năm', 'trả', 'nửa', 'một', 'quá', 'hay', 'khó', 'dễ', 'đau', 'sợ', 'buồn', 'vui', 'chuyện', 'gớm', 'nhóc', 'mày', 'nhãi', 'chẳng', 'thèm'];
+      const hasGenuineViWord = rawTokens.some(tok => {
+        const w = tok.toLowerCase().replace(/[.!?…,;:"']+/gu, '');
+        return validViWords.includes(w) || (w.length >= 3 && /[à-ỹÀ-Ỹ]/.test(tok));
+      });
+      if (!hasGenuineViWord) {
+        return;
+      }
+    } else if (!isCjkText && rawTokens.length === 1) {
       const cleanWord = raw.toLowerCase().replace(/[.!?…,;:"']+/gu, '');
-      // Numbers, digits or words with >= 2 characters (e.g. "six", "100", "car", "ten", "oui", "ja") are ALWAYS valid!
       const isValidForeignOrDigit = /^\d+$/.test(cleanWord) || /^[a-zA-Z0-9]{2,}$/.test(cleanWord);
-      const validViWords = ['cha', 'ba', 'mẹ', 'bố', 'con', 'anh', 'em', 'ông', 'bà', 'chị', 'cô', 'chú', 'bác', 'cháu', 'hắn', 'nó', 'họ', 'ta', 'mình', 'đúng', 'không', 'phải', 'chào', 'sao', 'dạ', 'vâng', 'ừ', 'thật', 'hả', 'này', 'vậy', 'hở', 'ôi', 'ơ', 'chứ', 'rồi', 'xong', 'đi', 'được', 'nghe', 'tại', 'cứu', 'chạy', 'mau', 'khoan', 'chết', 'nguy', 'bắn', 'tránh', 'cút', 'dừng', 'đứng', 'buông', 'đợi', 'thôi', 'im', 'rõ', 'ai', 'gì', 'đâu', 'nào', 'có', 'biết', 'hiểu', 'nhớ', 'quên', 'xem', 'nói', 'thấy', 'chắc', 'kìa', 'đây', 'đó', 'lại', 'ngay'];
-      if (!isValidForeignOrDigit && !validViWords.includes(cleanWord)) {
+      if (!isValidForeignOrDigit) {
         return;
       }
     }
@@ -3857,6 +3864,17 @@ class LiveDubStudio {
     const key = `${voice}:::${text}`;
     if (this.liveTtsPrefetch.has(key)) return;
 
+    // Prune prefetch cache so it keeps at most 3 items in memory, evicting older audio buffers
+    while (this.liveTtsPrefetch.size >= 3) {
+      const oldestKey = this.liveTtsPrefetch.keys().next().value;
+      if (!oldestKey) break;
+      const oldEntry = this.liveTtsPrefetch.get(oldestKey);
+      if (oldEntry && oldEntry.controller) {
+        try { oldEntry.controller.abort(); } catch (_) {}
+      }
+      this.liveTtsPrefetch.delete(oldestKey);
+    }
+
     const controller = new AbortController();
     const promise = (async () => {
       try {
@@ -4052,6 +4070,16 @@ class LiveDubStudio {
 
       const item = this.history.find(h => h.id === historyId);
       if (item) item.audioBlobUrl = `data:${mime};base64,` + base64Audio;
+      // Prune history audio cache so only the 3 most recent voice lines remain in memory
+      if (!this.recentSpokenHistoryIds) this.recentSpokenHistoryIds = [];
+      this.recentSpokenHistoryIds.push(historyId);
+      while (this.recentSpokenHistoryIds.length > 3) {
+        const oldId = this.recentSpokenHistoryIds.shift();
+        const oldItem = this.history.find(h => h.id === oldId);
+        if (oldItem && oldItem.audioBlobUrl) {
+          oldItem.audioBlobUrl = null;
+        }
+      }
     } catch (err) {
       console.warn('Web Audio API playback fallback to HTML5 Audio:', err);
       const audioUrl = `data:${mime};base64,` + base64Audio;

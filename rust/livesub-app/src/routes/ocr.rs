@@ -42,9 +42,41 @@ pub async fn api_dub_subtitle(
     }))
 }
 
+fn is_pure_ocr_junk(text: &str) -> bool {
+    let t = text.trim();
+    if t.is_empty() {
+        return true;
+    }
+    // Pure timecodes or scrubber fragments like ":59", "59 :59", "2 Y", "Y, Ô", "10", "04:40 / 23:59"
+    static RE_JUNK_TIMECODE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re_tc = RE_JUNK_TIMECODE.get_or_init(|| {
+        regex::Regex::new(r"^(?:[.:]?\s*\d{1,2}(?::\d{2})?(?:\s*[/|\\]\s*\d{1,2}[:.]\d{1,2})?\s*|\b\d+\s*[yYoO]\b|[yYoO]\s*,\s*[ôÔoO]|Mu\s*\d+\.?|\d+\s*Y|\d+)$").unwrap()
+    });
+    if re_tc.is_match(t) {
+        return true;
+    }
+    // Single or double character non-alphabetic or random ASCII junk e.g. "Or", "Si", "Og", "ạ E", "Cd", "Oy", "Cx"
+    let letters: String = t.chars().filter(|c| c.is_alphabetic()).collect();
+    if letters.len() <= 2 {
+        let low = letters.to_lowercase();
+        static GENUINE_SHORT_VI: &[&str] = &[
+            "ra", "đi", "có", "là", "và", "ở", "ăn", "về", "ta", "họ", "nó", "ba", "mẹ", "ơn", "ạ",
+            "ơi", "ôi", "ơ", "dạ", "ừ", "ai", "gì", "rõ", "im", "đã", "sẽ", "kìa", "đây", "đó",
+            "xe", "cũ", "xa", "to", "bố", "cô", "chú", "bác", "anh", "em", "ông", "bà", "chị",
+        ];
+        if !GENUINE_SHORT_VI.contains(&low.as_str()) {
+            return true;
+        }
+    }
+    false
+}
+
 fn clean_foreign_ocr_noise(text: &str) -> String {
     let re_player_junk = regex::Regex::new(r"(?i)\s*(?:On\s+O\s+Ép\s+On|Ổn\s+Áp\s+On|On\s+Cx\s+Oy|Oy\s+Em|Cài\s+đặt\s+Ơ\s+On|Cào\s+Cào|Cd\s+Ê\s+Ẩm|Cư\s+Pui|Kevin\s+(?:Cd|On|Oy)|On\s+Cào).*$").unwrap();
     let cleaned = re_player_junk.replace_all(text, "").trim().to_string();
+    if is_pure_ocr_junk(&cleaned) {
+        return String::new();
+    }
     cleaned
 }
 
@@ -117,6 +149,7 @@ pub async fn api_ocr_subtitle(
             let res = engine.run_from_image(&dyn_img).map_err(|e| e.to_string())?;
             let texts: Vec<String> = res
                 .into_iter()
+                .filter(|r| r.confidence >= 0.58)
                 .map(|r| r.text)
                 .filter(|t| !t.trim().is_empty())
                 .collect();
