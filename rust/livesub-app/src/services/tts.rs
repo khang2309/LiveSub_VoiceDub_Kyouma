@@ -42,12 +42,10 @@ pub async fn synthesize_tts_bytes(state: &AppState, text: &str, voice: Option<&s
     if let Ok(Ok(wav_bytes)) = wav_res {
         if !wav_bytes.is_empty() {
             if let Ok(mut c) = state.audio_cache.write() {
-                // Prune audio cache so only the 3 most recent audio buffers remain in RAM
-                while c.len() >= 3 {
+                // Generous synthesis cache: sinh thoải mái nhiều câu để xem video mượt mà không bị ngắt quãng
+                if c.len() >= 256 {
                     if let Some(oldest_key) = c.keys().next().cloned() {
                         c.remove(&oldest_key);
-                    } else {
-                        break;
                     }
                 }
                 c.insert(cache_key, wav_bytes.clone());

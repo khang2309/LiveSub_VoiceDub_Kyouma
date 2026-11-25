@@ -380,7 +380,13 @@
           floatSource.style.display = 'none';
           floatVi.style.display = 'none';
         } else {
-          floatSource.style.display = sourceText ? 'block' : 'none';
+          // Nếu sourceText và viText giống nhau (chế độ xem Vietsub), ẩn dòng nguồn để tránh hiển thị 2 dòng tiếng Việt trùng lặp
+          const isIdentical = sourceText && viText && (
+            sourceText.trim().toLowerCase() === viText.trim().toLowerCase() ||
+            viText.toLowerCase().includes(sourceText.trim().toLowerCase()) ||
+            sourceText.toLowerCase().includes(viText.trim().toLowerCase())
+          );
+          floatSource.style.display = (sourceText && !isIdentical) ? 'block' : 'none';
           floatVi.style.display = 'block';
         }
       } else if (data.type === 'SET_TRANSPARENCY') {

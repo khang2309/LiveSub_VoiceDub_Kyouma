@@ -199,21 +199,17 @@ pub async fn api_ocr_subtitle(
     let norm_lang = source_lang
         .split(['-', '_'])
         .next()
-        .unwrap_or("auto")
+        .unwrap_or("vi")
         .to_lowercase();
-    let is_vietnamese_source = norm_lang == "vi";
     let is_foreign_source = matches!(
         norm_lang.as_str(),
         "en" | "ja" | "zh" | "ko" | "th" | "fr" | "de" | "es" | "ru"
     );
+    let is_vietnamese_source = !is_foreign_source;
 
-    // Chỉ lọc bỏ rác video player UI buttons (On O Ép On, Ổn Áp On, Oy Em, Cài đặt...) khi ở chế độ Vietsub
-    let rec_trimmed = if norm_lang == "vi" {
-        clean_foreign_ocr_noise(&recognized)
-    } else {
-        recognized.trim().to_string()
-    };
-    if rec_trimmed.is_empty() {
+    // Luôn lọc bỏ rác video player UI buttons, scrubber timestamps, player OSD
+    let rec_trimmed = clean_foreign_ocr_noise(&recognized);
+    if rec_trimmed.is_empty() || is_pure_ocr_junk(&rec_trimmed) {
         return Ok(Json(serde_json::json!({
             "empty": true,
             "original": "",

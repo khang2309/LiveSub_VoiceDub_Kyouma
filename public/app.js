@@ -1790,11 +1790,12 @@ class LiveDubStudio {
   resolveOCRLanguage() {
     const selectedSpeech = this.sourceLangSelect ? this.sourceLangSelect.value : 'auto';
     if (selectedSpeech && selectedSpeech !== 'auto') return selectedSpeech;
+    if (this.detectedOCRLanguage) return this.detectedOCRLanguage;
     if (typeof this.getRadioGroupValue === 'function') {
       const selectedCaption = this.getRadioGroupValue(this.webCaptionLanguage, 'auto');
       if (selectedCaption && !['original', 'auto'].includes(selectedCaption)) return selectedCaption;
     }
-    return 'auto';
+    return 'vi';
   }
 
   async runInitialSubtitleProbe(stream) {
@@ -3864,8 +3865,8 @@ class LiveDubStudio {
     const key = `${voice}:::${text}`;
     if (this.liveTtsPrefetch.has(key)) return;
 
-    // Prune prefetch cache so it keeps at most 3 items in memory, evicting older audio buffers
-    while (this.liveTtsPrefetch.size >= 3) {
+    // Allow generous prefetch buffer (up to 40 items) so video dubbing is completely smooth
+    while (this.liveTtsPrefetch.size >= 40) {
       const oldestKey = this.liveTtsPrefetch.keys().next().value;
       if (!oldestKey) break;
       const oldEntry = this.liveTtsPrefetch.get(oldestKey);
@@ -4570,7 +4571,12 @@ class LiveDubStudio {
     if (this.subSourceDisplay) this.subSourceDisplay.textContent = sourceText || '';
     if (this.subViDisplay) this.subViDisplay.textContent = viText || '';
 
-    const hasSource = Boolean(sourceText && String(sourceText).trim() && this.currentSubMode !== 'vi_only' && this.currentSubMode !== 'none');
+    const isSameText = sourceText && viText && (
+      sourceText.trim().toLowerCase() === viText.trim().toLowerCase() ||
+      viText.toLowerCase().includes(sourceText.trim().toLowerCase()) ||
+      sourceText.toLowerCase().includes(viText.trim().toLowerCase())
+    );
+    const hasSource = Boolean(sourceText && String(sourceText).trim() && !isSameText && this.currentSubMode !== 'vi_only' && this.currentSubMode !== 'none');
     const hasVi = Boolean(viText && String(viText).trim() && this.currentSubMode !== 'source_only' && this.currentSubMode !== 'none');
 
     if (this.invideoSubSource) {
@@ -4624,7 +4630,12 @@ class LiveDubStudio {
       try {
         const srcEl = this.pipWindow.document.getElementById('pipSource');
         const viEl = this.pipWindow.document.getElementById('pipVi');
-        const showSource = (this.currentSubMode !== 'vi_only' && this.currentSubMode !== 'none');
+        const isSameText = sourceText && viText && (
+          sourceText.trim().toLowerCase() === viText.trim().toLowerCase() ||
+          viText.toLowerCase().includes(sourceText.trim().toLowerCase()) ||
+          sourceText.toLowerCase().includes(viText.trim().toLowerCase())
+        );
+        const showSource = (this.currentSubMode !== 'vi_only' && this.currentSubMode !== 'none' && !isSameText);
         if (srcEl) {
           srcEl.textContent = showSource ? (sourceText || '') : '';
           srcEl.style.display = (showSource && sourceText) ? 'block' : 'none';
@@ -4831,7 +4842,12 @@ class LiveDubStudio {
         const currentSource = this.subSourceDisplay ? this.subSourceDisplay.textContent : '';
         const currentVi = this.subViDisplay ? this.subViDisplay.textContent || 'Đang chờ phụ đề…' : 'Đang chờ phụ đề…';
 
-        const showSource = (this.currentSubMode !== 'vi_only' && this.currentSubMode !== 'none');
+        const isSameText = currentSource && currentVi && (
+          currentSource.trim().toLowerCase() === currentVi.trim().toLowerCase() ||
+          currentVi.toLowerCase().includes(currentSource.trim().toLowerCase()) ||
+          currentSource.toLowerCase().includes(currentVi.trim().toLowerCase())
+        );
+        const showSource = (this.currentSubMode !== 'vi_only' && this.currentSubMode !== 'none' && !isSameText);
         pip.document.body.innerHTML = `
           <div id="pipContainer" style="width:100%;height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:4px 14px;background:rgba(10,12,18,0.92);box-sizing:border-box;user-select:none;font-family:var(--font-subtitle,sans-serif);text-align:center;overflow:hidden;border-radius:10px;">
             <div id="pipSource" style="font-size:13px;color:rgba(255,255,255,0.8);font-weight:600;white-space:normal;word-break:break-word;max-width:98%;margin-bottom:2px;display:${showSource && currentSource ? 'block' : 'none'};">${this.escapeHtml(currentSource)}</div>
