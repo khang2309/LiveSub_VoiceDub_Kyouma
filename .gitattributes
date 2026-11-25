@@ -20,3 +20,5 @@ scripts/** linguist-detectable=false
 *.bat linguist-detectable=false
 *.ps1 linguist-detectable=false
 *.vbs linguist-detectable=false
+*.json linguist-vendored
+*.json linguist-detectable=false

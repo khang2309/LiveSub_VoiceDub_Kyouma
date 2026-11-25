@@ -938,8 +938,8 @@ class LiveDubStudio {
         }
         this.updateAppliedSettings();
         this.showToast(this.isAdaptiveSpeedEnabled
-          ? '⚡ Thích ứng video: ĐÃ BẬT (Video tự dừng chờ khi câu thoại dài)'
-          : '⏹️ Thích ứng video: ĐÃ TẮT (Video phát liên tục không chờ)');
+          ? '⚡ Thích ứng video: ĐÃ BẬT (Tự động tăng tốc giọng đọc để đuổi kịp phụ đề)'
+          : '⏹️ Thích ứng video: ĐÃ TẮT (Giữ cố định tốc độ đọc theo thanh trượt)');
       });
     }
 
@@ -2222,8 +2222,8 @@ class LiveDubStudio {
           this.handleOCRSubtitle(data);
         } else {
           this.ocrConsecutiveEmpty = (this.ocrConsecutiveEmpty || 0) + 1;
-          if (this.ocrConsecutiveEmpty >= 4) {
-            // After 4 empty frames (~320ms), reset lastOCRText so fresh subtitle lines can speak immediately
+          if (this.ocrConsecutiveEmpty >= 1) {
+            // As soon as subtitle clears (1 empty frame ~80ms), reset lastOCRText so repeated or next dialogue line speaks in full
             this.lastOCRText = '';
             this.lastCleanText = '';
           }
@@ -2607,34 +2607,6 @@ class LiveDubStudio {
       }
     }
 
-    // Progressive dialogue expansion when previous sentence has already started or completed
-    // E.g.: "chẳng phải việc của mình" -> "chẳng phải việc của mình, nhưng"
-    const prevClean = this.lastCleanText || '';
-    const prevNorm = stripAccents(prevClean);
-    if (prevNorm && prevNorm.length >= 5 && cleanNorm.length >= prevNorm.length + 3) {
-      if (cleanNorm.startsWith(prevNorm) || this.ocrSimilarity(cleanNorm.slice(0, prevNorm.length), prevNorm) >= 0.82) {
-        let delta = cleanRaw.slice(prevClean.length).replace(/^[,.\-:;—\s]+/, '').trim();
-        if (!delta || delta.length < 2) {
-          delta = cleanRaw.split(/\s+/).slice(prevClean.split(/\s+/).length).join(' ').replace(/^[,.\-:;—\s]+/, '').trim();
-        }
-        if (delta && delta.length >= 2) {
-          this.lastOCRText = raw;
-          this.lastCleanText = cleanRaw;
-          this.recentOCRHistory.push({ text: raw, cleanText: cleanRaw, time: now });
-          this.lastTranscriptContext = raw;
-          const record = this.addHistory(raw, cleanRaw, 'ocr');
-          if (typeof this.displaySubtitle === 'function') {
-            this.displaySubtitle(raw, cleanRaw);
-            if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = cleanRaw;
-            if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = raw;
-          }
-          if (this.isDubbingEnabled) {
-            this.enqueueLiveDubbing(delta, record.id, raw, now, now, data.timings || null);
-          }
-          return;
-        }
-      }
-    }
 
     // Suppress if duplicate (only if subtitle hasn't cleared or disappeared)
     const hasCleared = (this.ocrConsecutiveEmpty && this.ocrConsecutiveEmpty >= 1);
@@ -2997,23 +2969,8 @@ class LiveDubStudio {
   }
 
   holdYouTubeForDubbing() {
-    if (!this.isAdaptiveSpeedEnabled) return;
-    if (this.isHoldingYtForDubbing) return;
-    const state = this.ytPlayer && typeof this.ytPlayer.getPlayerState === 'function'
-      ? this.ytPlayer.getPlayerState()
-      : -1;
-    // 1 = PLAYING
-    if (state === 1) {
-      this.isHoldingYtForDubbing = true;
-      this.ytShouldResumeAfterHold = true;
-      if (typeof this.ytPlayer.pauseVideo === 'function') {
-        this.ytPlayer.pauseVideo();
-      }
-    }
-    if (this.localVideoPlayer && !this.localVideoPlayer.paused && !this.localVideoPlayer.ended) {
-      this.isHoldingLocalForDubbing = true;
-      this.localVideoPlayer.pause();
-    }
+    // Pure voice rate acceleration - never pause video playback
+    return;
   }
 
   releaseYouTubeDubbingHold() {
@@ -3021,34 +2978,14 @@ class LiveDubStudio {
       clearTimeout(this.ytOverrunHoldTimer);
       this.ytOverrunHoldTimer = null;
     }
-    if (this.isHoldingYtForDubbing) {
-      this.isHoldingYtForDubbing = false;
-      if (this.ytShouldResumeAfterHold && this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
-        this.ytPlayer.playVideo();
-      }
-      this.ytShouldResumeAfterHold = false;
-    }
-    if (this.isHoldingLocalForDubbing) {
-      this.isHoldingLocalForDubbing = false;
-      if (this.localVideoPlayer && this.localVideoPlayer.paused) {
-        this.localVideoPlayer.play().catch(() => {});
-      }
-    }
+    this.isHoldingYtForDubbing = false;
+    this.ytShouldResumeAfterHold = false;
+    this.isHoldingLocalForDubbing = false;
   }
 
   scheduleYouTubeOverrunHold(playDuration, slotDuration) {
-    if (!this.isAdaptiveSpeedEnabled) return;
-    if (this.ytOverrunHoldTimer) {
-      clearTimeout(this.ytOverrunHoldTimer);
-      this.ytOverrunHoldTimer = null;
-    }
-    // Hold video if dubbing speech overruns subtitle slot by more than 0.15s
-    if (!(playDuration > slotDuration + 0.15)) return;
-    const holdDelayMs = Math.max(0, slotDuration * 1000);
-    this.ytOverrunHoldTimer = setTimeout(() => {
-      this.ytOverrunHoldTimer = null;
-      this.holdYouTubeForDubbing();
-    }, holdDelayMs);
+    // Pure voice rate acceleration - never pause video playback
+    return;
   }
 
   isPlaybackCurrent(token) {
@@ -3099,18 +3036,12 @@ class LiveDubStudio {
     }
     if (!seg.translated) return;
 
-    this.holdYouTubeForDubbing();
-
     try {
       const voice = this.getEffectiveVoice();
       await this.playStreamingTts(seg.translated, voice, true, onStart, token, 0, expectedSlotDuration);
-      this.releaseYouTubeDubbingHold();
       return;
     } catch (err) {
       console.warn('On-demand dub error for seg ' + segIdx, err);
-    } finally {
-      // Never leave the video frozen if TTS failed or the request became stale.
-      if (!this.currentActiveAudioSource) this.releaseYouTubeDubbingHold();
     }
   }
 
@@ -3140,7 +3071,7 @@ class LiveDubStudio {
       const sourceNode = this.audioContext.createBufferSource();
       sourceNode.buffer = audioBuffer;
 
-      // Smart adaptive speech pacing
+      // Smart adaptive speech pacing: accelerate speech rate to fit subtitle slot without pausing video
       const userRate = this.getSafePlaybackRate();
       let effectiveRate = userRate;
       if (this.isAdaptiveSpeedEnabled && expectedSlotDuration > 0 && audioBuffer.duration > expectedSlotDuration) {
@@ -3148,7 +3079,6 @@ class LiveDubStudio {
         effectiveRate = Math.min(2.0, Math.max(userRate, fitRate));
       }
       sourceNode.playbackRate.value = effectiveRate;
-      this.scheduleYouTubeOverrunHold(audioBuffer.duration / effectiveRate, expectedSlotDuration);
 
       const gainNode = this.audioContext.createGain();
       gainNode.gain.value = (parseInt(this.volumeRange.value, 10) || 100) / 100;
@@ -3960,7 +3890,6 @@ class LiveDubStudio {
         effectiveRate = Math.min(2.0, Math.max(userRate, fitRate));
       }
       sourceNode.playbackRate.value = effectiveRate;
-      this.scheduleYouTubeOverrunHold(audioBuffer.duration / effectiveRate, expectedSlotDuration);
 
       const gainNode = this.audioContext.createGain();
       gainNode.gain.value = (parseInt(this.volumeRange.value, 10) || 100) / 100;

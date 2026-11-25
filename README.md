@@ -45,8 +45,8 @@ Bạn không cần cài đặt Python, Node.js hay Rust/Cargo để sử dụng 
 
 ### Bước 3: Xem Phim & Tận Hưởng
 * ⚡ **Nút "Thích ứng video":** 
-  * Tích chọn để AI tự động điều chỉnh nhịp đọc và tự động dừng chờ video khi câu thoại thuyết minh dài hơn phụ đề, đảm bảo nghe trọn vẹn từng câu thoại.
-  * Bỏ tích để video phát liên tục 100% không dừng chờ.
+  * Tích chọn để AI tự động tăng tốc giọng đọc để đuổi kịp và khớp hoàn hảo với thời lượng phụ đề, video phát mượt mà liên tục không bao giờ bị gián đoạn hay dừng hình (áp dụng đồng bộ cho cả 3 chế độ: Tab Phim, File Cục Bộ, và Link YouTube).
+  * Bỏ tích để giữ cố định tốc độ đọc theo thanh trượt.
 * ✨ **Cửa sổ nổi (Always-on-Top PiP):** Bấm nút *"Ghim PiP"* để mở thanh phụ đề trong suốt đè lên bất kỳ phần mềm xem phim nào.
 
 ---
