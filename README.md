@@ -10,14 +10,14 @@
 Bạn không cần cài đặt Python, Node.js hay Rust/Cargo để sử dụng ứng dụng. Toàn bộ hệ thống đã được biên dịch thành binary độc lập sẵn sàng chạy ngay:
 
 ### 📦 Cách 1: Cài Đặt Bằng Bộ Cài Windows (Khuyên Dùng)
-1. Tải file **[`LiveSub-Studio-Setup.exe`](./LiveSub-Studio-Setup.exe)** (hoặc **[`setup.exe`](./setup.exe)**).
-2. Nhấp đúp để cài đặt. Ứng dụng sẽ tự động tạo lối tắt **LiveSub Studio** ngoài màn hình Desktop.
-3. Mở ứng dụng và bắt đầu xem phim, anime hoặc video YouTube.
+1. Tải trực tiếp file cài đặt: **[Tải LiveSub-Studio-Setup.exe (Direct Download)](https://github.com/khang2309/LiveSub_VoiceDub_Kyouma/raw/main/LiveSub-Studio-Setup.exe)** hoặc **[Tải setup.exe](https://github.com/khang2309/LiveSub_VoiceDub_Kyouma/raw/main/setup.exe)**.
+2. Nhấp đúp vào file `.exe` vừa tải để cài đặt. Ứng dụng sẽ tự động tạo lối tắt **LiveSub Studio** ngoài màn hình Desktop.
+3. Mở ứng dụng từ Desktop và bắt đầu xem phim, anime hoặc video YouTube.
 
 ### ⚡ Cách 2: Khởi Động Nhanh Bằng 1-Click Script
-1. Tải toàn bộ repository về máy tính.
+1. Bấm nút xanh **Code -> Download ZIP** trên GitHub và giải nén vào máy tính.
 2. Nhấp đúp vào file **[`start.bat`](./start.bat)** ở thư mục gốc.
-3. Hệ thống sẽ tự động giải phóng port 3000 và khởi chạy ứng dụng LiveSub Studio ngay lập tức.
+3. Hệ thống sẽ tự động khởi chạy ứng dụng LiveSub Studio ngay lập tức.
 
 ---
 
@@ -45,8 +45,8 @@ Bạn không cần cài đặt Python, Node.js hay Rust/Cargo để sử dụng 
 
 ### Bước 3: Xem Phim & Tận Hưởng
 * ⚡ **Nút "Thích ứng video":** 
-  * Tích chọn để AI tự động điều chỉnh tốc độ đọc ăn khớp hoàn hảo với khẩu hình và độ dài từng câu thoại.
-  * Bỏ tích để cố định tốc độ đọc theo thanh trượt thủ công của bạn.
+  * Tích chọn để AI tự động điều chỉnh nhịp đọc và tự động dừng chờ video khi câu thoại thuyết minh dài hơn phụ đề, đảm bảo nghe trọn vẹn từng câu thoại.
+  * Bỏ tích để video phát liên tục 100% không dừng chờ.
 * ✨ **Cửa sổ nổi (Always-on-Top PiP):** Bấm nút *"Ghim PiP"* để mở thanh phụ đề trong suốt đè lên bất kỳ phần mềm xem phim nào.
 
 ---

@@ -1,12 +1,22 @@
 # GitHub Linguist Language Detection Overrides
-# Mark vendored frontend libraries, web assets, and data files so GitHub correctly identifies the repository as Pure Rust
+# Exclude vendored web assets, frontend JS/CSS/HTML and data from language statistics
+# so GitHub correctly identifies the repository as Pure Rust (>95%)
 
 public/** linguist-vendored
+public/** linguist-detectable=false
 extension/** linguist-vendored
+extension/** linguist-detectable=false
 tests/** linguist-vendored
+tests/** linguist-detectable=false
 data/** linguist-vendored
+data/** linguist-detectable=false
 models/** linguist-vendored
+models/** linguist-detectable=false
 scripts/** linguist-vendored
-*.html linguist-vendored
-*.css linguist-vendored
-*.js linguist-vendored
+scripts/** linguist-detectable=false
+*.js linguist-detectable=false
+*.css linguist-detectable=false
+*.html linguist-detectable=false
+*.bat linguist-detectable=false
+*.ps1 linguist-detectable=false
+*.vbs linguist-detectable=false

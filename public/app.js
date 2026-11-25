@@ -881,17 +881,13 @@ class LiveDubStudio {
       this.chkAdaptiveSpeed.addEventListener('change', (e) => {
         this.isAdaptiveSpeedEnabled = !!e.target.checked;
         localStorage.setItem('livesub_adaptive_speed', String(this.isAdaptiveSpeedEnabled));
-        const newRate = this.getSafeStreamingPlaybackRate(0, 2.0, 0, 0, 0);
-        if (this.currentActiveAudioSource && this.currentActiveAudioSource.playbackRate) {
-          this.currentActiveAudioSource.playbackRate.value = newRate;
-        }
-        if (this.streamingAudioSources && this.streamingAudioSources.size > 0) {
-          for (const src of this.streamingAudioSources) {
-            if (src && src.playbackRate) src.playbackRate.value = newRate;
-          }
+        if (!this.isAdaptiveSpeedEnabled) {
+          this.releaseYouTubeDubbingHold();
         }
         this.updateAppliedSettings();
-        this.showToast(this.isAdaptiveSpeedEnabled ? '⚡ Tốc độ đọc thích ứng theo video: BẬT' : '⏹️ Tốc độ đọc cố định theo thanh trượt: BẬT');
+        this.showToast(this.isAdaptiveSpeedEnabled
+          ? '⚡ Thích ứng video: ĐÃ BẬT (Video tự dừng chờ khi câu thoại dài)'
+          : '⏹️ Thích ứng video: ĐÃ TẮT (Video phát liên tục không chờ)');
       });
     }
 
@@ -2010,9 +2006,9 @@ class LiveDubStudio {
         sourceY = Math.floor(height * 0.70);
         sourceHeight = Math.max(1, Math.floor(height * 0.28));
       }
-      // Target width 1440px - 1600px provides optimal pixel density for 48px PaddleOCR recognizer
-      // while keeping canvas encode time down to ~5ms (vs ~100ms for 2560px PNG)
-      const targetWidth = Math.min(1600, Math.max(1280, Math.round(sourceWidth)));
+      // Target width 960px - 1280px provides ultra-fast ~25ms PaddleOCR scanning latency
+      // while preserving crisp line height for Vietnamese diacritics
+      const targetWidth = Math.min(1280, Math.max(960, Math.round(sourceWidth)));
       const scale = targetWidth / sourceWidth;
       this.ocrCanvas.width = targetWidth;
       this.ocrCanvas.height = Math.max(1, Math.round(sourceHeight * scale));
@@ -2079,9 +2075,9 @@ class LiveDubStudio {
 
       this.ocrRequestActive = true;
       try {
-        // High-quality JPEG 0.92 encodes in ~5ms (vs ~100ms for PNG) and reduces payload to ~40KB (vs 1.5MB),
-        // giving ~12 FPS real-time scanning so fast dialogues are caught on the first frame!
-        const blob = await new Promise(resolve => this.ocrCanvas.toBlob(resolve, 'image/jpeg', 0.92));
+        // Ultra-fast JPEG 0.88 encodes in ~3ms (vs ~100ms for PNG) and reduces payload to ~30KB,
+        // giving real-time ~12 FPS scanning so fast dialogues are caught with zero latency!
+        const blob = await new Promise(resolve => this.ocrCanvas.toBlob(resolve, 'image/jpeg', 0.88));
         if (!blob) return;
         const form = new FormData();
         form.append('image', blob, 'subtitle-frame.jpg');
@@ -2214,29 +2210,19 @@ class LiveDubStudio {
     if (!s1 || !s2) return false;
     if (s1 === s2) return true;
 
+    // If one sentence has added words or extension (length diff >= 4), they are distinct clauses/lines
+    if (Math.abs(s1.length - s2.length) >= 4) {
+      return false;
+    }
+
     // Direct Levenshtein similarity on normalized text
     const sim = this.ocrSimilarity(s1, s2);
-    // Short lines (<= 15 chars e.g. "Nhất trí!", "Thật à?", "Đi mau!", "Let's go!"):
-    // Cần độ tương đồng cao (>= 0.85) để không nhận nhầm câu ngắn khác nhau
+    // Short lines (<= 15 chars e.g. "Nhất trí!", "Thật à?", "Đi mau!", "Let's go!")
     if (Math.min(s1.length, s2.length) <= 15) {
-      if (s1 === s2) return true;
-      return sim >= 0.85;
+      return sim >= 0.90;
     }
 
-    if (sim >= 0.75) return true;
-
-    // Word overlap for longer sentences: must share at least 4 common words AND have >= 60% overlap
-    const w1 = s1.split(/\s+/).filter(w => w.length > 1);
-    const w2 = s2.split(/\s+/).filter(w => w.length > 1);
-    if (w1.length >= 4 && w2.length >= 4) {
-      const set2 = new Set(w2);
-      const common = w1.filter(w => set2.has(w));
-      if (common.length >= 4) {
-        const overlap = common.length / Math.max(w1.length, w2.length);
-        if (overlap >= 0.60) return true;
-      }
-    }
-    return false;
+    return sim >= 0.88;
   }
 
   isGarbageOCR(text) {
@@ -2520,14 +2506,45 @@ class LiveDubStudio {
       }
     }
 
-    // Suppress if duplicate or highly similar to recent detections within 1.6s
-    // So sánh cùng hệ ngôn ngữ (raw với raw, cleanRaw với cleanRaw), không so sánh chéo gây mất câu oan
-    if (
-      (this.lastOCRText && this.isDuplicateOCR(raw, this.lastOCRText)) ||
-      (this.lastCleanText && this.isDuplicateOCR(cleanRaw, this.lastCleanText)) ||
-      this.recentOCRHistory.some(item => this.isDuplicateOCR(raw, item.text) || (item.cleanText && this.isDuplicateOCR(cleanRaw, item.cleanText)))
-    ) {
-      return;
+    // Progressive dialogue expansion when previous sentence has already started or completed
+    // E.g.: "chẳng phải việc của mình" -> "chẳng phải việc của mình, nhưng"
+    const prevClean = this.lastCleanText || '';
+    const prevNorm = stripAccents(prevClean);
+    if (prevNorm && prevNorm.length >= 5 && cleanNorm.length >= prevNorm.length + 3) {
+      if (cleanNorm.startsWith(prevNorm) || this.ocrSimilarity(cleanNorm.slice(0, prevNorm.length), prevNorm) >= 0.82) {
+        let delta = cleanRaw.slice(prevClean.length).replace(/^[,.\-:;—\s]+/, '').trim();
+        if (!delta || delta.length < 2) {
+          delta = cleanRaw.split(/\s+/).slice(prevClean.split(/\s+/).length).join(' ').replace(/^[,.\-:;—\s]+/, '').trim();
+        }
+        if (delta && delta.length >= 2) {
+          this.lastOCRText = raw;
+          this.lastCleanText = cleanRaw;
+          this.recentOCRHistory.push({ text: raw, cleanText: cleanRaw, time: now });
+          this.lastTranscriptContext = raw;
+          const record = this.addHistory(raw, cleanRaw, 'ocr');
+          if (typeof this.displaySubtitle === 'function') {
+            this.displaySubtitle(raw, cleanRaw);
+            if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = cleanRaw;
+            if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = raw;
+          }
+          if (this.isDubbingEnabled) {
+            this.enqueueLiveDubbing(delta, record.id, raw, now, now, data.timings || null);
+          }
+          return;
+        }
+      }
+    }
+
+    // Suppress if duplicate (only if subtitle hasn't cleared or disappeared)
+    const hasCleared = (this.ocrConsecutiveEmpty && this.ocrConsecutiveEmpty >= 1);
+    if (!hasCleared) {
+      if (
+        (this.lastOCRText && this.isDuplicateOCR(raw, this.lastOCRText)) ||
+        (this.lastCleanText && this.isDuplicateOCR(cleanRaw, this.lastCleanText)) ||
+        this.recentOCRHistory.some(item => (now - item.time < 1200) && (this.isDuplicateOCR(raw, item.text) || (item.cleanText && this.isDuplicateOCR(cleanRaw, item.cleanText))))
+      ) {
+        return;
+      }
     }
 
     this.lastOCRText = raw;
@@ -2878,19 +2895,58 @@ class LiveDubStudio {
   }
 
   holdYouTubeForDubbing() {
-    // 100% smooth playback: NEVER pause the video to avoid stuttering/pause-play cycles.
-    this.isHoldingYtForDubbing = true;
-    this.ytShouldResumeAfterHold = false;
+    if (!this.isAdaptiveSpeedEnabled) return;
+    if (this.isHoldingYtForDubbing) return;
+    const state = this.ytPlayer && typeof this.ytPlayer.getPlayerState === 'function'
+      ? this.ytPlayer.getPlayerState()
+      : -1;
+    // 1 = PLAYING
+    if (state === 1) {
+      this.isHoldingYtForDubbing = true;
+      this.ytShouldResumeAfterHold = true;
+      if (typeof this.ytPlayer.pauseVideo === 'function') {
+        this.ytPlayer.pauseVideo();
+      }
+    }
+    if (this.localVideoPlayer && !this.localVideoPlayer.paused && !this.localVideoPlayer.ended) {
+      this.isHoldingLocalForDubbing = true;
+      this.localVideoPlayer.pause();
+    }
   }
 
   releaseYouTubeDubbingHold() {
-    this.isHoldingYtForDubbing = false;
-    this.ytShouldResumeAfterHold = false;
+    if (this.ytOverrunHoldTimer) {
+      clearTimeout(this.ytOverrunHoldTimer);
+      this.ytOverrunHoldTimer = null;
+    }
+    if (this.isHoldingYtForDubbing) {
+      this.isHoldingYtForDubbing = false;
+      if (this.ytShouldResumeAfterHold && this.ytPlayer && typeof this.ytPlayer.playVideo === 'function') {
+        this.ytPlayer.playVideo();
+      }
+      this.ytShouldResumeAfterHold = false;
+    }
+    if (this.isHoldingLocalForDubbing) {
+      this.isHoldingLocalForDubbing = false;
+      if (this.localVideoPlayer && this.localVideoPlayer.paused) {
+        this.localVideoPlayer.play().catch(() => {});
+      }
+    }
   }
 
   scheduleYouTubeOverrunHold(playDuration, slotDuration) {
-    // 100% smooth playback: never schedule video pause
-    return;
+    if (!this.isAdaptiveSpeedEnabled) return;
+    if (this.ytOverrunHoldTimer) {
+      clearTimeout(this.ytOverrunHoldTimer);
+      this.ytOverrunHoldTimer = null;
+    }
+    // Hold video if dubbing speech overruns subtitle slot by more than 0.15s
+    if (!(playDuration > slotDuration + 0.15)) return;
+    const holdDelayMs = Math.max(0, slotDuration * 1000);
+    this.ytOverrunHoldTimer = setTimeout(() => {
+      this.ytOverrunHoldTimer = null;
+      this.holdYouTubeForDubbing();
+    }, holdDelayMs);
   }
 
   isPlaybackCurrent(token) {
