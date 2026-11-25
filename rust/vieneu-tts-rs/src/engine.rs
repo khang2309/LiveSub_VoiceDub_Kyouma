@@ -16,11 +16,11 @@ use crate::voices::VoiceRegistry;
 
 pub const SAMPLE_RATE: u32 = 48_000;
 pub const AUDIO_PAD: i64 = 1024;
-pub const TPS: i64 = 415;
-pub const TPE: i64 = 416;
-pub const SGS: i64 = 417;
-pub const EOS_SPEECH: i64 = 418;
-pub const REF_SLOT: i64 = 414;
+pub const TPS: i64 = 3;
+pub const TPE: i64 = 4;
+pub const SGS: i64 = 5;
+pub const EOS_SPEECH: i64 = 6;
+pub const REF_SLOT: i64 = 7;
 pub const DEFAULT_STYLE_ID: i64 = 16;
 pub const NUM_LAYERS: usize = 12;
 
@@ -163,8 +163,14 @@ impl VieneuEngine {
             .map_err(|e| VieneuError::Tokenizer(e.to_string()))?;
         let phone_ids = encoding.get_ids();
 
+        let style_id = match preset.style.as_deref() {
+            Some("tin_tuc") => 17,
+            Some("doc_truyen") => 18,
+            _ => DEFAULT_STYLE_ID,
+        };
+
         let mut text_ids = Vec::with_capacity(phone_ids.len() + 3);
-        text_ids.push(DEFAULT_STYLE_ID);
+        text_ids.push(style_id);
         text_ids.push(TPS);
         for &pid in phone_ids {
             text_ids.push(pid as i64);

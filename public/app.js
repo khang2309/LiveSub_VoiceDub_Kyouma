@@ -502,8 +502,11 @@ class LiveDubStudio {
 
   getSafePlaybackRate(extra = 0, originalDuration = 0, textLength = 0) {
     const selected = parseFloat(this.rateRange && this.rateRange.value) || 1.15;
+    if (!this.isAdaptiveSpeedEnabled) {
+      return Math.min(2.0, Math.max(0.5, selected + extra));
+    }
     let rate = Math.min(1.50, Math.max(0.8, selected + extra));
-    if (this.isAdaptiveSpeedEnabled && textLength > 0) {
+    if (textLength > 0) {
       const estimatedSyllables = Math.max(1, textLength / 3.8);
       const estimatedSpeechSeconds = estimatedSyllables * 0.21;
       const targetDuration = originalDuration > 0 ? originalDuration : Math.min(2.5, Math.max(1.2, textLength * 0.045));
@@ -515,11 +518,12 @@ class LiveDubStudio {
     return rate;
   }
 
-  getSafeStreamingPlaybackRate(queueDepth = 0, serverCap = 1.20, originalDuration = 0, textLength = 0, queueLagMs = 0) {
-    // Dynamic Speed Overdrive: Tự động ép xung tốc độ đọc khi phụ đề ra nhanh hoặc nhân vật nói dồn dập (MrBeast style)
-    let rate = (typeof this.getSafePlaybackRate === 'function')
-      ? this.getSafePlaybackRate(0)
-      : (parseFloat(this.rateRange && this.rateRange.value) || 1.15);
+  getSafeStreamingPlaybackRate(queueDepth = 0, serverCap = 2.0, originalDuration = 0, textLength = 0, queueLagMs = 0) {
+    const manualRate = parseFloat(this.rateRange && this.rateRange.value) || 1.15;
+    if (!this.isAdaptiveSpeedEnabled) {
+      return Math.min(2.0, Math.max(0.5, manualRate));
+    }
+    let rate = manualRate;
 
     // Only apply backlog / lag overdrive when there is actual backlog or fast dialogue
     if (queueLagMs > 0 || (queueDepth > 0 && queueDepth <= 5) || (this.lastSentenceArrivalGapMs && this.lastSentenceArrivalGapMs < 2500)) {
@@ -547,7 +551,7 @@ class LiveDubStudio {
     }
 
     // 4. Adaptive Speech Pacing: Ép tốc độ đọc để vừa khít với thời lượng thoại
-    if (this.isAdaptiveSpeedEnabled && textLength > 0) {
+    if (textLength > 0) {
       const estimatedSyllables = Math.max(1, textLength / 3.8);
       const estimatedSpeechSeconds = estimatedSyllables * 0.21;
       const targetDuration = originalDuration > 0
@@ -559,7 +563,7 @@ class LiveDubStudio {
       }
     }
 
-    return Math.min(serverCap !== undefined ? serverCap : 1.20, Math.max(0.8, rate));
+    return Math.min(serverCap !== undefined ? serverCap : 2.0, Math.max(0.8, rate));
   }
 
   setSubMode(mode) {
@@ -831,9 +835,15 @@ class LiveDubStudio {
     // 8. Sliders & Radios
     if (this.rateRange) {
       this.rateRange.addEventListener('input', (e) => {
-        this.rateValue.textContent = `${parseFloat(e.target.value).toFixed(2)}x`;
+        const val = parseFloat(e.target.value) || 1;
+        this.rateValue.textContent = `${val.toFixed(2)}x`;
         if (this.currentActiveAudioSource && this.currentActiveAudioSource.playbackRate) {
-          this.currentActiveAudioSource.playbackRate.value = parseFloat(e.target.value) || 1;
+          this.currentActiveAudioSource.playbackRate.value = val;
+        }
+        if (this.streamingAudioSources && this.streamingAudioSources.size > 0) {
+          for (const src of this.streamingAudioSources) {
+            if (src && src.playbackRate) src.playbackRate.value = val;
+          }
         }
         this.updateAppliedSettings();
       });
@@ -871,8 +881,17 @@ class LiveDubStudio {
       this.chkAdaptiveSpeed.addEventListener('change', (e) => {
         this.isAdaptiveSpeedEnabled = !!e.target.checked;
         localStorage.setItem('livesub_adaptive_speed', String(this.isAdaptiveSpeedEnabled));
+        const newRate = this.getSafeStreamingPlaybackRate(0, 2.0, 0, 0, 0);
+        if (this.currentActiveAudioSource && this.currentActiveAudioSource.playbackRate) {
+          this.currentActiveAudioSource.playbackRate.value = newRate;
+        }
+        if (this.streamingAudioSources && this.streamingAudioSources.size > 0) {
+          for (const src of this.streamingAudioSources) {
+            if (src && src.playbackRate) src.playbackRate.value = newRate;
+          }
+        }
         this.updateAppliedSettings();
-        this.showToast(this.isAdaptiveSpeedEnabled ? '⚡ Tốc độ đọc thích ứng theo video: BẬT' : ' Tốc độ đọc cố định: BẬT');
+        this.showToast(this.isAdaptiveSpeedEnabled ? '⚡ Tốc độ đọc thích ứng theo video: BẬT' : '⏹️ Tốc độ đọc cố định theo thanh trượt: BẬT');
       });
     }
 
@@ -1404,6 +1423,10 @@ class LiveDubStudio {
 
   applyVoiceCharacteristics(audioBuffer, voiceName = null) {
     if (!audioBuffer || !this.audioContext || typeof this.audioContext.createBuffer !== 'function') return audioBuffer;
+    const rawVoice = String(voiceName || (this.voiceSelect ? this.voiceSelect.value : '')).toLowerCase();
+    if (rawVoice.includes('vieneu') || rawVoice.includes('trúc ly') || rawVoice.includes('hải đăng') || rawVoice.includes('thiện minh') || rawVoice.includes('mai anh') || rawVoice.includes('thùy dung') || rawVoice.includes('thái sơn') || rawVoice.includes('ngọc huyền') || rawVoice.includes('quỳnh anh') || rawVoice.includes('đức trí') || rawVoice.includes('minh đức') || rawVoice.includes('kim thanh')) {
+      return audioBuffer;
+    }
     const profile = this.getVoiceProfile(voiceName);
     if (Math.abs(profile.pitchFactor - 1.0) < 0.02) return audioBuffer;
 
@@ -1428,6 +1451,10 @@ class LiveDubStudio {
 
   createVoiceNodes(voiceName = null) {
     if (!this.audioContext || typeof this.audioContext.createBiquadFilter !== 'function' || this.audioContext.state === 'closed') return [];
+    const rawVoice = String(voiceName || (this.voiceSelect ? this.voiceSelect.value : '')).toLowerCase();
+    if (rawVoice.includes('vieneu') || rawVoice.includes('trúc ly') || rawVoice.includes('hải đăng') || rawVoice.includes('thiện minh') || rawVoice.includes('mai anh') || rawVoice.includes('thùy dung') || rawVoice.includes('thái sơn') || rawVoice.includes('ngọc huyền') || rawVoice.includes('quỳnh anh') || rawVoice.includes('đức trí') || rawVoice.includes('minh đức') || rawVoice.includes('kim thanh')) {
+      return [];
+    }
     const profile = this.getVoiceProfile(voiceName);
     const nodes = [];
 
@@ -3711,7 +3738,7 @@ class LiveDubStudio {
       // Adaptive speech pacing: if speech is longer than video slot, gently accelerate to fit perfectly!
       const userRate = this.getSafePlaybackRate();
       let effectiveRate = userRate;
-      if (expectedSlotDuration > 0 && audioBuffer.duration > expectedSlotDuration) {
+      if (this.isAdaptiveSpeedEnabled && expectedSlotDuration > 0 && audioBuffer.duration > expectedSlotDuration) {
         const fitRate = audioBuffer.duration / expectedSlotDuration;
         effectiveRate = Math.min(2.0, Math.max(userRate, fitRate));
       }

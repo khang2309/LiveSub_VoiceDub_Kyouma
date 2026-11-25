@@ -13,7 +13,6 @@ rust/**/target/
 rust/target/
 src-tauri/target/
 *.pdb
-livesub.exe
 bin/
 
 # Downloaded native build tools and neural model weights

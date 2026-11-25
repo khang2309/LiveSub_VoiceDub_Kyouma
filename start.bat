@@ -21,6 +21,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$conns = Get-NetTCPConne
 
 ping 127.0.0.1 -n 2 >nul
 
+if exist "LiveSub-Desktop.exe" (
+    echo.
+    echo [2/2] Dang khoi dong LiveSub Studio Desktop (Native App)...
+    start "" "LiveSub-Desktop.exe"
+    exit /b 0
+)
+
 echo.
 echo [2/3] Mo trinh duyet tai http://localhost:3000...
 start http://localhost:3000
