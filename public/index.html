@@ -211,11 +211,11 @@
             <h3 style="font-size: 1.05rem; margin-bottom: 4px;">📁 Nạp Video từ máy tính (MP4, MKV, WebM, AVI)</h3>
             <p style="font-size: 0.82rem; color: var(--text-dim);">Chọn file video để phát trực tiếp và tự động nhận diện phụ đề / lồng tiếng realtime</p>
           </div>
-          <div id="localVideoDropZone" style="border: 2px dashed var(--border-color); border-radius: 12px; padding: 22px; text-align: center; cursor: pointer; background: var(--bg-primary); transition: border-color 0.2s;">
-            <p style="font-size: 1rem; margin-bottom: 4px;">📂 <strong>Kéo thả file video vào đây</strong> hoặc bấm để chọn file</p>
-            <span style="font-size: 0.8rem; color: var(--text-dim);">Hỗ trợ MP4, MKV, WebM, AVI</span>
+          <div id="localVideoDropZone" style="border: 2px dashed var(--border-color); border-radius: 12px; padding: 22px; text-align: center; cursor: pointer; background: var(--bg-primary); transition: all 0.2s;">
+            <p style="font-size: 1rem; margin-bottom: 4px; pointer-events: none;">📂 <strong>Kéo thả file video vào đây</strong> hoặc bấm để chọn file</p>
+            <span style="font-size: 0.8rem; color: var(--text-dim); pointer-events: none;">Hỗ trợ MP4, MKV, WebM, AVI, MOV, FLV, TS</span>
           </div>
-          <input type="file" id="localVideoFileInput" accept="video/*" style="display: none;">
+          <input type="file" id="localVideoFileInput" accept="video/*,.mp4,.mkv,.webm,.avi,.mov,.flv,.ts,.m4v,.wmv" style="display: none;">
           <div id="localVideoFileInfo" style="display: none; align-items: center; justify-content: space-between; padding: 8px 14px; background: var(--bg-primary); border-radius: 8px; border: 1px solid var(--border-color); margin-top: 8px;">
             <span id="loadedFileName" style="font-weight: 600; font-size: 0.85rem;"></span>
             <button id="btnStartLocalDubbing" class="btn btn-primary btn-sm" type="button">▶️ Bắt Đầu Thuyết Minh</button>

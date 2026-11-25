@@ -658,26 +658,68 @@ class LiveDubStudio {
       });
     }
 
-    // 3. Source 2: Local Video File
+    // 3. Source 2: Local Video File & Global Drag-Drop
+    window.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    window.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    window.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    window.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length > 0) {
+        const file = files[0];
+        const isVideo = file.type.startsWith('video/') || /\.(mp4|mkv|webm|avi|mov|flv|ts|m4v|wmv)$/i.test(file.name);
+        if (isVideo) {
+          this.switchSourceTab('local');
+          this.handleFileSelected(file);
+        }
+      }
+    });
+
     if (this.localVideoDropZone && this.localVideoFileInput) {
       this.localVideoDropZone.addEventListener('click', () => this.localVideoFileInput.click());
-      this.localVideoDropZone.addEventListener('dragover', (e) => {
-        e.preventDefault();
+      const highlight = () => {
         this.localVideoDropZone.style.borderColor = 'var(--accent-cyan)';
-      });
-      this.localVideoDropZone.addEventListener('dragleave', () => {
+        this.localVideoDropZone.style.background = 'rgba(56, 189, 248, 0.08)';
+      };
+      const unhighlight = () => {
         this.localVideoDropZone.style.borderColor = 'rgba(56, 189, 248, 0.3)';
-      });
+        this.localVideoDropZone.style.background = 'var(--bg-primary)';
+      };
+      this.localVideoDropZone.addEventListener('dragenter', (e) => { e.preventDefault(); highlight(); });
+      this.localVideoDropZone.addEventListener('dragover', (e) => { e.preventDefault(); highlight(); });
+      this.localVideoDropZone.addEventListener('dragleave', (e) => { e.preventDefault(); unhighlight(); });
       this.localVideoDropZone.addEventListener('drop', (e) => {
         e.preventDefault();
-        this.localVideoDropZone.style.borderColor = 'rgba(56, 189, 248, 0.3)';
-        if (e.dataTransfer.files.length > 0) {
+        unhighlight();
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
           this.handleFileSelected(e.dataTransfer.files[0]);
         }
       });
       this.localVideoFileInput.addEventListener('change', (e) => {
-        if (e.target.files.length > 0) {
+        if (e.target.files && e.target.files.length > 0) {
           this.handleFileSelected(e.target.files[0]);
+        }
+      });
+    }
+
+    if (this.localVideoContainer) {
+      this.localVideoContainer.addEventListener('dragover', (e) => {
+        e.preventDefault();
+      });
+      this.localVideoContainer.addEventListener('drop', (e) => {
+        e.preventDefault();
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          this.handleFileSelected(e.dataTransfer.files[0]);
         }
       });
     }
@@ -688,7 +730,7 @@ class LiveDubStudio {
 
     if (this.btnCloseLocalVideo) {
       this.btnCloseLocalVideo.addEventListener('click', () => {
-        this.stopListening();
+        this.stopLocalVideoDubbing();
         if (this.localVideoPlayer) {
           this.localVideoPlayer.pause();
           this.localVideoPlayer.src = '';
@@ -701,13 +743,23 @@ class LiveDubStudio {
 
     // Local Video Events
     if (this.localVideoPlayer) {
+      this.localVideoPlayer.addEventListener('play', () => {
+        if (!this.isListening || this.activeSource !== 'local') {
+          this.startLocalVideoDubbing();
+        }
+      });
       this.localVideoPlayer.addEventListener('pause', () => {
         this.stopAllAudio();
+        if (this.btnStartLocalDubbing) {
+          this.btnStartLocalDubbing.textContent = '▶️ Bắt Đầu Thuyết Minh';
+          this.btnStartLocalDubbing.classList.remove('btn-danger');
+          this.btnStartLocalDubbing.classList.add('btn-primary');
+        }
       });
       this.localVideoPlayer.addEventListener('seeking', () => {
         this.stopAllAudio();
-        this.invideoSubSource.textContent = '';
-        this.invideoSubVi.textContent = '';
+        if (this.invideoSubSource) this.invideoSubSource.textContent = '';
+        if (this.invideoSubVi) this.invideoSubVi.textContent = '';
       });
     }
 
@@ -1723,8 +1775,12 @@ class LiveDubStudio {
   // --- SOURCE 2: LOCAL VIDEO FILE ---
   handleFileSelected(file) {
     if (!file) return;
+    this.stopListening();
     const url = URL.createObjectURL(file);
-    if (this.localVideoPlayer) this.localVideoPlayer.src = url;
+    if (this.localVideoPlayer) {
+      this.localVideoPlayer.src = url;
+      this.localVideoPlayer.load();
+    }
     if (this.loadedFileName) this.loadedFileName.textContent = file.name;
     if (this.localVideoDropZone) this.localVideoDropZone.style.display = 'none';
     if (this.localVideoFileInfo) this.localVideoFileInfo.style.display = 'flex';
@@ -1732,11 +1788,18 @@ class LiveDubStudio {
       this.localVideoContainer.style.display = 'block';
       this.localVideoContainer.scrollIntoView({ behavior: 'smooth' });
     }
-    this.showToast(` Đã nạp file: ${file.name}`);
+    this.showToast(`📁 Đã nạp file: ${file.name}`);
+    this.startLocalVideoDubbing();
   }
 
   async startLocalVideoDubbing() {
+    if (this.isListening && this.activeSource === 'local') {
+      this.stopLocalVideoDubbing();
+      return;
+    }
     this.stopListening();
+    this.activeSource = 'local';
+    this.isListening = true;
     try {
       this.ensureAudioUnlocked();
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -1747,28 +1810,56 @@ class LiveDubStudio {
         await this.audioContext.resume().catch(() => {});
       }
 
-      if (!this._localSourceNode) {
-        this._localSourceNode = this.audioContext.createMediaElementSource(this.localVideoPlayer);
-        this._localDestination = this.audioContext.createMediaStreamDestination();
-        this._localSourceNode.connect(this.audioContext.destination);
-        this._localSourceNode.connect(this._localDestination);
+      if (!this._localSourceNode && this.localVideoPlayer) {
+        try {
+          this._localSourceNode = this.audioContext.createMediaElementSource(this.localVideoPlayer);
+          this._localDestination = this.audioContext.createMediaStreamDestination();
+          this._localGainNode = this.audioContext.createGain();
+          this._localGainNode.gain.value = 0.35;
+          this._localSourceNode.connect(this._localGainNode);
+          this._localGainNode.connect(this.audioContext.destination);
+          this._localSourceNode.connect(this._localDestination);
+        } catch (e) {
+          console.warn('createMediaElementSource warning:', e);
+        }
       }
 
-      await this.setupVADAndRecording(this._localDestination.stream);
-
-      // Kích hoạt đồng thời cả OCR nếu người dùng chọn chế độ OCR hoặc Tự động Hybrid
-      if (this.currentProcessMode === 'ocr' || this.isHybridModeActive) {
-        this.ocrVideo = this.localVideoPlayer;
-        this.isOCRModeActive = true;
-        this.startOCRWorker();
+      // 1. Setup VAD & Whisper on local video audio track
+      if (this._localDestination && this._localDestination.stream && this._localDestination.stream.getAudioTracks().length > 0) {
+        await this.setupVADAndRecording(this._localDestination.stream);
       }
 
-      this.localVideoPlayer.play();
-      this.btnStartLocalDubbing.textContent = '⏹ Dừng Thuyết Minh';
+      // 2. Start Realtime Subtitle OCR directly on local video frames
+      if (this.localVideoPlayer) {
+        await this.startHardSubtitleOCR(this.localVideoPlayer);
+      }
+
+      if (this.localVideoPlayer && this.localVideoPlayer.paused) {
+        await this.localVideoPlayer.play().catch(e => console.warn('Video play error:', e));
+      }
+      if (this.btnStartLocalDubbing) {
+        this.btnStartLocalDubbing.textContent = '⏹ Dừng Thuyết Minh';
+        this.btnStartLocalDubbing.classList.remove('btn-primary');
+        this.btnStartLocalDubbing.classList.add('btn-danger');
+      }
       this.showToast('🚀 Đang phát video và thuyết minh realtime!');
     } catch (err) {
       console.error('Local dubbing error:', err);
+      this.showToast('⚠️ Không thể bắt đầu thuyết minh: ' + err.message);
     }
+  }
+
+  stopLocalVideoDubbing() {
+    this.stopListening();
+    if (this.localVideoPlayer && !this.localVideoPlayer.paused) {
+      this.localVideoPlayer.pause();
+    }
+    if (this.btnStartLocalDubbing) {
+      this.btnStartLocalDubbing.textContent = '▶️ Bắt Đầu Thuyết Minh';
+      this.btnStartLocalDubbing.classList.remove('btn-danger');
+      this.btnStartLocalDubbing.classList.add('btn-primary');
+    }
+    this.showToast('⏹️ Đã dừng thuyết minh video');
   }
 
   // --- SOURCE 3: MICROPHONE ---
@@ -1954,28 +2045,38 @@ class LiveDubStudio {
     }
   }
 
-  async startHardSubtitleOCR(stream) {
-    const videoTrack = stream && stream.getVideoTracks ? stream.getVideoTracks()[0] : null;
-    if (!videoTrack) {
-      this.isOCRModeActive = false;
-      this.showToast('OCR cần chia sẻ cả hình ảnh video; đang chuyển về nghe bằng Whisper.');
-      return;
+  async startHardSubtitleOCR(streamOrVideo) {
+    let videoEl = null;
+    let isExternalVideo = false;
+    if (streamOrVideo instanceof HTMLVideoElement) {
+      videoEl = streamOrVideo;
+      isExternalVideo = true;
+    } else {
+      const videoTrack = streamOrVideo && streamOrVideo.getVideoTracks ? streamOrVideo.getVideoTracks()[0] : null;
+      if (!videoTrack) {
+        this.isOCRModeActive = false;
+        this.showToast('OCR cần chia sẻ cả hình ảnh video; đang chuyển về nghe bằng Whisper.');
+        return;
+      }
+      this.ocrVideo = document.createElement('video');
+      this.ocrVideo.muted = true;
+      this.ocrVideo.playsInline = true;
+      this.ocrVideo.srcObject = new MediaStream([videoTrack]);
+      await this.ocrVideo.play();
+      videoEl = this.ocrVideo;
     }
 
     this.stopHardSubtitleOCR();
+    this.ocrVideo = videoEl;
+    this._isOcrVideoExternal = isExternalVideo;
     this.isListening = true;
     this.isOCRModeActive = true;
-    this.activeSource = 'system';
+    this.activeSource = isExternalVideo ? 'local' : 'system';
     if (this.neuralVAD) await this.neuralVAD.pause();
     if (this.activeAbortController) this.activeAbortController.abort();
     while (this.speechQueue.length) this.speechQueue.shift().resolve();
     this.lastOCRText = '';
     this.lastCleanText = '';
-    this.ocrVideo = document.createElement('video');
-    this.ocrVideo.muted = true;
-    this.ocrVideo.playsInline = true;
-    this.ocrVideo.srcObject = new MediaStream([videoTrack]);
-    await this.ocrVideo.play();
     this.ocrCanvas = document.createElement('canvas');
 
     const scan = async () => {
@@ -2569,11 +2670,12 @@ class LiveDubStudio {
     if (this.ocrTimer) clearInterval(this.ocrTimer);
     this.ocrTimer = null;
     this.ocrRequestActive = false;
-    if (this.ocrVideo) {
+    if (this.ocrVideo && !this._isOcrVideoExternal) {
       try { this.ocrVideo.pause(); } catch (error) {}
       this.ocrVideo.srcObject = null;
     }
     this.ocrVideo = null;
+    this._isOcrVideoExternal = false;
     this.ocrCanvas = null;
     this._ocrDiffCanvas = null;
     this._ocrLastSample = null;
