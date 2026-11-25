@@ -1,5 +1,6 @@
 pub mod ocr;
 pub mod pipeline;
+pub mod settings;
 pub mod transcribe;
 pub mod translate;
 pub mod tts;
@@ -32,6 +33,10 @@ pub fn build_router(state: AppState, public_dir: &Path) -> Router {
         .route("/api/control/poll", get(pipeline::api_control_poll))
         .route("/api/overlay/toggle", post(pipeline::api_overlay_toggle))
         .route("/api/pipeline-status", get(pipeline::api_pipeline_status))
+        .route(
+            "/api/settings",
+            get(settings::api_get_settings).post(settings::api_post_settings),
+        )
         .route("/api/translate", post(translate::api_translate))
         .route("/api/ocr-subtitle", post(ocr::api_ocr_subtitle))
         .route("/api/dub-subtitle", post(ocr::api_dub_subtitle))

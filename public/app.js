@@ -213,8 +213,12 @@ class LiveDubStudio {
 
     const savedVoice = localStorage.getItem('livesub_voice');
     if (savedVoice && this.voiceSelect) {
-      this.voiceSelect.value = savedVoice;
+      const exists = Array.from(this.voiceSelect.options || []).some(o => o.value === savedVoice);
+      this.voiceSelect.value = exists ? savedVoice : 'vieneu:Trúc Ly';
+    } else if (this.voiceSelect) {
+      this.voiceSelect.value = 'vieneu:Trúc Ly';
     }
+
     const savedLang = localStorage.getItem('livesub_sourcelang');
     if (savedLang && this.sourceLangSelect) {
       this.sourceLangSelect.value = savedLang;
@@ -242,6 +246,44 @@ class LiveDubStudio {
     if (savedCaptionLanguage && this.webCaptionLanguage) {
       this.setRadioGroupValue(this.webCaptionLanguage, savedCaptionLanguage === 'auto' ? 'original' : savedCaptionLanguage);
     }
+
+    // Load guaranteed persistent on-disk settings from backend
+    fetch('/api/settings', { cache: 'no-store' })
+      .then(res => res.ok ? res.json() : null)
+      .then(settings => {
+        if (!settings) return;
+        if (settings.voice && this.voiceSelect) {
+          const exists = Array.from(this.voiceSelect.options || []).some(o => o.value === settings.voice);
+          if (exists) {
+            this.voiceSelect.value = settings.voice;
+            if (typeof localStorage !== 'undefined') localStorage.setItem('livesub_voice', settings.voice);
+          }
+        }
+        if (settings.source_lang && this.sourceLangSelect) {
+          this.sourceLangSelect.value = settings.source_lang;
+          if (typeof localStorage !== 'undefined') localStorage.setItem('livesub_sourcelang', settings.source_lang);
+        }
+        if (settings.sub_mode && ['bilingual', 'vi_only', 'source_only', 'en_only'].includes(settings.sub_mode)) {
+          this.currentSubMode = settings.sub_mode;
+          const radio = Array.from(this.subModeRadios || []).find(item => item.value === settings.sub_mode);
+          if (radio) radio.checked = true;
+          const sysRadio = Array.from(this.systemSubModeRadios || []).find(item => item.value === settings.sub_mode);
+          if (sysRadio) sysRadio.checked = true;
+        }
+        if (typeof settings.adaptive_speed === 'boolean') {
+          this.isAdaptiveSpeedEnabled = settings.adaptive_speed;
+          if (this.chkAdaptiveSpeed) this.chkAdaptiveSpeed.checked = settings.adaptive_speed;
+        }
+        if (typeof settings.dubbing_enabled === 'boolean') {
+          this.isDubbingEnabled = settings.dubbing_enabled;
+        }
+        if (settings.ocr_zone && this.ocrZoneSelect) {
+          this.ocrZoneSelect.value = settings.ocr_zone;
+          this.ocrScanZone = settings.ocr_zone;
+        }
+        this.updateAppliedSettings();
+      })
+      .catch(() => {});
   }
 
   initElements() {
@@ -730,6 +772,7 @@ class LiveDubStudio {
     // 6. Voice & Language Change Feedback
     if (this.voiceSelect) {
       this.voiceSelect.addEventListener('change', () => this.handleVoiceChange());
+      this.voiceSelect.addEventListener('input', () => this.handleVoiceChange());
     }
     if (this.sourceLangSelect) {
       this.sourceLangSelect.addEventListener('change', () => {
@@ -1182,9 +1225,17 @@ class LiveDubStudio {
     const name = this.voiceSelect && this.voiceSelect.selectedOptions[0]
       ? this.voiceSelect.selectedOptions[0].text
       : '';
+    const voiceVal = this.voiceSelect ? this.voiceSelect.value : 'vieneu:Trúc Ly';
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('livesub_voice', this.voiceSelect.value);
+      localStorage.setItem('livesub_voice', voiceVal);
     }
+    // Persist to backend on-disk configuration
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ voice: voiceVal })
+    }).catch(() => {});
+
     this.voiceGeneration++;
     this.dubbingGeneration++;
     this.liveDubbingQueue = [];
@@ -1981,10 +2032,12 @@ class LiveDubStudio {
         if (!response.ok) throw new Error(`OCR HTTP ${response.status}`);
         const data = await response.json();
         if (!data.empty && data.original) {
+          const hadEmptyGap = Boolean(this.ocrConsecutiveEmpty && this.ocrConsecutiveEmpty >= 1);
           this.ocrConsecutiveEmpty = 0;
           this.hasActiveHardSubtitles = true;
           this.hasSeenHardSubtitles = true;
           this.lastHardSubTime = performance.now();
+          data.hadEmptyGap = hadEmptyGap;
           const viCount = (data.original.match(/[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/gi) || []).length;
           const hasViWord = /\b(?:không|được|người|chúng|tôi|bạn|của|trong|một|cho|với|như|đã|sẽ|đang|vậy|từ|đó|những|tộc|hoàng|đế)\b/i.test(data.original);
           if (viCount >= 2 || (viCount >= 1 && hasViWord)) {
@@ -2459,7 +2512,7 @@ class LiveDubStudio {
 
 
     // Suppress if duplicate (only if subtitle hasn't cleared or disappeared)
-    const hasCleared = (this.ocrConsecutiveEmpty && this.ocrConsecutiveEmpty >= 1);
+    const hasCleared = Boolean(data.hadEmptyGap || (this.ocrConsecutiveEmpty && this.ocrConsecutiveEmpty >= 1));
     if (!hasCleared) {
       if (
         (this.lastOCRText && this.isDuplicateOCR(raw, this.lastOCRText)) ||
@@ -2468,6 +2521,11 @@ class LiveDubStudio {
       ) {
         return;
       }
+    } else {
+      // Subtitle cleared and reappeared as a fresh dialogue line: reset duplicate memory so repeated phrases speak!
+      this.recentOCRHistory = [];
+      this.lastOCRText = '';
+      this.lastCleanText = '';
     }
 
     this.lastOCRText = raw;
@@ -2485,6 +2543,11 @@ class LiveDubStudio {
     }
 
     if (this.isDubbingEnabled) {
+      const effectiveVoice = this.getEffectiveVoice();
+      // Pre-warm neural TTS synthesis in parallel IMMEDIATELY upon OCR detection!
+      if (effectiveVoice.startsWith('vieneu')) {
+        this.prefetchLiveTts(cleanRaw, effectiveVoice);
+      }
       this.enqueueLiveDubbing(cleanRaw, record.id, raw, now, now, data.timings || null, 0, 'ocr');
     }
   }
@@ -3989,8 +4052,9 @@ class LiveDubStudio {
       }
       if (prefetchedData && prefetchedData.pcmBytes) {
         const b = prefetchedData.pcmBytes;
+        const isWav = (b.length > 4 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46);
         const isMp3 = (b.length > 3 && b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) || (b.length > 2 && b[0] === 0xFF && (b[1] & 0xE0) === 0xE0);
-        if (isMp3) {
+        if (isWav || isMp3) {
           if (token && !this.isPlaybackCurrent(token)) return;
           await this.playAudioBuffer(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength), waitForEnd, onStart, originalDuration, text ? text.length : 0, queueDepth, queueLagMs);
           return;
@@ -4022,15 +4086,9 @@ class LiveDubStudio {
       const gainNode = this.audioContext.createGain();
       const targetGain = (parseInt(this.volumeRange.value, 10) || 100) / 100;
       const now = this.audioContext.currentTime;
-      // Micro fade-in (6ms) and fade-out (8ms) to completely eliminate DC offset clicks / pops
+      // Micro fade-in (6ms)
       gainNode.gain.setValueAtTime(0.0001, now);
       gainNode.gain.linearRampToValueAtTime(targetGain, now + 0.006);
-      const playDuration = audioBuffer.duration / (sourceNode.playbackRate.value || 1.0);
-      const endTime = now + playDuration;
-      if (playDuration > 0.02) {
-        gainNode.gain.setValueAtTime(targetGain, Math.max(now + 0.006, endTime - 0.008));
-        gainNode.gain.linearRampToValueAtTime(0.0001, endTime);
-      }
       gainNode.connect(this.audioContext.destination);
       this.currentGainNode = gainNode;
       this.dubbingIndicator.classList.add('active');

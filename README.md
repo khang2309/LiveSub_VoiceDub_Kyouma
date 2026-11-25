@@ -10,7 +10,7 @@
 Bạn không cần cài đặt Python, Node.js hay Rust/Cargo để sử dụng ứng dụng. Toàn bộ hệ thống đã được biên dịch thành binary độc lập sẵn sàng chạy ngay:
 
 ### 📦 Cách 1: Cài Đặt Bằng Bộ Cài Windows (Khuyên Dùng)
-1. Tải trực tiếp file cài đặt: **[Tải LiveSub-Studio-Setup.exe (Direct Download)](https://github.com/khang2309/LiveSub_VoiceDub_Kyouma/raw/main/LiveSub-Studio-Setup.exe)** hoặc **[Tải setup.exe](https://github.com/khang2309/LiveSub_VoiceDub_Kyouma/raw/main/setup.exe)**.
+1. Tải trực tiếp file cài đặt duy nhất: **[Tải setup.exe (Direct Download)](https://github.com/khang2309/LiveSub_VoiceDub_Kyouma/raw/main/setup.exe)**.
 2. Nhấp đúp vào file `.exe` vừa tải để cài đặt. Ứng dụng sẽ tự động tạo lối tắt **LiveSub Studio** ngoài màn hình Desktop.
 3. Mở ứng dụng từ Desktop và bắt đầu xem phim, anime hoặc video YouTube.
 
@@ -69,7 +69,7 @@ Bạn không cần cài đặt Python, Node.js hay Rust/Cargo để sử dụng 
 
 ```
 LiveSub_VoiceDub_Kyouma/
-├── LiveSub-Studio-Setup.exe   # Bộ cài đặt Windows Setup (NSIS Installer)
+├── setup.exe                    # Bộ cài đặt Windows Setup duy nhất (NSIS Installer)
 ├── setup.exe                  # Bản sao bộ cài đặt tiện dụng
 ├── livesub.exe                # File thực thi Standalone Backend Engine (Pure Rust)
 ├── start.bat                  # Script khởi động LiveSub Studio 1-click
