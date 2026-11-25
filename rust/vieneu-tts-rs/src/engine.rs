@@ -78,10 +78,10 @@ impl VieneuEngine {
 
         let intra_threads = (std::thread::available_parallelism()
             .map(|n| n.get())
-            .unwrap_or(8)
-            / 2)
-        .max(1)
-        .min(8);
+            .unwrap_or(4)
+            / 3)
+        .max(2)
+        .min(4);
 
         tracing::info!(
             "Loading VieNeu-TTS models from {:?} with {} threads",
@@ -243,8 +243,8 @@ impl VieneuEngine {
             (last_h, pk, pv)
         };
 
-        let max_expected = (16.0 + (1.6 * phone_ids.len() as f32).ceil()) as usize;
-        let max_frames = max_expected.min(220);
+        let max_expected = (3.0 + (1.15 * phone_ids.len() as f32).ceil()).max(6.0).min(180.0) as usize;
+        let max_frames = max_expected;
 
         let temperature = 0.8f32;
         let top_k = 25usize;
@@ -260,6 +260,14 @@ impl VieneuEngine {
 
         let empty_past_k = Array4::<f32>::zeros((1, 8, 0, 96));
         let empty_past_v = Array4::<f32>::zeros((1, 8, 0, 96));
+
+        // Precompute channel position IDs and allocate channel embedding buffer once
+        let pos_ch_list: Vec<Array2<i64>> = (1..16)
+            .map(|ch| Array2::from_shape_vec((1, 1), vec![ch as i64 + 1]).unwrap())
+            .collect();
+        let mut emb_ch = Array3::<f32>::zeros((1, 1, 768));
+
+        let min_speech_frames = ((phone_ids.len() as f32) * 0.70).floor().max(3.0) as usize;
 
         for t in 0..max_frames {
             // Acoustic frame generation
@@ -327,17 +335,15 @@ impl VieneuEngine {
             // Generate channels 1..15
             for ch in 1..16 {
                 let prev_code = current_codes[ch - 1] as usize;
-                let mut emb_ch = Array3::<f32>::zeros((1, 1, 768));
                 for h_idx in 0..768 {
                     emb_ch[[0, 0, h_idx]] = self.heads.audio_emb[[ch - 1, prev_code, h_idx]];
                 }
 
-                let pos_ch = Array2::<i64>::from_shape_vec((1, 1), vec![ch as i64 + 1])
-                    .map_err(|e| VieneuError::InvalidTensor(e.to_string()))?;
+                let pos_ch = &pos_ch_list[ch - 1];
 
                 let ch_inputs = ort::inputs![
-                    "token_emb" => Tensor::from_array(emb_ch)?,
-                    "position_ids" => Tensor::from_array(pos_ch)?,
+                    "token_emb" => Tensor::from_array(emb_ch.clone())?,
+                    "position_ids" => Tensor::from_array(pos_ch.clone())?,
                     "past_k_0" => Tensor::from_array(pk_ac)?,
                     "past_v_0" => Tensor::from_array(pv_ac)?,
                 ];
@@ -371,8 +377,8 @@ impl VieneuEngine {
 
                 // Vectorized channel projection
                 let vec_ch_arr = ArrayView1::from(&vec_ch);
-                let emb_ch = self.heads.audio_emb.index_axis(Axis(0), ch);
-                let logits_ch_arr = emb_ch.dot(&vec_ch_arr);
+                let emb_ch_view = self.heads.audio_emb.index_axis(Axis(0), ch);
+                let logits_ch_arr = emb_ch_view.dot(&vec_ch_arr);
                 let logits_ch = logits_ch_arr.as_slice().unwrap();
 
                 let code_ch = sample(
@@ -403,7 +409,7 @@ impl VieneuEngine {
             }
 
             let eos = best_text_idx as i64 == EOS_SPEECH
-                || (t > 14 && text_logits[EOS_SPEECH as usize] >= best_text_val - 1.2);
+                || (t >= min_speech_frames && text_logits[EOS_SPEECH as usize] >= best_text_val - 1.35);
 
             let mut frame_i32 = [0i32; 16];
             for k in 0..16 {

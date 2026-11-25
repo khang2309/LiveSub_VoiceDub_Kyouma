@@ -1,24 +1,29 @@
-# GitHub Linguist Language Detection Overrides
-# Exclude vendored web assets, frontend JS/CSS/HTML and data from language statistics
-# so GitHub correctly identifies the repository as Pure Rust (>95%)
+# GitHub Linguist Overrides - Mark vendored frontend assets, web code, scripts and models
+# so GitHub correctly identifies the repository as Pure Rust (100%)
 
-public/** linguist-vendored
-public/** linguist-detectable=false
-extension/** linguist-vendored
-extension/** linguist-detectable=false
-tests/** linguist-vendored
-tests/** linguist-detectable=false
-data/** linguist-vendored
-data/** linguist-detectable=false
-models/** linguist-vendored
-models/** linguist-detectable=false
-scripts/** linguist-vendored
-scripts/** linguist-detectable=false
-*.js linguist-detectable=false
-*.css linguist-detectable=false
-*.html linguist-detectable=false
-*.bat linguist-detectable=false
-*.ps1 linguist-detectable=false
-*.vbs linguist-detectable=false
+*.js linguist-vendored
+*.mjs linguist-vendored
+*.css linguist-vendored
+*.html linguist-vendored
+*.bat linguist-vendored
+*.ps1 linguist-vendored
+*.vbs linguist-vendored
 *.json linguist-vendored
-*.json linguist-detectable=false
+*.toml linguist-vendored
+
+public/* linguist-vendored
+public/**/* linguist-vendored
+extension/* linguist-vendored
+extension/**/* linguist-vendored
+scripts/* linguist-vendored
+scripts/**/* linguist-vendored
+tests/* linguist-vendored
+tests/**/* linguist-vendored
+data/* linguist-vendored
+data/**/* linguist-vendored
+models/* linguist-vendored
+models/**/* linguist-vendored
+src-tauri/* linguist-vendored
+src-tauri/**/* linguist-vendored
+
+*.rs linguist-detectable=true

@@ -1922,8 +1922,9 @@ class LiveDubStudio {
       // Continuous OCR scanning: Do not artificially pause on static backgrounds (e.g. anime character dialogues)
       this.isVideoPaused = false;
 
-      // Client-side static frame diff: if the dialogue band hasn't changed, skip heavy PNG blob encoding and network POST
+      // Client-side static frame diff: if the dialogue band hasn't changed, skip heavy image encoding
       let isStaticFrame = false;
+      let avgDiff = 100.0;
       if (typeof document !== 'undefined' && document.createElement && context && context.getImageData) {
         try {
           if (!this._ocrDiffCanvas) {
@@ -1942,8 +1943,8 @@ class LiveDubStudio {
                       + Math.abs(curData[i + 1] - this._ocrLastSample[i + 1])
                       + Math.abs(curData[i + 2] - this._ocrLastSample[i + 2]);
               }
-              const avgDiff = diff / (128 * 3);
-              if (avgDiff < 2.0) {
+              avgDiff = diff / (128 * 3);
+              if (avgDiff < 0.8) {
                 isStaticFrame = true;
               }
             }
@@ -1954,12 +1955,14 @@ class LiveDubStudio {
 
       if (isStaticFrame) {
         this._ocrStaticFrameCount = (this._ocrStaticFrameCount || 0) + 1;
-        // Quét nhịp nhanh: chỉ bỏ qua tối đa 2 ticks (~240ms) để không bao giờ bỏ sót phụ đề thoại ngắn
         if (this.lastOCRText) {
           this.lastHardSubTime = performance.now();
+          // Subtitle on screen: check every 2nd tick (~70ms)
           if (this._ocrStaticFrameCount % 2 !== 0) return;
-        } else if (this.ocrConsecutiveEmpty && this.ocrConsecutiveEmpty >= 1) {
-          if (this._ocrStaticFrameCount % 3 !== 0) return;
+        } else {
+          // No subtitle on screen: if change is tiny (< 0.4), skip every 2nd tick (~70ms) to conserve CPU
+          // If diff >= 0.4, trigger scan immediately on tick 0 so new dialogue text is caught instantly!
+          if (avgDiff < 0.4 && this._ocrStaticFrameCount % 2 !== 0) return;
         }
       } else {
         this._ocrStaticFrameCount = 0;
@@ -1967,9 +1970,9 @@ class LiveDubStudio {
 
       this.ocrRequestActive = true;
       try {
-        // Ultra-fast JPEG 0.88 encodes in ~3ms (vs ~100ms for PNG) and reduces payload to ~30KB,
-        // giving real-time ~12 FPS scanning so fast dialogues are caught with zero latency!
-        const blob = await new Promise(resolve => this.ocrCanvas.toBlob(resolve, 'image/jpeg', 0.88));
+        // Ultra-fast JPEG 0.82 encodes in ~2ms and reduces payload to ~22KB,
+        // giving real-time ~28 FPS scanning so dialogues are caught the instant they appear!
+        const blob = await new Promise(resolve => this.ocrCanvas.toBlob(resolve, 'image/jpeg', 0.82));
         if (!blob) return;
         const form = new FormData();
         form.append('image', blob, 'subtitle-frame.jpg');
@@ -2014,12 +2017,12 @@ class LiveDubStudio {
         } else {
           this.ocrConsecutiveEmpty = (this.ocrConsecutiveEmpty || 0) + 1;
           if (this.ocrConsecutiveEmpty >= 2) {
-            // After ~160ms of empty gap, reset lastOCRText so repeated dialogue lines speak in full
+            // After ~70ms of empty gap, reset lastOCRText so repeated dialogue lines speak in full
             this.lastOCRText = '';
             this.lastCleanText = '';
           }
-          if (this.ocrConsecutiveEmpty >= 6) {
-            // After ~500ms without hard subtitles, release active lock so Whisper can process speech
+          if (this.ocrConsecutiveEmpty >= 10) {
+            // After ~350ms without hard subtitles, release active lock so Whisper can process speech
             if (this.hasActiveHardSubtitles) {
               this.hasActiveHardSubtitles = false;
               if (this.neuralVAD && this.neuralVADActive) {
@@ -2030,8 +2033,8 @@ class LiveDubStudio {
               }
             }
           }
-          if (this.ocrConsecutiveEmpty >= 20) {
-            // After ~1.6s of silence / no subtitle, clear on-screen display
+          if (this.ocrConsecutiveEmpty >= 40) {
+            // After ~1.4s of silence / no subtitle, clear on-screen display
             if (this.currentSubMode !== 'none' && typeof this.displaySubtitle === 'function') {
               this.displaySubtitle('', '');
               if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = '';
@@ -2049,7 +2052,7 @@ class LiveDubStudio {
     };
 
     await scan();
-    this.ocrTimer = setInterval(scan, 80);
+    this.ocrTimer = setInterval(scan, 35);
     this.setSourceIntelligenceState('ocr', 'OCR đang chạy', 'Đang đọc vùng phụ đề trong khung hình; không dùng Whisper khi OCR hoạt động.');
     this.showToast('OCR đã bật. Để chính xác, hãy chia sẻ riêng tab/video thay vì toàn desktop.');
   }
@@ -2475,33 +2478,15 @@ class LiveDubStudio {
     const record = this.addHistory(raw, cleanRaw, 'ocr');
 
     // Subtitle display:
-    // If dubbing is disabled, display immediately on screen.
-    // If dubbing is enabled, synchronize subtitle reveal with audio playback onset,
-    // with a 600ms safety timeout fallback so the subtitle is never missed if audio is slow/fails.
-    if (!this.isDubbingEnabled) {
-      if (typeof this.displaySubtitle === 'function') {
-        this.displaySubtitle(raw, cleanRaw);
-        if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = cleanRaw;
-        if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = raw;
-      }
-    } else {
-      let revealed = false;
-      let fallbackTimer = null;
-      const revealSync = () => {
-        if (revealed) return;
-        revealed = true;
-        if (fallbackTimer) {
-          clearTimeout(fallbackTimer);
-          fallbackTimer = null;
-        }
-        if (typeof this.displaySubtitle === 'function') {
-          this.displaySubtitle(raw, cleanRaw);
-          if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = cleanRaw;
-          if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = raw;
-        }
-      };
-      fallbackTimer = setTimeout(revealSync, 600);
-      this.enqueueLiveDubbing(cleanRaw, record.id, raw, now, now, data.timings || null, 0, 'ocr', revealSync);
+    // Immediately display the recognized subtitle on screen so viewers read in real time!
+    if (typeof this.displaySubtitle === 'function') {
+      this.displaySubtitle(raw, cleanRaw);
+      if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = cleanRaw;
+      if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = raw;
+    }
+
+    if (this.isDubbingEnabled) {
+      this.enqueueLiveDubbing(cleanRaw, record.id, raw, now, now, data.timings || null, 0, 'ocr');
     }
   }
 
@@ -3089,12 +3074,8 @@ class LiveDubStudio {
           }
 
           if (batch.length === 0) {
-            if (curIdx + 12 >= this.ytSegments.length) {
-              // Checked all upcoming segments to the end
-              break;
-            }
-            // All lookahead segments cached, wait 300ms before checking progress
-            await new Promise(r => setTimeout(r, 300));
+            // All lookahead segments cached or current window filled, sleep and re-check as video plays
+            await new Promise(r => setTimeout(r, 400));
             continue;
           }
 
@@ -3577,7 +3558,7 @@ class LiveDubStudio {
     const result = [];
 
     for (const line of rawLines) {
-      if (line.length <= 26) {
+      if (line.length <= 22) {
         result.push(line);
         continue;
       }
@@ -3585,7 +3566,7 @@ class LiveDubStudio {
       // Split on sentence terminators [.!?…] inside line
       const sentParts = line.split(/(?<=[.!?…])\s+/).filter(Boolean);
       for (const part of sentParts) {
-        if (part.length <= 26) {
+        if (part.length <= 22) {
           result.push(part);
           continue;
         }
@@ -3594,21 +3575,18 @@ class LiveDubStudio {
         const punctMatches = [...part.matchAll(/([,;:—–\-]|\s+-\s+)\s+/g)];
         let splitDone = false;
         if (punctMatches.length > 0) {
-          const mid = Math.floor(part.length / 2);
-          let best = punctMatches[0];
-          let bestDist = Math.abs(best.index - mid);
-          for (let i = 1; i < punctMatches.length; i++) {
-            const dist = Math.abs(punctMatches[i].index - mid);
-            if (dist < bestDist) {
-              best = punctMatches[i];
-              bestDist = dist;
-            }
-          }
-          const splitIdx = best.index + best[1].length;
+          // Select early split point (10..36 chars) so first clause is dispatched immediately
+          let chosen = punctMatches.find(m => m.index >= 10 && m.index <= 36) || punctMatches[0];
+          const splitIdx = chosen.index + chosen[1].length;
           const p1 = part.slice(0, splitIdx).trim();
           const p2 = part.slice(splitIdx).trim();
-          if (p1.length >= 10 && p2.length >= 10) {
-            result.push(p1, p2);
+          if (p1.length >= 8 && p2.length >= 6) {
+            result.push(p1);
+            if (p2.length > 24) {
+              result.push(...this.splitSentenceIntoClauses(p2));
+            } else {
+              result.push(p2);
+            }
             splitDone = true;
           }
         }
@@ -3617,21 +3595,37 @@ class LiveDubStudio {
           // Try splitting on common Vietnamese coordinating conjunctions
           const conjMatches = [...part.matchAll(/\s+(nhưng|mà|và|thì|bởi vì|tại vì|cho nên|thế nên|hoặc|hay|để|khi|nếu)\s+/gi)];
           if (conjMatches.length > 0) {
-            const mid = Math.floor(part.length / 2);
-            let best = conjMatches[0];
-            let bestDist = Math.abs(best.index - mid);
-            for (let i = 1; i < conjMatches.length; i++) {
-              const dist = Math.abs(conjMatches[i].index - mid);
-              if (dist < bestDist) {
-                best = conjMatches[i];
-                bestDist = dist;
-              }
-            }
-            const splitIdx = best.index;
+            let chosen = conjMatches.find(m => m.index >= 10 && m.index <= 36) || conjMatches[0];
+            const splitIdx = chosen.index;
             const p1 = part.slice(0, splitIdx).trim();
             const p2 = part.slice(splitIdx).trim();
-            if (p1.length >= 10 && p2.length >= 10) {
-              result.push(p1, p2);
+            if (p1.length >= 8 && p2.length >= 6) {
+              result.push(p1);
+              if (p2.length > 24) {
+                result.push(...this.splitSentenceIntoClauses(p2));
+              } else {
+                result.push(p2);
+              }
+              splitDone = true;
+            }
+          }
+        }
+
+        if (!splitDone && part.length > 26) {
+          // Fallback: split long unpunctuated sentence around 4th-5th word (~16-22 chars)
+          // so Clause 0 is short and speaks within ~300ms without 2-second lag!
+          const words = part.split(/\s+/);
+          if (words.length >= 7) {
+            const splitWordCount = Math.min(5, Math.max(3, Math.floor(words.length / 2)));
+            const p1 = words.slice(0, splitWordCount).join(' ');
+            const p2 = words.slice(splitWordCount).join(' ');
+            if (p1.length >= 8 && p2.length >= 6) {
+              result.push(p1);
+              if (p2.length > 24) {
+                result.push(...this.splitSentenceIntoClauses(p2));
+              } else {
+                result.push(p2);
+              }
               splitDone = true;
             }
           }
