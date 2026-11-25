@@ -177,10 +177,10 @@ body {
   50% { opacity: 0.4; transform: scale(1.25); }
 }
 
-/* Universal Source Navigation Bar */
+/* Universal Source Navigation Bar (2 Core Sources) */
 .source-nav-bar {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: var(--space-sm);
 }
 
@@ -1300,6 +1300,24 @@ select:focus-visible {
   padding: 8px 28px !important;
   border-radius: 12px !important;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8) !important;
+}
+
+.web-video-wrapper:fullscreen .invideo-sub-vi:empty,
+.web-video-wrapper:-webkit-full-screen .invideo-sub-vi:empty,
+.web-video-wrapper:fullscreen .invideo-sub-vi[data-empty="true"],
+.web-video-wrapper:-webkit-full-screen .invideo-sub-vi[data-empty="true"],
+.web-video-wrapper:fullscreen .invideo-sub-source:empty,
+.web-video-wrapper:-webkit-full-screen .invideo-sub-source:empty,
+.web-video-wrapper:fullscreen .invideo-sub-source[data-empty="true"],
+.web-video-wrapper:-webkit-full-screen .invideo-sub-source[data-empty="true"] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .web-video-wrapper:fullscreen .invideo-sub-source,

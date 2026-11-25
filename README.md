@@ -26,7 +26,6 @@ Bạn không cần cài đặt Python, Node.js hay Rust/Cargo để sử dụng 
 ### Bước 1: Chọn Nguồn Phát Video
 * 🌐 **Link YouTube:** Dán link video YouTube (hỗ trợ dịch phụ đề gốc, tự động lồng tiếng giọng Việt).
 * 💻 **Màn Hình / Tab Phim:** Xem phim trên **Netflix, Bilibili, AnimeHay, WeTV, VLC Player, PotPlayer**... Bấm *"Bắt Đầu Đọc & Lồng Tiếng"* và chia sẻ Tab hoặc Cửa sổ phim (nhớ tích chọn *"Chia sẻ âm thanh / Share system audio"*).
-* 📁 **File Video Cục Bộ:** Kéo thả trực tiếp file `.mp4`, `.mkv` vào khung phát để xem offline.
 
 ### Bước 2: Chọn Giọng Lồng Tiếng
 * Chọn 1 trong 11 giọng đọc AI truyền cảm, tự nhiên:
@@ -45,7 +44,7 @@ Bạn không cần cài đặt Python, Node.js hay Rust/Cargo để sử dụng 
 
 ### Bước 3: Xem Phim & Tận Hưởng
 * ⚡ **Nút "Thích ứng video":** 
-  * Tích chọn để AI tự động tăng tốc giọng đọc để đuổi kịp và khớp hoàn hảo với thời lượng phụ đề, video phát mượt mà liên tục không bao giờ bị gián đoạn hay dừng hình (áp dụng đồng bộ cho cả 3 chế độ: Tab Phim, File Cục Bộ, và Link YouTube).
+  * Tích chọn để AI tự động tăng tốc giọng đọc để đuổi kịp và khớp hoàn hảo với thời lượng phụ đề, video phát mượt mà liên tục không bao giờ bị gián đoạn hay dừng hình (áp dụng đồng bộ cho cả 2 chế độ: Tab Phim và Link YouTube).
   * Bỏ tích để giữ cố định tốc độ đọc theo thanh trượt.
 * ✨ **Cửa sổ nổi (Always-on-Top PiP):** Bấm nút *"Ghim PiP"* để mở thanh phụ đề trong suốt đè lên bất kỳ phần mềm xem phim nào.
 

@@ -1,7 +1,7 @@
 use std::io::Cursor;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use ndarray::{Array1, Array2, Array3, Array4};
+use ndarray::{Array1, Array2, Array3, Array4, ArrayView1, Axis};
 use ort::session::builder::GraphOptimizationLevel;
 use ort::session::Session;
 use ort::value::Tensor;
@@ -23,6 +23,15 @@ pub const EOS_SPEECH: i64 = 6;
 pub const REF_SLOT: i64 = 7;
 pub const DEFAULT_STYLE_ID: i64 = 16;
 pub const NUM_LAYERS: usize = 12;
+
+const PAST_K_NAMES: [&str; 12] = [
+    "past_k_0", "past_k_1", "past_k_2", "past_k_3", "past_k_4", "past_k_5",
+    "past_k_6", "past_k_7", "past_k_8", "past_k_9", "past_k_10", "past_k_11",
+];
+const PAST_V_NAMES: [&str; 12] = [
+    "past_v_0", "past_v_1", "past_v_2", "past_v_3", "past_v_4", "past_v_5",
+    "past_v_6", "past_v_7", "past_v_8", "past_v_9", "past_v_10", "past_v_11",
+];
 
 pub struct VieneuEngineConfig {
     pub onnx_dir: PathBuf,
@@ -249,6 +258,9 @@ impl VieneuEngine {
         let mut ac_sess = self.sess_ac.lock().unwrap();
         let mut dec_sess = self.sess_dec.lock().unwrap();
 
+        let empty_past_k = Array4::<f32>::zeros((1, 8, 0, 96));
+        let empty_past_v = Array4::<f32>::zeros((1, 8, 0, 96));
+
         for t in 0..max_frames {
             // Acoustic frame generation
             let mut tok = Array3::<f32>::zeros((1, 2, 768));
@@ -260,14 +272,11 @@ impl VieneuEngine {
             let pos_ids = Array2::<i64>::from_shape_vec((1, 2), vec![0, 1])
                 .map_err(|e| VieneuError::InvalidTensor(e.to_string()))?;
 
-            let empty_past_k = Array4::<f32>::zeros((1, 8, 0, 96));
-            let empty_past_v = Array4::<f32>::zeros((1, 8, 0, 96));
-
             let ac_inputs = ort::inputs![
                 "token_emb" => Tensor::from_array(tok)?,
                 "position_ids" => Tensor::from_array(pos_ids)?,
-                "past_k_0" => Tensor::from_array(empty_past_k)?,
-                "past_v_0" => Tensor::from_array(empty_past_v)?,
+                "past_k_0" => Tensor::from_array(empty_past_k.clone())?,
+                "past_v_0" => Tensor::from_array(empty_past_v.clone())?,
             ];
 
             let (slot0, slot1, mut pk_ac, mut pv_ac) = {
@@ -295,18 +304,14 @@ impl VieneuEngine {
                 (slot0, slot1, pk, pv)
             };
 
-            // Sample code 0 from slot1
-            let mut logits0 = vec![0.0f32; 1024];
-            for c in 0..1024 {
-                let mut dot = 0.0f32;
-                for h_idx in 0..768 {
-                    dot += slot1[h_idx] * self.heads.audio_emb[[0, c, h_idx]];
-                }
-                logits0[c] = dot;
-            }
+            // Sample code 0 from slot1 (vectorized dot product)
+            let slot1_arr = ArrayView1::from(&slot1);
+            let emb0 = self.heads.audio_emb.index_axis(Axis(0), 0);
+            let logits0_arr = emb0.dot(&slot1_arr);
+            let logits0 = logits0_arr.as_slice().unwrap();
 
             let code0 = sample(
-                &logits0,
+                logits0,
                 temperature,
                 top_k,
                 top_p,
@@ -364,17 +369,14 @@ impl VieneuEngine {
                 pk_ac = next_pk;
                 pv_ac = next_pv;
 
-                let mut logits_ch = vec![0.0f32; 1024];
-                for c in 0..1024 {
-                    let mut dot = 0.0f32;
-                    for h_idx in 0..768 {
-                        dot += vec_ch[h_idx] * self.heads.audio_emb[[ch, c, h_idx]];
-                    }
-                    logits_ch[c] = dot;
-                }
+                // Vectorized channel projection
+                let vec_ch_arr = ArrayView1::from(&vec_ch);
+                let emb_ch = self.heads.audio_emb.index_axis(Axis(0), ch);
+                let logits_ch_arr = emb_ch.dot(&vec_ch_arr);
+                let logits_ch = logits_ch_arr.as_slice().unwrap();
 
                 let code_ch = sample(
-                    &logits_ch,
+                    logits_ch,
                     temperature,
                     top_k,
                     top_p,
@@ -386,15 +388,10 @@ impl VieneuEngine {
                 current_codes[ch] = code_ch;
             }
 
-            // Check EOS from slot0
-            let mut text_logits = vec![0.0f32; 419];
-            for w in 0..419 {
-                let mut dot = 0.0f32;
-                for h_idx in 0..768 {
-                    dot += slot0[h_idx] * self.heads.text_emb[[w, h_idx]];
-                }
-                text_logits[w] = dot;
-            }
+            // Check EOS from slot0 (vectorized dot product)
+            let slot0_arr = ArrayView1::from(&slot0);
+            let text_logits_arr = self.heads.text_emb.dot(&slot0_arr);
+            let text_logits = text_logits_arr.as_slice().unwrap();
 
             let mut best_text_val = f32::NEG_INFINITY;
             let mut best_text_idx = 0;
@@ -435,11 +432,11 @@ impl VieneuEngine {
             ];
             for i in 0..NUM_LAYERS {
                 dec_inputs.push((
-                    format!("past_k_{}", i).into(),
+                    PAST_K_NAMES[i].into(),
                     Tensor::from_array(past_k[i].clone())?.into(),
                 ));
                 dec_inputs.push((
-                    format!("past_v_{}", i).into(),
+                    PAST_V_NAMES[i].into(),
                     Tensor::from_array(past_v[i].clone())?.into(),
                 ));
             }

@@ -249,10 +249,9 @@ class LiveDubStudio {
     this.statusText = document.getElementById('statusText');
     this.btnFloatingWindow = document.getElementById('btnFloatingWindow');
 
-    // Source navigation tabs
+    // Source navigation tabs (2 Core Sources)
     this.sourceTabs = document.querySelectorAll('.source-tab');
     this.panelSourceSystem = document.getElementById('panelSourceSystem');
-    this.panelSourceLocalFile = document.getElementById('panelSourceLocalFile');
     this.panelSourceMic = document.getElementById('panelSourceMic');
     this.panelSourceWebUrl = document.getElementById('panelSourceWebUrl');
 
@@ -274,25 +273,7 @@ class LiveDubStudio {
     this.lblSourceLang = document.getElementById('lblSourceLang');
     this.currentSystemMode = 'ocr';
 
-    // Source 2: Local Video File
-    this.localVideoDropZone = document.getElementById('localVideoDropZone');
-    this.localVideoFileInput = document.getElementById('localVideoFileInput');
-    this.localVideoFileInfo = document.getElementById('localVideoFileInfo');
-    this.loadedFileName = document.getElementById('loadedFileName');
-    this.btnStartLocalDubbing = document.getElementById('btnStartLocalDubbing');
-    this.localVideoContainer = document.getElementById('localVideoContainer');
-    this.localVideoPlayer = document.getElementById('localVideoPlayer');
-    this.btnCloseLocalVideo = document.getElementById('btnCloseLocalVideo');
-    this.invideoSubSource = document.getElementById('invideoSubSource');
-    this.invideoSubVi = document.getElementById('invideoSubVi');
-    this.btnLocalModeHybrid = document.getElementById('btnLocalModeHybrid');
-    this.btnLocalModeSub = document.getElementById('btnLocalModeSub');
-    this.btnLocalModeAudio = document.getElementById('btnLocalModeAudio');
-    this.localOcrZoneSelect = document.getElementById('localOcrZoneSelect');
-    this.localSourceLangSelect = document.getElementById('localSourceLangSelect');
-    this.currentLocalMode = 'hybrid';
-
-    // Source 3: Mic
+    // Source 2: Mic
     this.btnToggleMic = document.getElementById('btnToggleMic');
     this.btnMicText = document.getElementById('btnMicText');
 
@@ -664,139 +645,7 @@ class LiveDubStudio {
       });
     }
 
-    // 3. Source 2: Local Video File & Global Drag-Drop
-    window.addEventListener('dragenter', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-    });
-    window.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-    });
-    window.addEventListener('dragleave', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-    });
-    window.addEventListener('drop', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const files = e.dataTransfer && e.dataTransfer.files;
-      if (files && files.length > 0) {
-        const file = files[0];
-        const isVideo = file.type.startsWith('video/') || /\.(mp4|mkv|webm|avi|mov|flv|ts|m4v|wmv)$/i.test(file.name);
-        if (isVideo) {
-          this.switchSourceTab('local');
-          this.handleFileSelected(file);
-        }
-      }
-    });
-
-    if (this.localVideoDropZone && this.localVideoFileInput) {
-      this.localVideoDropZone.addEventListener('click', () => this.localVideoFileInput.click());
-      const highlight = () => {
-        this.localVideoDropZone.style.borderColor = 'var(--accent-cyan)';
-        this.localVideoDropZone.style.background = 'rgba(56, 189, 248, 0.08)';
-      };
-      const unhighlight = () => {
-        this.localVideoDropZone.style.borderColor = 'rgba(56, 189, 248, 0.3)';
-        this.localVideoDropZone.style.background = 'var(--bg-primary)';
-      };
-      this.localVideoDropZone.addEventListener('dragenter', (e) => { e.preventDefault(); highlight(); });
-      this.localVideoDropZone.addEventListener('dragover', (e) => { e.preventDefault(); highlight(); });
-      this.localVideoDropZone.addEventListener('dragleave', (e) => { e.preventDefault(); unhighlight(); });
-      this.localVideoDropZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        unhighlight();
-        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-          this.handleFileSelected(e.dataTransfer.files[0]);
-        }
-      });
-      this.localVideoFileInput.addEventListener('change', (e) => {
-        if (e.target.files && e.target.files.length > 0) {
-          this.handleFileSelected(e.target.files[0]);
-        }
-      });
-    }
-
-    if (this.localVideoContainer) {
-      this.localVideoContainer.addEventListener('dragover', (e) => {
-        e.preventDefault();
-      });
-      this.localVideoContainer.addEventListener('drop', (e) => {
-        e.preventDefault();
-        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-          this.handleFileSelected(e.dataTransfer.files[0]);
-        }
-      });
-    }
-
-    if (this.btnStartLocalDubbing) {
-      this.btnStartLocalDubbing.addEventListener('click', () => this.startLocalVideoDubbing());
-    }
-
-    const closeLocalVideoHandler = () => this.closeLocalVideo();
-    if (this.btnCloseLocalVideo) {
-      this.btnCloseLocalVideo.addEventListener('click', closeLocalVideoHandler);
-    }
-    const btnCloseBar = document.getElementById('btnCloseLocalVideoBar');
-    if (btnCloseBar) {
-      btnCloseBar.addEventListener('click', closeLocalVideoHandler);
-    }
-    const btnCloseFloat = document.getElementById('btnCloseLocalVideoFloating');
-    if (btnCloseFloat) {
-      btnCloseFloat.addEventListener('click', closeLocalVideoHandler);
-    }
-    if (this.btnLocalModeHybrid) {
-      this.btnLocalModeHybrid.addEventListener('click', () => this.setLocalMode('hybrid'));
-    }
-    if (this.btnLocalModeSub) {
-      this.btnLocalModeSub.addEventListener('click', () => this.setLocalMode('ocr'));
-    }
-    if (this.btnLocalModeAudio) {
-      this.btnLocalModeAudio.addEventListener('click', () => this.setLocalMode('whisper'));
-    }
-    if (this.localOcrZoneSelect) {
-      this.localOcrZoneSelect.addEventListener('change', (e) => {
-        this.ocrScanZone = e.target.value;
-        const name = e.target.selectedOptions && e.target.selectedOptions[0] ? e.target.selectedOptions[0].text : e.target.value;
-        this.showToast(`📐 Đã đổi vùng quét video: ${name}`);
-      });
-    }
-    if (this.localSourceLangSelect) {
-      this.localSourceLangSelect.addEventListener('change', (e) => {
-        const name = e.target.selectedOptions && e.target.selectedOptions[0] ? e.target.selectedOptions[0].text : e.target.value;
-        this.showToast(`🌐 Đã đổi ngôn ngữ video: ${name}`);
-      });
-    }
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && this.activeSource === 'local') {
-        closeLocalVideoHandler();
-      }
-    });
-
-    // Local Video Events
-    if (this.localVideoPlayer) {
-      this.localVideoPlayer.addEventListener('play', () => {
-        if (!this.isListening || this.activeSource !== 'local') {
-          this.startLocalVideoDubbing();
-        }
-      });
-      this.localVideoPlayer.addEventListener('pause', () => {
-        this.stopAllAudio();
-        if (this.btnStartLocalDubbing) {
-          this.btnStartLocalDubbing.textContent = '▶️ Bắt Đầu Thuyết Minh';
-          this.btnStartLocalDubbing.classList.remove('btn-danger');
-          this.btnStartLocalDubbing.classList.add('btn-primary');
-        }
-      });
-      this.localVideoPlayer.addEventListener('seeking', () => {
-        this.stopAllAudio();
-        if (this.invideoSubSource) this.invideoSubSource.textContent = '';
-        if (this.invideoSubVi) this.invideoSubVi.textContent = '';
-      });
-    }
-
-    // 4. Source 3: Mic
+    // 3. Source 2: Mic
     if (this.btnToggleMic) {
       this.btnToggleMic.addEventListener('click', () => this.toggleMic());
     }
@@ -1249,7 +1098,6 @@ class LiveDubStudio {
     });
 
     if (this.panelSourceSystem) this.panelSourceSystem.style.display = source === 'system' ? 'flex' : 'none';
-    if (this.panelSourceLocalFile) this.panelSourceLocalFile.style.display = source === 'local' ? 'flex' : 'none';
     if (this.panelSourceMic) this.panelSourceMic.style.display = source === 'mic' ? 'flex' : 'none';
     if (this.panelSourceWebUrl) this.panelSourceWebUrl.style.display = source === 'weburl' ? 'flex' : 'none';
     this.updateAppliedSettings();
@@ -1723,24 +1571,6 @@ class LiveDubStudio {
     }
   }
 
-  setLocalMode(mode) {
-    this.currentLocalMode = mode;
-    if (this.btnLocalModeHybrid) this.btnLocalModeHybrid.classList.toggle('active', mode === 'hybrid');
-    if (this.btnLocalModeSub) this.btnLocalModeSub.classList.toggle('active', mode === 'ocr');
-    if (this.btnLocalModeAudio) this.btnLocalModeAudio.classList.toggle('active', mode === 'whisper');
-
-    const modeLabels = {
-      hybrid: '⚡ Chế độ Hybrid: Tự động nhận diện phụ đề OCR kết hợp nghe Whisper',
-      ocr: '📷 Chế độ Quét chữ OCR: Đọc phụ đề in trên khung hình video',
-      whisper: '🎙️ Chế độ Nghe Whisper: Nhận diện tiếng nói từ âm thanh video'
-    };
-    this.showToast(modeLabels[mode] || mode);
-
-    if (this.isListening && this.activeSource === 'local') {
-      this.startLocalVideoDubbing(true);
-    }
-  }
-
   async toggleSystemAudio() {
     if (this.isListening && this.activeSource === 'system') {
       this.stopListening();
@@ -1823,158 +1653,7 @@ class LiveDubStudio {
     }
   }
 
-  // --- SOURCE 2: LOCAL VIDEO FILE ---
-  handleFileSelected(file) {
-    if (!file) return;
-    this.stopListening();
-    const url = URL.createObjectURL(file);
-    if (this.localVideoPlayer) {
-      this.localVideoPlayer.src = url;
-      this.localVideoPlayer.load();
-    }
-    if (this.loadedFileName) this.loadedFileName.textContent = file.name;
-    if (this.localVideoDropZone) this.localVideoDropZone.style.display = 'none';
-    if (this.localVideoFileInfo) this.localVideoFileInfo.style.display = 'flex';
-    if (this.localVideoContainer) {
-      this.localVideoContainer.style.display = 'block';
-      this.localVideoContainer.scrollIntoView({ behavior: 'smooth' });
-    }
-    this.showToast(`📁 Đã nạp file: ${file.name}`);
-
-    // Wait until video has metadata before starting recognition and dubbing
-    const startWhenReady = () => {
-      this.localVideoPlayer.removeEventListener('loadedmetadata', startWhenReady);
-      this.localVideoPlayer.removeEventListener('canplay', startWhenReady);
-      this.startLocalVideoDubbing(true);
-    };
-
-    if (this.localVideoPlayer && this.localVideoPlayer.readyState >= 1) {
-      this.startLocalVideoDubbing(true);
-    } else if (this.localVideoPlayer) {
-      this.localVideoPlayer.addEventListener('loadedmetadata', startWhenReady);
-      this.localVideoPlayer.addEventListener('canplay', startWhenReady);
-    }
-  }
-
-  async startLocalVideoDubbing(isRestart = false) {
-    if (!isRestart && this.isListening && this.activeSource === 'local') {
-      this.stopLocalVideoDubbing();
-      return;
-    }
-    this.stopListening();
-    this.activeSource = 'local';
-    this.isListening = true;
-
-    const mode = this.currentLocalMode || 'hybrid';
-    const isWhisperMode = (mode === 'whisper');
-    const isOcrMode = (mode === 'ocr');
-    const isHybridMode = (mode === 'hybrid');
-
-    this.isOCRModeActive = !isWhisperMode;
-    this.isHybridModeActive = isHybridMode;
-    this.hasActiveHardSubtitles = false;
-    this.hasSeenHardSubtitles = false;
-    this._hasNotifiedVietsubMode = false;
-    this.lastHardSubTime = 0;
-
-    try {
-      this.ensureAudioUnlocked();
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!this.audioContext || this.audioContext.state === 'closed') {
-        this.audioContext = new AudioCtx();
-      }
-      if (this.audioContext.state === 'suspended') {
-        await this.audioContext.resume().catch(() => {});
-      }
-
-      if (this.localOcrZoneSelect) {
-        this.ocrScanZone = this.localOcrZoneSelect.value || 'bottom';
-      }
-
-      // 1. Audio setup for Whisper / Hybrid
-      if (!isOcrMode && this.localVideoPlayer) {
-        let stream = null;
-        try {
-          if (typeof this.localVideoPlayer.captureStream === 'function') {
-            stream = this.localVideoPlayer.captureStream();
-          } else if (typeof this.localVideoPlayer.mozCaptureStream === 'function') {
-            stream = this.localVideoPlayer.mozCaptureStream();
-          }
-        } catch (_) {}
-
-        if (stream && stream.getAudioTracks && stream.getAudioTracks().length > 0) {
-          await this.setupVADAndRecording(stream);
-        } else if (!this._localSourceNode) {
-          try {
-            this._localSourceNode = this.audioContext.createMediaElementSource(this.localVideoPlayer);
-            this._localGainNode = this.audioContext.createGain();
-            this._localGainNode.gain.value = 1.0;
-            this._localSourceNode.connect(this._localGainNode);
-            this._localGainNode.connect(this.audioContext.destination);
-
-            this.mediaStreamSource = this._localSourceNode;
-            const sampleRate = this.audioContext.sampleRate || 48000;
-            const scriptNode = this.audioContext.createScriptProcessor(4096, 1, 1);
-            this.scriptNode = scriptNode;
-            this._localSourceNode.connect(scriptNode);
-            scriptNode.connect(this.audioContext.destination);
-          } catch (e) {
-            console.warn('Local video Web Audio connect warning:', e);
-          }
-        }
-      }
-
-      // 2. Start Realtime Subtitle OCR directly on local video frames
-      if (!isWhisperMode && this.localVideoPlayer) {
-        await this.startHardSubtitleOCR(this.localVideoPlayer);
-      }
-
-      if (this.localVideoPlayer) {
-        this.localVideoPlayer.muted = false;
-        if (this.localVideoPlayer.paused) {
-          await this.localVideoPlayer.play().catch(e => console.warn('Video play error:', e));
-        }
-      }
-      if (this.btnStartLocalDubbing) {
-        this.btnStartLocalDubbing.textContent = '⏹ Dừng Thuyết Minh';
-        this.btnStartLocalDubbing.classList.remove('btn-primary');
-        this.btnStartLocalDubbing.classList.add('btn-danger');
-      }
-      this.showToast('🚀 Đang phát video và thuyết minh realtime!');
-    } catch (err) {
-      console.error('Local dubbing error:', err);
-      this.showToast('⚠️ Không thể bắt đầu thuyết minh: ' + err.message);
-    }
-  }
-
-  stopLocalVideoDubbing() {
-    this.stopListening();
-    if (this.localVideoPlayer && !this.localVideoPlayer.paused) {
-      this.localVideoPlayer.pause();
-    }
-    if (this.btnStartLocalDubbing) {
-      this.btnStartLocalDubbing.textContent = '▶️ Bắt Đầu Thuyết Minh';
-      this.btnStartLocalDubbing.classList.remove('btn-danger');
-      this.btnStartLocalDubbing.classList.add('btn-primary');
-    }
-    this.showToast('⏹️ Đã dừng thuyết minh video');
-  }
-
-  closeLocalVideo() {
-    this.stopLocalVideoDubbing();
-    if (this.localVideoPlayer) {
-      this.localVideoPlayer.pause();
-      this.localVideoPlayer.removeAttribute('src');
-      this.localVideoPlayer.load();
-    }
-    if (this.localVideoContainer) this.localVideoContainer.style.display = 'none';
-    if (this.localVideoFileInfo) this.localVideoFileInfo.style.display = 'none';
-    if (this.localVideoDropZone) this.localVideoDropZone.style.display = 'flex';
-    this.activeSource = null;
-    this.showToast('Đã đóng video cục bộ');
-  }
-
-  // --- SOURCE 3: MICROPHONE ---
+  // --- SOURCE 2: MICROPHONE ---
   async toggleMic() {
     if (this.isListening && this.activeSource === 'mic') {
       this.stopListening();
@@ -2049,10 +1728,6 @@ class LiveDubStudio {
   }
 
   resolveOCRLanguage() {
-    if (this.activeSource === 'local' && this.localSourceLangSelect) {
-      const selectedLocal = this.localSourceLangSelect.value;
-      if (selectedLocal && selectedLocal !== 'auto') return selectedLocal;
-    }
     const selectedSpeech = this.sourceLangSelect ? this.sourceLangSelect.value : 'auto';
     if (selectedSpeech && selectedSpeech !== 'auto') return selectedSpeech;
     if (typeof this.getRadioGroupValue === 'function') {
@@ -2188,7 +1863,7 @@ class LiveDubStudio {
     this._isOcrVideoExternal = isExternalVideo;
     this.isListening = true;
     this.isOCRModeActive = true;
-    this.activeSource = isExternalVideo ? 'local' : 'system';
+    this.activeSource = 'system';
     if (this.activeAbortController) this.activeAbortController.abort();
     while (this.speechQueue.length) this.speechQueue.shift().resolve();
     this.lastOCRText = '';
@@ -2680,12 +2355,17 @@ class LiveDubStudio {
       .replace(/\bHộo bị dụ\b/gi, 'Họ bị dụ')
       .replace(/\bHộo\b/g, 'Họ')
       // Vietnamese tone mark disambiguation (sắc vs hỏi OCR font confusion)
+      .replace(/\bcúa\b/gi, 'của')
+      .replace(/\bcúa mình\b/gi, 'của mình')
+      .replace(/\bviệc cúa\b/gi, 'việc của')
+      .replace(/\bchẳng phái\b/gi, 'chẳng phải')
       .replace(/\bkhông phái\b/gi, 'không phải')
       .replace(/\bphái không\b/gi, 'phải không')
-      .replace(/\bchẳng phái\b/gi, 'chẳng phải')
       .replace(/\bphái làm\b/gi, 'phải làm')
       .replace(/\bphái biết\b/gi, 'phải biết')
       .replace(/\bphái chăng\b/gi, 'phải chăng')
+      .replace(/\bđư[oọ]c\b/gi, 'được')
+      .replace(/\bngư[oò]i\b/gi, 'người')
       .replace(/\bcám ơn\b/gi, 'cảm ơn')
       .replace(/\bcám thấy\b/gi, 'cảm thấy')
       .replace(/\bcám giác\b/gi, 'cảm giác')
@@ -2794,15 +2474,34 @@ class LiveDubStudio {
     this.lastTranscriptContext = raw;
     const record = this.addHistory(raw, cleanRaw, 'ocr');
 
-    // Always display subtitle immediately on screen without waiting for audio playback
-    if (typeof this.displaySubtitle === 'function') {
-      this.displaySubtitle(raw, cleanRaw);
-      if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = cleanRaw;
-      if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = raw;
-    }
-
-    if (this.isDubbingEnabled) {
-      this.enqueueLiveDubbing(cleanRaw, record.id, raw, now, now, data.timings || null);
+    // Subtitle display:
+    // If dubbing is disabled, display immediately on screen.
+    // If dubbing is enabled, synchronize subtitle reveal with audio playback onset,
+    // with a 600ms safety timeout fallback so the subtitle is never missed if audio is slow/fails.
+    if (!this.isDubbingEnabled) {
+      if (typeof this.displaySubtitle === 'function') {
+        this.displaySubtitle(raw, cleanRaw);
+        if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = cleanRaw;
+        if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = raw;
+      }
+    } else {
+      let revealed = false;
+      let fallbackTimer = null;
+      const revealSync = () => {
+        if (revealed) return;
+        revealed = true;
+        if (fallbackTimer) {
+          clearTimeout(fallbackTimer);
+          fallbackTimer = null;
+        }
+        if (typeof this.displaySubtitle === 'function') {
+          this.displaySubtitle(raw, cleanRaw);
+          if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = cleanRaw;
+          if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = raw;
+        }
+      };
+      fallbackTimer = setTimeout(revealSync, 600);
+      this.enqueueLiveDubbing(cleanRaw, record.id, raw, now, now, data.timings || null, 0, 'ocr', revealSync);
     }
   }
 
@@ -2950,53 +2649,61 @@ class LiveDubStudio {
         pending.push({ index: i, segment: seg, fetchKey });
       }
     }
-    if (!pending.length) return;
-
-    try {
-      const fetchPromise = fetch('/api/tts-batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ texts: pending.map(item => item.segment.translated), voice })
-      });
-      const timeoutPromise = new Promise(resolve => setTimeout(resolve, 2000));
-      const res = await Promise.race([fetchPromise, timeoutPromise]);
-      if (res && res.ok) {
-        const data = await res.json();
-        if (loadGeneration !== null && loadGeneration !== this.youtubeLoadGeneration) return;
-        const items = data && Array.isArray(data.items) ? data.items : [];
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (!this.audioContext || this.audioContext.state === 'closed') this.audioContext = new AudioCtx();
-
-        await Promise.all(pending.map(async (entry, pos) => {
-          const audio = items[pos];
-          if (!audio || !audio.audio_base64) return;
-          try {
-            const binary = atob(audio.audio_base64);
-            const bytes = new Uint8Array(binary.length);
-            for (let b = 0; b < binary.length; b++) bytes[b] = binary.charCodeAt(b);
-            let decoded = await this.audioContext.decodeAudioData(bytes.buffer.slice(0));
-            const profile = this.getVoiceProfile(voice);
-            if (decoded && decoded._livesubVoice !== profile.id) {
-              decoded = this.applyVoiceCharacteristics(decoded, voice);
-              decoded._livesubVoice = profile.id;
-            }
-            this.audioPreCache.set(entry.index, {
-              buffer: decoded,
-              translated: entry.segment.translated,
-              original: entry.segment.original,
-              voice,
-              voiceGeneration: generation
-            });
-          } catch (e) {
-            console.warn('Initial prebuffer decode error:', e);
-          } finally {
-            this.isFetchingPreCache.delete(entry.fetchKey);
-          }
-        }));
-      }
-    } catch (e) {
-      console.warn('Initial prebuffer error:', e);
+    if (!pending.length) {
+      this.startYouTubePrefetchWorker(toIdx);
+      return;
     }
+
+    const fetchPromise = (async () => {
+      try {
+        const res = await fetch('/api/tts-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ texts: pending.map(item => item.segment.translated), voice })
+        });
+        if (res && res.ok) {
+          const data = await res.json();
+          if (loadGeneration !== null && loadGeneration !== this.youtubeLoadGeneration) return;
+          const items = data && Array.isArray(data.items) ? data.items : [];
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (!this.audioContext || this.audioContext.state === 'closed') this.audioContext = new AudioCtx();
+
+          await Promise.all(pending.map(async (entry, pos) => {
+            const audio = items[pos];
+            if (!audio || !audio.audio_base64) return;
+            try {
+              const binary = atob(audio.audio_base64);
+              const bytes = new Uint8Array(binary.length);
+              for (let b = 0; b < binary.length; b++) bytes[b] = binary.charCodeAt(b);
+              let decoded = await this.audioContext.decodeAudioData(bytes.buffer.slice(0));
+              const profile = this.getVoiceProfile(voice);
+              if (decoded && decoded._livesubVoice !== profile.id) {
+                decoded = this.applyVoiceCharacteristics(decoded, voice);
+                decoded._livesubVoice = profile.id;
+              }
+              this.audioPreCache.set(entry.index, {
+                buffer: decoded,
+                translated: entry.segment.translated,
+                original: entry.segment.original,
+                voice,
+                voiceGeneration: generation
+              });
+            } catch (e) {
+              console.warn('Initial prebuffer decode error:', e);
+            }
+          }));
+        }
+      } catch (e) {
+        console.warn('Initial prebuffer error:', e);
+      } finally {
+        pending.forEach(entry => this.isFetchingPreCache.delete(entry.fetchKey));
+        this.startYouTubePrefetchWorker(toIdx);
+      }
+    })();
+
+    // Wait up to 1500ms so video starts promptly, while background caching continues
+    const timeoutPromise = new Promise(resolve => setTimeout(resolve, 1500));
+    await Promise.race([fetchPromise, timeoutPromise]);
   }
 
   syncRemainingYouTubeSubtitles(url, videoId, loadGeneration) {
@@ -3353,74 +3060,103 @@ class LiveDubStudio {
     }
   }
 
+  startYouTubePrefetchWorker(startIdx = 0) {
+    if (!this.isDubbingEnabled || !this.ytSegments || this.ytSegments.length === 0) return;
+    this._ytPrefetchTargetIdx = Math.max(0, startIdx);
+    if (this._isYtPrefetchWorkerRunning) return;
+
+    this._isYtPrefetchWorkerRunning = true;
+    const workerLoop = async () => {
+      try {
+        while (this._isYtPrefetchWorkerRunning && this.isDubbingEnabled && this.ytSegments && this.ytSegments.length > 0) {
+          const curIdx = Math.max(this._ytPrefetchTargetIdx || 0, this.currentYtSegmentIdx >= 0 ? this.currentYtSegmentIdx : 0);
+          const generation = this.voiceGeneration;
+          const voice = this.getEffectiveVoice();
+
+          // Rolling prefetch window: keep up to 12 tracks ahead cached (or all remaining if <= 30)
+          const maxLookahead = (this.ytSegments.length <= 30) ? this.ytSegments.length : Math.min(this.ytSegments.length, curIdx + 12);
+
+          const batch = [];
+          for (let i = curIdx; i < maxLookahead; i++) {
+            const seg = this.ytSegments[i];
+            if (!seg || !seg.translated) continue;
+            const key = `${generation}:${i}`;
+            if (!this.audioPreCache.has(i) && !this.isFetchingPreCache.has(key)) {
+              this.isFetchingPreCache.add(key);
+              batch.push({ index: i, segment: seg, fetchKey: key });
+              if (batch.length >= 4) break; // Small, low-latency 4-track batch
+            }
+          }
+
+          if (batch.length === 0) {
+            if (curIdx + 12 >= this.ytSegments.length) {
+              // Checked all upcoming segments to the end
+              break;
+            }
+            // All lookahead segments cached, wait 300ms before checking progress
+            await new Promise(r => setTimeout(r, 300));
+            continue;
+          }
+
+          try {
+            const res = await fetch('/api/tts-batch', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ texts: batch.map(b => b.segment.translated), voice })
+            });
+
+            if (res.ok && generation === this.voiceGeneration) {
+              const data = await res.json();
+              const items = data && Array.isArray(data.items) ? data.items : [];
+              const AudioCtx = window.AudioContext || window.webkitAudioContext;
+              if (!this.audioContext || this.audioContext.state === 'closed') this.audioContext = new AudioCtx();
+
+              await Promise.all(batch.map(async (entry, pos) => {
+                const item = items[pos];
+                if (!item || !item.audio_base64) return;
+                try {
+                  const binary = atob(item.audio_base64);
+                  const bytes = new Uint8Array(binary.length);
+                  for (let b = 0; b < binary.length; b++) bytes[b] = binary.charCodeAt(b);
+                  let decoded = await this.audioContext.decodeAudioData(bytes.buffer.slice(0));
+                  const profile = this.getVoiceProfile(voice);
+                  if (decoded && decoded._livesubVoice !== profile.id) {
+                    decoded = this.applyVoiceCharacteristics(decoded, voice);
+                    decoded._livesubVoice = profile.id;
+                  }
+                  this.audioPreCache.set(entry.index, {
+                    buffer: decoded,
+                    translated: entry.segment.translated,
+                    original: entry.segment.original,
+                    voice,
+                    voiceGeneration: generation
+                  });
+                } catch (e) {
+                  console.warn('Worker audio decode error:', e);
+                }
+              }));
+            }
+          } catch (e) {
+            console.warn('Worker batch fetch error:', e);
+            await new Promise(r => setTimeout(r, 500));
+          } finally {
+            batch.forEach(b => this.isFetchingPreCache.delete(b.fetchKey));
+          }
+
+          await new Promise(r => setTimeout(r, 60));
+        }
+      } finally {
+        this._isYtPrefetchWorkerRunning = false;
+      }
+    };
+
+    workerLoop();
+  }
+
   prefetchUpcomingAudio(fromIdx) {
     if (!this.isDubbingEnabled || !this.ytSegments || this.ytSegments.length === 0) return;
-
-    // Prefetch all remaining if track count <= 25, otherwise prefetch rolling window of 6 tracks ahead
-    const toIdx = (this.ytSegments.length <= 25)
-      ? this.ytSegments.length
-      : Math.min(this.ytSegments.length, fromIdx + 6);
-    const generation = this.voiceGeneration;
-    const selectedVoice = this.voiceSelect ? this.voiceSelect.value : 'auto-fast';
-    const voice = this.getEffectiveVoice();
-    const pending = [];
-    for (let i = fromIdx; i < toIdx; i++) {
-      if (i < 0) continue;
-      const seg = this.ytSegments[i];
-      if (!seg || !seg.translated) continue;
-      const fetchKey = `${generation}:${i}`;
-      if (!this.audioPreCache.has(i) && !this.isFetchingPreCache.has(fetchKey)) {
-        this.isFetchingPreCache.add(fetchKey);
-        pending.push({ index: i, segment: seg, fetchKey });
-      }
-    }
-    if (!pending.length) return;
-
-    if (this.ytPrefetchAbortController) {
-      try { this.ytPrefetchAbortController.abort(); } catch (_) {}
-    }
-    this.ytPrefetchAbortController = new AbortController();
-
-    fetch('/api/tts-batch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ texts: pending.map(item => item.segment.translated), voice }),
-      signal: this.ytPrefetchAbortController.signal
-    })
-    .then(response => response.ok ? response.json() : Promise.reject(new Error(`TTS batch HTTP ${response.status}`)))
-    .then(async data => {
-      if (generation !== this.voiceGeneration || selectedVoice !== this.voiceSelect.value) return;
-      const items = data && Array.isArray(data.items) ? data.items : [];
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!this.audioContext || this.audioContext.state === 'closed') this.audioContext = new AudioCtx();
-
-      await Promise.all(pending.map(async (entry, position) => {
-        const audio = items[position];
-        if (!audio || !audio.audio_base64) return;
-        const binary = atob(audio.audio_base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let b = 0; b < binary.length; b++) bytes[b] = binary.charCodeAt(b);
-        try {
-          let decoded = await this.audioContext.decodeAudioData(bytes.buffer.slice(0));
-          const profile = this.getVoiceProfile(voice);
-          if (decoded && decoded._livesubVoice !== profile.id) {
-            decoded = this.applyVoiceCharacteristics(decoded, voice);
-            decoded._livesubVoice = profile.id;
-          }
-          this.audioPreCache.set(entry.index, {
-            buffer: decoded,
-            translated: entry.segment.translated,
-            original: entry.segment.original,
-            voice,
-            voiceGeneration: generation
-          });
-        } catch (error) {
-          console.warn('Cannot decode prefetched voice cue', error);
-        }
-      }));
-    })
-    .catch(error => console.warn('Voice prefetch batch failed', error))
-    .finally(() => pending.forEach(item => this.isFetchingPreCache.delete(item.fetchKey)));
+    this._ytPrefetchTargetIdx = fromIdx;
+    this.startYouTubePrefetchWorker(fromIdx);
   }
 
   // =========================================================================
@@ -3910,7 +3646,7 @@ class LiveDubStudio {
     return result.length > 0 ? result : [raw];
   }
 
-  enqueueLiveDubbing(text, historyId, sourceText = '', capturedAt = null, finalizedAt = null, serverTimings = null, originalDuration = 0, source = 'unknown') {
+  enqueueLiveDubbing(text, historyId, sourceText = '', capturedAt = null, finalizedAt = null, serverTimings = null, originalDuration = 0, source = 'unknown', onStart = null) {
     if (!text || !this.isDubbingEnabled) return Promise.resolve();
 
     const clauses = this.splitSentenceIntoClauses(text);
@@ -3920,19 +3656,16 @@ class LiveDubStudio {
         const clause = clauses[i];
         const clauseRatio = clause.length / Math.max(1, totalLen);
         const clauseDuration = originalDuration ? (originalDuration * clauseRatio) : 0;
-        this.enqueueSingleLiveDubbing(clause, historyId, sourceText, capturedAt, finalizedAt, serverTimings, clauseDuration, source, text);
-        if (i === 0 && clauses[1] && this.getEffectiveVoice().startsWith('vieneu')) {
-          this.prefetchLiveTts(clauses[1], this.getEffectiveVoice());
-        }
+        this.enqueueSingleLiveDubbing(clause, historyId, sourceText, capturedAt, finalizedAt, serverTimings, clauseDuration, source, text, (i === 0 ? onStart : null));
       }
       return this.drainLiveDubbingQueue();
     }
 
-    this.enqueueSingleLiveDubbing(text, historyId, sourceText, capturedAt, finalizedAt, serverTimings, originalDuration, source, text);
+    this.enqueueSingleLiveDubbing(text, historyId, sourceText, capturedAt, finalizedAt, serverTimings, originalDuration, source, text, onStart);
     return this.drainLiveDubbingQueue();
   }
 
-  enqueueSingleLiveDubbing(text, historyId, sourceText = '', capturedAt = null, finalizedAt = null, serverTimings = null, originalDuration = 0, source = 'unknown', fullText = null) {
+  enqueueSingleLiveDubbing(text, historyId, sourceText = '', capturedAt = null, finalizedAt = null, serverTimings = null, originalDuration = 0, source = 'unknown', fullText = null, onStart = null) {
     if (!text || !this.isDubbingEnabled) return;
     // Cross-source dedup: if an equivalent sourceText from a different source
     // (e.g. OCR vs ASR) is already queued, skip the duplicate.
@@ -3964,7 +3697,8 @@ class LiveDubStudio {
       originalDuration: duration,
       generation: this.dubbingGeneration,
       voice: effectiveVoice,
-      source
+      source,
+      onStart
     });
     // Parallel TTS synthesis prefetch: if audio is currently playing, start synthesising this sentence immediately
     if (this.isProcessingLiveDubbing && effectiveVoice.startsWith('vieneu')) {
@@ -4065,6 +3799,9 @@ class LiveDubStudio {
         // Start the current line before submitting another GPU synthesis request.
         try {
           const revealSubtitle = () => {
+            if (typeof item.onStart === 'function') {
+              try { item.onStart(); } catch (_) {}
+            }
             if (item.capturedAt) {
               const totalMs = Math.round(performance.now() - item.capturedAt);
               this.realtimeMetrics.lastSpeechStartToVoiceMs = totalMs;
@@ -4685,6 +4422,11 @@ class LiveDubStudio {
         this.invideoWebSubVi.style.display = 'none';
       }
     }
+
+    const invideoOverlays = document.querySelectorAll('.invideo-subtitle-overlay');
+    invideoOverlays.forEach(overlay => {
+      overlay.style.display = (hasSource || hasVi) ? 'block' : 'none';
+    });
 
     if (this.pipWindow && !this.pipWindow.closed) {
       try {

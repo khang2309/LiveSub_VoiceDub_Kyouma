@@ -49,20 +49,13 @@
       </div>
     </header>
 
-    <!-- BẢNG ĐIỀU HƯỚNG NGUỒN PHÁT: 4 NGUỒN TOÀN DIỆN -->
+    <!-- BẢNG ĐIỀU HƯỚNG NGUỒN PHÁT: 2 NGUỒN TRỌNG TÂM -->
     <nav class="source-nav-bar" style="margin-bottom: 12px;">
       <button class="source-tab active" id="tabSourceSystem" data-source="system" type="button">
         <span class="tab-icon">🖥️</span>
         <div class="tab-info">
           <strong>Màn hình / Tab Phim</strong>
           <span>Xem phim, Anime, Livestream</span>
-        </div>
-      </button>
-      <button class="source-tab" id="tabSourceLocalFile" data-source="local" type="button">
-        <span class="tab-icon">📁</span>
-        <div class="tab-info">
-          <strong>File Video Cục Bộ</strong>
-          <span>Nạp MP4, MKV từ máy tính</span>
         </div>
       </button>
       <button class="source-tab" id="tabSourceWebUrl" data-source="weburl" type="button">
@@ -205,85 +198,7 @@
           </div>
         </div>
 
-        <!-- NGUỒN 2: FILE VIDEO CỤC BỘ -->
-        <div id="panelSourceLocalFile" class="source-panel-block" style="display: none; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 14px; padding: 14px; width: 100%;">
-          <div style="margin-bottom: 10px;">
-            <h3 style="font-size: 1.05rem; margin-bottom: 4px;">📁 Nạp Video từ máy tính (MP4, MKV, WebM, AVI)</h3>
-            <p style="font-size: 0.82rem; color: var(--text-dim);">Chọn file video để phát trực tiếp và tự động nhận diện phụ đề / lồng tiếng realtime</p>
-          </div>
-
-          <!-- Tùy chọn dịch & lồng tiếng cho video cục bộ -->
-          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; flex-wrap: wrap;">
-            <div class="control-cell">
-              <span class="control-label" style="font-size: 0.78rem; color: var(--text-muted); font-weight: 600; margin-right: 6px;">Chế độ nhận diện:</span>
-              <div class="mode-toggle-group">
-                <button type="button" id="btnLocalModeHybrid" class="btn-mode active" title="Tự động nhận diện: Ưu tiên đọc phụ đề trên video, kết hợp nghe Whisper">
-                  ⚡ Tự Động Hybrid
-                </button>
-                <button type="button" id="btnLocalModeSub" class="btn-mode" title="Quét chữ phụ đề in trên khung hình video">
-                  📷 Đọc Sub OCR
-                </button>
-                <button type="button" id="btnLocalModeAudio" class="btn-mode" title="Nhận diện tiếng nói từ âm thanh video qua Whisper">
-                  🎙️ Nghe Whisper
-                </button>
-              </div>
-            </div>
-
-            <div class="control-cell-zone" id="cellLocalOcrZone" title="Chọn vùng quét phụ đề trên video">
-              <label for="localOcrZoneSelect" class="control-label" style="font-size: 0.78rem; color: var(--text-muted); font-weight: 600; margin-right: 6px;">Vùng Quét Sub:</label>
-              <select id="localOcrZoneSelect" class="form-control form-control-compact select-zone">
-                <option value="bottom" selected>📍 1/3 Đáy (Phim)</option>
-                <option value="split">📺 Nửa Dưới (50%)</option>
-                <option value="full">🖥️ Toàn Video</option>
-              </select>
-            </div>
-
-            <div class="control-cell" title="Ngôn ngữ gốc của video">
-              <label for="localSourceLangSelect" class="control-label" style="font-size: 0.78rem; color: var(--text-muted); font-weight: 600; margin-right: 6px;">Ngôn Ngữ:</label>
-              <select id="localSourceLangSelect" class="form-control form-control-compact select-lang" style="min-width: 140px;">
-                <option value="auto" selected>🌐 Tự động nhận diện</option>
-                <option value="vi-VN">🇻🇳 Tiếng Việt (Vietsub)</option>
-                <option value="en-US">🇬🇧 Tiếng Anh</option>
-                <option value="ja-JP">🇯🇵 Tiếng Nhật</option>
-                <option value="zh-CN">🇨🇳 Tiếng Trung</option>
-                <option value="ko-KR">🇰🇷 Tiếng Hàn</option>
-              </select>
-            </div>
-          </div>
-
-          <div id="localVideoDropZone" style="border: 2px dashed var(--border-color); border-radius: 12px; padding: 22px; text-align: center; cursor: pointer; background: var(--bg-primary); transition: all 0.2s;">
-            <p style="font-size: 1rem; margin-bottom: 4px; pointer-events: none;">📂 <strong>Kéo thả file video vào đây</strong> hoặc bấm để chọn file</p>
-            <span style="font-size: 0.8rem; color: var(--text-dim); pointer-events: none;">Hỗ trợ MP4, MKV, WebM, AVI, MOV, FLV, TS</span>
-          </div>
-          <input type="file" id="localVideoFileInput" accept="video/*,.mp4,.mkv,.webm,.avi,.mov,.flv,.ts,.m4v,.wmv" style="display: none;">
-          <div id="localVideoFileInfo" style="display: none; align-items: center; justify-content: space-between; padding: 8px 14px; background: var(--bg-primary); border-radius: 8px; border: 1px solid var(--border-color); margin-top: 8px;">
-            <div style="display: flex; align-items: center; gap: 8px; overflow: hidden;">
-              <span style="font-size: 1rem;">🎬</span>
-              <span id="loadedFileName" style="font-weight: 600; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 380px;"></span>
-            </div>
-            <div style="display: flex; gap: 8px; align-items: center;">
-              <button id="btnStartLocalDubbing" class="btn btn-primary btn-sm" type="button">▶️ Bắt Đầu Thuyết Minh</button>
-              <button id="btnCloseLocalVideoBar" class="btn btn-secondary btn-sm" type="button" title="Đóng video và chọn file khác">✕ Đóng Video</button>
-            </div>
-          </div>
-          <div id="localVideoContainer" class="local-video-wrapper" style="display: none; margin-top: 10px; position: relative;">
-            <div class="video-element-container" style="position: relative;">
-              <button id="btnCloseLocalVideoFloating" class="btn-close-floating" type="button" title="Đóng video (Phím tắt: ESC)" style="position: absolute; top: 12px; right: 12px; z-index: 30; background: rgba(17, 19, 24, 0.85); border: 1px solid rgba(255, 255, 255, 0.25); color: #ffffff; padding: 6px 14px; border-radius: 8px; font-weight: 600; font-size: 0.82rem; cursor: pointer; backdrop-filter: blur(8px); display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
-                ✕ Đóng Video
-              </button>
-              <video id="localVideoPlayer" controls playsinline style="width: 100%; border-radius: 10px; background: #000;"></video>
-              <div class="invideo-subtitle-overlay">
-                <div id="invideoSubSource" class="invideo-sub-source" style="display: none;" data-empty="true"></div>
-                <div id="invideoSubVi" class="invideo-sub-vi" style="display: none;" data-empty="true"></div>
-              </div>
-            </div>
-            <div style="display: flex; justify-content: flex-end; margin-top: 8px;">
-              <button id="btnCloseLocalVideo" class="btn btn-sm btn-secondary" type="button">✕ Đóng Video</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- NGUỒN 3: LINK YOUTUBE / WEB -->
+        <!-- NGUỒN 2: LINK YOUTUBE / WEB -->
         <div id="panelSourceWebUrl" class="source-panel-block" style="display: none; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 14px; padding: 14px; width: 100%;">
           <div style="margin-bottom: 8px;">
             <h3 style="font-size: 1.05rem; margin-bottom: 2px;">🌐 Xem Video YouTube & Lồng Tiếng Realtime</h3>
