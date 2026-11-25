@@ -2543,11 +2543,6 @@ class LiveDubStudio {
     }
 
     if (this.isDubbingEnabled) {
-      const effectiveVoice = this.getEffectiveVoice();
-      // Pre-warm neural TTS synthesis in parallel IMMEDIATELY upon OCR detection!
-      if (effectiveVoice.startsWith('vieneu')) {
-        this.prefetchLiveTts(cleanRaw, effectiveVoice);
-      }
       this.enqueueLiveDubbing(cleanRaw, record.id, raw, now, now, data.timings || null, 0, 'ocr');
     }
   }
@@ -3625,48 +3620,149 @@ class LiveDubStudio {
     const raw = String(text || '').trim();
     if (!raw) return [];
 
-    // Subtitles in anime & movies are already concise lines.
-    // They MUST be spoken as natural, complete sentences without being artificially
-    // chopped in half on conjunctions ("nhưng", "và", "mà"), commas, or arbitrary word counts.
-    // Artificially splitting single sentences caused mid-sentence audio cutoffs ("ngắt giữa câu"),
-    // broken prosody, and "tiếng bụp" at split boundaries.
+    // 1. Split on explicit linebreaks (multi-line subtitles in movies/anime)
     const rawLines = raw.split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
-    const result = [];
-
-    for (const line of rawLines) {
-      // Only split on explicit sentence terminators (. ! ?) followed by whitespace when multiple sentences exist
+    const candidateParts = [];
+    for (let i = 0; i < rawLines.length; i++) {
+      const line = rawLines[i];
       const sentParts = line.split(/(?<=[.!?…])\s+/).filter(Boolean);
-      for (const part of sentParts) {
-        const trimmed = part.trim();
+      for (let j = 0; j < sentParts.length; j++) {
+        let trimmed = sentParts[j].trim();
         if (trimmed) {
-          result.push(trimmed);
+          if (i < rawLines.length - 1 && j === sentParts.length - 1 && !/[,;:.!?…–—]$/.test(trimmed)) {
+            trimmed += ',';
+          }
+          candidateParts.push(trimmed);
         }
       }
     }
 
-    return result.length > 0 ? result : [raw];
+    // 2. Stream chunking for long sentences: synthesize the first clause immediately (~250ms)
+    // while the remaining clauses synthesize in parallel in the background, eliminating the 2-second wait!
+    const finalClauses = [];
+    for (const part of candidateParts) {
+      const words = part.split(/\s+/).filter(Boolean);
+      if (words.length <= 11 && part.length <= 60) {
+        finalClauses.push(part);
+        continue;
+      }
+
+      let splitDone = false;
+      // A. Natural comma / punctuation pause
+      const punctMatch = part.match(/^(.*?)([,;:—–])\s+(.+)$/);
+      if (punctMatch) {
+        const left = punctMatch[1].trim() + punctMatch[2];
+        const right = punctMatch[3].trim();
+        const leftWords = left.split(/\s+/).filter(Boolean).length;
+        const rightWords = right.split(/\s+/).filter(Boolean).length;
+        if (leftWords >= 4 && rightWords >= 3) {
+          finalClauses.push(left);
+          if (rightWords > 11) {
+            finalClauses.push(...this.splitSentenceIntoClauses(right));
+          } else {
+            finalClauses.push(right);
+          }
+          splitDone = true;
+        }
+      }
+      if (splitDone) continue;
+
+      // B. Conjunction split closest to the middle
+      const conjRegex = /\s+(nhưng|mà|vì|khi|nếu|để|thì|cho nên|do đó|trước khi|sau khi|và|hoặc|hôm nay|bởi vì)\s+/gi;
+      let match;
+      let bestSplitIndex = -1;
+      let minDistanceToCenter = Infinity;
+      const midWordIdx = Math.floor(words.length / 2);
+
+      while ((match = conjRegex.exec(part)) !== null) {
+        const leftSub = part.slice(0, match.index);
+        const wCount = leftSub.split(/\s+/).filter(Boolean).length;
+        if (wCount >= 4 && (words.length - wCount) >= 3) {
+          const dist = Math.abs(wCount - midWordIdx);
+          if (dist < minDistanceToCenter) {
+            minDistanceToCenter = dist;
+            bestSplitIndex = match.index;
+          }
+        }
+      }
+
+      if (bestSplitIndex > 0) {
+        let leftPart = part.slice(0, bestSplitIndex).trim();
+        let rightPart = part.slice(bestSplitIndex).trim();
+        if (!/[,;:.!?…–—]$/.test(leftPart)) leftPart += ',';
+        finalClauses.push(leftPart);
+        if (rightPart.split(/\s+/).filter(Boolean).length > 11) {
+          finalClauses.push(...this.splitSentenceIntoClauses(rightPart));
+        } else {
+          finalClauses.push(rightPart);
+        }
+        continue;
+      }
+
+      // C. Word boundary fallback if still >= 13 words
+      if (words.length >= 13) {
+        const splitPoint = Math.min(10, Math.max(6, Math.floor(words.length / 2)));
+        let leftPart = words.slice(0, splitPoint).join(' ');
+        let rightPart = words.slice(splitPoint).join(' ');
+        if (!/[,;:.!?…–—]$/.test(leftPart)) leftPart += ',';
+        finalClauses.push(leftPart);
+        if (rightPart.split(/\s+/).filter(Boolean).length > 11) {
+          finalClauses.push(...this.splitSentenceIntoClauses(rightPart));
+        } else {
+          finalClauses.push(rightPart);
+        }
+        continue;
+      }
+
+      finalClauses.push(part);
+    }
+
+    return finalClauses.length > 0 ? finalClauses : [raw];
   }
 
   enqueueLiveDubbing(text, historyId, sourceText = '', capturedAt = null, finalizedAt = null, serverTimings = null, originalDuration = 0, source = 'unknown', onStart = null) {
     if (!text || !this.isDubbingEnabled) return Promise.resolve();
 
     const clauses = this.splitSentenceIntoClauses(text);
+    const effectiveVoice = this.getEffectiveVoice();
     if (clauses.length > 1) {
       const totalLen = text.length;
       for (let i = 0; i < clauses.length; i++) {
         const clause = clauses[i];
         const clauseRatio = clause.length / Math.max(1, totalLen);
         const clauseDuration = originalDuration ? (originalDuration * clauseRatio) : 0;
-        this.enqueueSingleLiveDubbing(clause, historyId, sourceText, capturedAt, finalizedAt, serverTimings, clauseDuration, source, text, (i === 0 ? onStart : null));
+        const isFirst = (i === 0);
+        this.enqueueSingleLiveDubbing(
+          clause,
+          historyId,
+          sourceText,
+          capturedAt,
+          finalizedAt,
+          serverTimings,
+          clauseDuration,
+          source,
+          text,
+          (isFirst ? onStart : null),
+          !isFirst // isChained: true for all subsequent clauses
+        );
+      }
+      // Pipelined parallel prefetch: start synthesizing ALL clauses immediately!
+      if (effectiveVoice.startsWith('vieneu')) {
+        for (const clause of clauses) {
+          this.prefetchLiveTts(clause, effectiveVoice);
+        }
       }
       return this.drainLiveDubbingQueue();
     }
 
-    this.enqueueSingleLiveDubbing(text, historyId, sourceText, capturedAt, finalizedAt, serverTimings, originalDuration, source, text, onStart);
+    if (effectiveVoice.startsWith('vieneu')) {
+      this.prefetchLiveTts(text, effectiveVoice);
+    }
+    this.enqueueSingleLiveDubbing(text, historyId, sourceText, capturedAt, finalizedAt, serverTimings, originalDuration, source, text, onStart, false);
     return this.drainLiveDubbingQueue();
   }
 
-  enqueueSingleLiveDubbing(text, historyId, sourceText = '', capturedAt = null, finalizedAt = null, serverTimings = null, originalDuration = 0, source = 'unknown', fullText = null, onStart = null) {
+  enqueueSingleLiveDubbing(text, historyId, sourceText = '', capturedAt = null, finalizedAt = null, serverTimings = null, originalDuration = 0, source = 'unknown', fullText = null, onStart = null, isChained = false) {
     if (!text || !this.isDubbingEnabled) return;
     // Cross-source dedup: if an equivalent sourceText from a different source
     // (e.g. OCR vs ASR) is already queued, skip the duplicate.
@@ -3699,7 +3795,8 @@ class LiveDubStudio {
       generation: this.dubbingGeneration,
       voice: effectiveVoice,
       source,
-      onStart
+      onStart,
+      isChained
     });
     // Parallel TTS synthesis prefetch: if audio is currently playing, start synthesising this sentence immediately
     if (this.isProcessingLiveDubbing && effectiveVoice.startsWith('vieneu')) {
@@ -3822,6 +3919,13 @@ class LiveDubStudio {
           const queueLagMs = item.enqueuedAt ? (performance.now() - item.enqueuedAt) : 0;
           const currentQueueDepth = this.liveDubbingQueue.length + 1;
           if (item.voice.startsWith('vieneu')) {
+            // Pipeline prefetch: start synthesizing next queued items in parallel while this one plays!
+            for (let i = 0; i < Math.min(2, this.liveDubbingQueue.length); i++) {
+              const nextItem = this.liveDubbingQueue[i];
+              if (nextItem && nextItem.voice && nextItem.voice.startsWith('vieneu') && nextItem.text) {
+                this.prefetchLiveTts(nextItem.text, nextItem.voice);
+              }
+            }
             await this.playStreamingTts(
               item.text,
               item.voice,
@@ -3830,7 +3934,8 @@ class LiveDubStudio {
               null,
               currentQueueDepth,
               originalDuration,
-              queueLagMs
+              queueLagMs,
+              item.isChained
             );
             continue;
           }
@@ -3846,7 +3951,7 @@ class LiveDubStudio {
           if (isStale()) continue;
           const audio = await response.arrayBuffer();
           if (isStale()) continue;
-          await this.playAudioBuffer(audio, true, revealSubtitle, originalDuration, item.text ? item.text.length : 0, currentQueueDepth, queueLagMs);
+          await this.playAudioBuffer(audio, true, revealSubtitle, originalDuration, item.text ? item.text.length : 0, currentQueueDepth, queueLagMs, item.isChained);
         } catch (error) {
           console.warn('Live dubbing error:', error);
           // A voice failure must not hide the translated content.
@@ -3940,8 +4045,10 @@ class LiveDubStudio {
     }
   }
 
-  async playAudioBuffer(arrayBuffer, waitForEnd = false, onStart = null, originalDuration = 0, textLength = 0, queueDepth = 0, queueLagMs = 0) {
-    this.stopDubbingAudio(false, false);
+  async playAudioBuffer(arrayBuffer, waitForEnd = false, onStart = null, originalDuration = 0, textLength = 0, queueDepth = 0, queueLagMs = 0, isChained = false) {
+    if (!isChained) {
+      this.stopDubbingAudio(false, false);
+    }
     try {
       this.ensureAudioUnlocked();
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -3967,13 +4074,13 @@ class LiveDubStudio {
       const gainNode = this.audioContext.createGain();
       const targetGain = (parseInt(this.volumeRange.value, 10) || 100) / 100;
       const now = this.audioContext.currentTime;
-      // Micro fade-in (6ms) and fade-out (8ms) to completely eliminate DC offset clicks / pops
+      // Micro fade-in (4ms) and fade-out (6ms) to completely eliminate DC offset clicks / pops
       gainNode.gain.setValueAtTime(0.0001, now);
-      gainNode.gain.linearRampToValueAtTime(targetGain, now + 0.006);
+      gainNode.gain.linearRampToValueAtTime(targetGain, now + 0.004);
       const playDuration = audioBuffer.duration / (sourceNode.playbackRate.value || 1.0);
       const endTime = now + playDuration;
       if (playDuration > 0.02) {
-        gainNode.gain.setValueAtTime(targetGain, Math.max(now + 0.006, endTime - 0.008));
+        gainNode.gain.setValueAtTime(targetGain, Math.max(now + 0.004, endTime - 0.006));
         gainNode.gain.linearRampToValueAtTime(0.0001, endTime);
       }
 
@@ -4009,9 +4116,9 @@ class LiveDubStudio {
 
   // Play raw PCM as each VieNeu chunk arrives. This removes the old wait for
   // the complete WAV (typically several seconds) while preserving queue order.
-  async playStreamingTts(text, voice, waitForEnd = true, onStart = null, token = null, queueDepth = 0, originalDuration = 0, queueLagMs = 0) {
+  async playStreamingTts(text, voice, waitForEnd = true, onStart = null, token = null, queueDepth = 0, originalDuration = 0, queueLagMs = 0, isChained = false) {
     if (token && !this.isPlaybackCurrent(token)) return;
-    if (token) this.stopDubbingAudio(false, false);
+    if (token && !isChained) this.stopDubbingAudio(false, false);
     if (token && !this.isPlaybackCurrent(token)) return;
 
     const prefetchKey = `${voice}:::${text}`;
@@ -4056,7 +4163,7 @@ class LiveDubStudio {
         const isMp3 = (b.length > 3 && b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) || (b.length > 2 && b[0] === 0xFF && (b[1] & 0xE0) === 0xE0);
         if (isWav || isMp3) {
           if (token && !this.isPlaybackCurrent(token)) return;
-          await this.playAudioBuffer(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength), waitForEnd, onStart, originalDuration, text ? text.length : 0, queueDepth, queueLagMs);
+          await this.playAudioBuffer(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength), waitForEnd, onStart, originalDuration, text ? text.length : 0, queueDepth, queueLagMs, isChained);
           return;
         }
       }
@@ -4067,7 +4174,7 @@ class LiveDubStudio {
       if (cType.includes('audio/mpeg') || cType.includes('audio/mp3') || cType.includes('audio/wav')) {
         const audioBuf = await response.arrayBuffer();
         if (token && !this.isPlaybackCurrent(token)) return;
-        await this.playAudioBuffer(audioBuf, waitForEnd, onStart, originalDuration, text ? text.length : 0, queueDepth, queueLagMs);
+        await this.playAudioBuffer(audioBuf, waitForEnd, onStart, originalDuration, text ? text.length : 0, queueDepth, queueLagMs, isChained);
         return;
       }
       if (token && !this.isPlaybackCurrent(token)) return;
