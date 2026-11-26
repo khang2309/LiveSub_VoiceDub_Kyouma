@@ -1,0 +1,365 @@
+/* LiveSub Studio Extension - Popup Styling */
+:root {
+  --bg-main: #0b0f19;
+  --bg-card: rgba(17, 24, 39, 0.85);
+  --bg-card-hover: rgba(30, 41, 59, 0.9);
+  --border-color: rgba(56, 189, 248, 0.22);
+  --border-focus: #38bdf8;
+  --accent-blue: #38bdf8;
+  --accent-cyan: #06b6d4;
+  --accent-green: #22c55e;
+  --accent-yellow: #facc15;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  width: 360px;
+  background: var(--bg-main);
+  color: var(--text-main);
+  font-family: var(--font-family);
+  font-size: 13px;
+  line-height: 1.4;
+  user-select: none;
+  overflow-x: hidden;
+}
+
+.popup-container {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Header */
+.popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-logo {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, #0284c7, #38bdf8);
+  border-radius: 8px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 14px;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
+}
+
+.brand-text h1 {
+  font-size: 15px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -0.01em;
+}
+
+.badge-version {
+  font-size: 10px;
+  color: var(--accent-cyan);
+  font-weight: 600;
+  display: block;
+}
+
+/* Engine Status */
+.engine-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(15, 23, 42, 0.8);
+  padding: 4px 8px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 11px;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-dot.online {
+  background: var(--accent-green);
+  box-shadow: 0 0 8px var(--accent-green);
+}
+
+.status-dot.offline {
+  background: var(--accent-yellow);
+  box-shadow: 0 0 8px var(--accent-yellow);
+}
+
+.status-label {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* Card */
+.card {
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 12px;
+  transition: border-color 0.2s ease;
+}
+
+.card:hover {
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+/* Master Card */
+.master-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 58, 138, 0.25));
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+.master-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.master-title {
+  font-weight: 700;
+  font-size: 13px;
+  color: #fff;
+}
+
+.master-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Switch Styles */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 42px;
+  height: 24px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #334155;
+  transition: .25s;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: .25s;
+}
+
+input:checked + .slider {
+  background-color: #0284c7;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+}
+
+input:checked + .slider:before {
+  transform: translateX(18px);
+}
+
+.slider.round {
+  border-radius: 24px;
+}
+
+.slider.round:before {
+  border-radius: 50%;
+}
+
+.switch-sm {
+  width: 36px;
+  height: 20px;
+}
+
+.switch-sm .slider:before {
+  height: 14px;
+  width: 14px;
+  left: 3px;
+  bottom: 3px;
+}
+
+.switch-sm input:checked + .slider:before {
+  transform: translateX(16px);
+}
+
+/* Form Controls */
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.form-group label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.form-control {
+  background: #0f172a;
+  border: 1px solid #334155;
+  color: #f1f5f9;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.form-control:focus {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.3);
+}
+
+.form-group-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.form-check-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.check-title {
+  font-weight: 700;
+  font-size: 12px;
+  color: #e2e8f0;
+}
+
+.check-desc {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* Slider */
+.slider-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.slider-val {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-yellow);
+}
+
+.range-slider {
+  width: 100%;
+  accent-color: var(--accent-blue);
+  cursor: pointer;
+}
+
+/* Footer */
+.popup-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.shortcut-tip {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.footer-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  flex: 1;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #0284c7, #0ea5e9);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(14, 165, 233, 0.3);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, #0369a1, #0284c7);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}

@@ -1,113 +1,128 @@
-/* LiveSub YouTube Floating Widget */
-#livesub-yt-widget {
+/* LiveSub Studio Universal Video Dubbing - Extension Styles */
+
+/* In-Video Subtitle Overlay */
+.livesub-invideo-container {
+  position: absolute;
+  bottom: 58px;
+  left: 0;
+  width: 100%;
+  text-align: center;
+  z-index: 2147483647;
+  pointer-events: none;
+  user-select: none;
+}
+
+.livesub-sub-pill {
+  display: inline-block;
+  background: rgba(10, 12, 18, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 5px 18px;
+  max-width: 88%;
+  line-height: 1.35;
+  color: #ffffff;
+  font-weight: 800;
+  text-align: center;
+  font-family: "Roboto Condensed", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  letter-spacing: 0.015em;
+  -webkit-text-stroke: 1.5px #000000;
+  paint-order: stroke fill;
+  text-shadow:
+    -2px -2px 0 #000000,
+     2px -2px 0 #000000,
+    -2px  2px 0 #000000,
+     2px  2px 0 #000000,
+     0px  3px 8px rgba(0, 0, 0, 0.95);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+  word-break: break-word;
+  overflow-wrap: break-word;
+  transition: all 0.18s ease;
+}
+
+.sub-source-line {
+  font-size: 0.55em;
+  color: rgba(255, 255, 255, 0.82);
+  margin-bottom: 2px;
+  -webkit-text-stroke: 1px #000;
+  font-weight: 600;
+}
+
+.sub-vi-line {
+  color: #ffffff;
+}
+
+/* Floating Draggable Quick Control Widget */
+.livesub-floating-widget {
   position: fixed;
   bottom: 80px;
-  right: 24px;
-  width: 320px;
-  background: rgba(15, 23, 42, 0.94);
+  right: 20px;
+  width: 200px;
+  background: rgba(15, 23, 42, 0.92);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(56, 189, 248, 0.4);
-  border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
-  z-index: 9999999;
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 10px;
+  padding: 8px 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  z-index: 2147483646;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 11px;
   color: #f8fafc;
-  padding: 12px 14px;
-  font-size: 13px;
-  transition: all 0.2s ease;
+  user-select: none;
+  transition: opacity 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
 }
 
-#livesub-yt-widget:hover {
+.livesub-floating-widget:hover {
   border-color: #38bdf8;
-  box-shadow: 0 12px 36px rgba(56, 189, 248, 0.25);
+  box-shadow: 0 8px 28px rgba(56, 189, 248, 0.25);
 }
 
-.livesub-header {
+.livesub-widget-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  gap: 6px;
+  margin-bottom: 4px;
 }
 
-.livesub-dot {
-  width: 8px;
-  height: 8px;
-  background: #22c55e;
+.livesub-widget-dot {
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  display: inline-block;
-  margin-right: 6px;
-  box-shadow: 0 0 8px #22c55e;
+  background: #22c55e;
+  box-shadow: 0 0 6px #22c55e;
 }
 
-.livesub-title {
+.livesub-widget-title {
   font-weight: 700;
-  font-size: 13px;
   color: #38bdf8;
   flex: 1;
 }
 
-.livesub-toggle {
+.livesub-toggle-btn {
   background: #334155;
   color: #94a3b8;
   border: none;
-  border-radius: 6px;
-  padding: 4px 10px;
-  font-size: 11px;
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 10px;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.15s ease;
 }
 
-.livesub-toggle.active {
-  background: #38bdf8;
-  color: #0f172a;
-  box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+.livesub-toggle-btn.active {
+  background: #0284c7;
+  color: #ffffff;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
 }
 
-.livesub-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.livesub-row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.livesub-row label {
-  font-size: 11px;
-  color: #94a3b8;
-  font-weight: 600;
-}
-
-.livesub-row select {
-  background: #1e293b;
-  border: 1px solid #334155;
-  color: #e2e8f0;
-  border-radius: 6px;
-  padding: 5px 8px;
-  font-size: 12px;
-  outline: none;
-  cursor: pointer;
-}
-
-.livesub-row select:focus {
-  border-color: #38bdf8;
-}
-
-.livesub-status {
-  font-size: 11px;
+.livesub-widget-status {
+  font-size: 10px;
   color: #facc15;
-  background: rgba(250, 204, 21, 0.1);
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid rgba(250, 204, 21, 0.2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-top: 4px;
 }

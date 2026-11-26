@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LiveSub Studio - AI Dubbing</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="popup-header">
+      <div class="brand">
+        <div class="brand-logo">LS</div>
+        <div class="brand-text">
+          <h1>LiveSub Studio</h1>
+          <span class="badge-version">v1.1.0 • Chrome Extension</span>
+        </div>
+      </div>
+      <div class="engine-status" id="engineStatus" title="Trạng thái kết nối LiveSub Local Engine (Port 3000)">
+        <span class="status-dot online" id="statusDot"></span>
+        <span class="status-label" id="statusLabel">Đang kiểm tra...</span>
+      </div>
+    </header>
+
+    <!-- Master Switch -->
+    <div class="card master-card">
+      <div class="master-info">
+        <span class="master-title">Lồng Tiếng & Thuyết Minh AI</span>
+        <span class="master-desc">Tự động bắt phụ đề và đọc giọng thật</span>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="chkMasterDub" checked>
+        <span class="slider round"></span>
+      </label>
+    </div>
+
+    <!-- Main Settings Form -->
+    <div class="card settings-card">
+      <!-- Voice Select -->
+      <div class="form-group">
+        <label for="selVoice">
+          <span class="icon">🎙️</span> Giọng Đọc Thuyết Minh
+        </label>
+        <select id="selVoice" class="form-control">
+          <optgroup label="🌟 VieNeu-TTS Neural (100% Offline Pure Rust)">
+            <option value="Trúc Ly" selected>Trúc Ly (Nữ Hà Nội - Truyền cảm & Tự nhiên)</option>
+            <option value="Nam Minh">Nam Minh (Nam Hà Nội - Trầm ấm & Chững chạc)</option>
+            <option value="Bảo Ngọc">Bảo Ngọc (Nữ Sài Gòn - Ngọt ngào & Năng động)</option>
+            <option value="Khánh Nam">Khánh Nam (Nam Sài Gòn - Rõ ràng & Tự tin)</option>
+          </optgroup>
+          <optgroup label="☁️ Microsoft Edge-TTS (Đám mây Trực tuyến)">
+            <option value="vi-VN-HoaiMyNeural">Hoài My (Nữ Microsoft Tiếng Việt)</option>
+            <option value="vi-VN-NamMinhNeural">Nam Minh (Nam Microsoft Tiếng Việt)</option>
+          </optgroup>
+          <optgroup label="🌐 Trình Duyệt / Google Voice">
+            <option value="google-vi">Google Voice Tiếng Việt</option>
+          </optgroup>
+        </select>
+      </div>
+
+      <!-- Subtitle Display Mode -->
+      <div class="form-group">
+        <label for="selSubMode">
+          <span class="icon">💬</span> Chế Độ Hiển Thị Phụ Đề
+        </label>
+        <select id="selSubMode" class="form-control">
+          <option value="bilingual">Song ngữ (Gốc + Tiếng Việt)</option>
+          <option value="vi_only" selected>Chỉ Tiếng Việt (Vietsub chuẩn)</option>
+          <option value="source_only">Chỉ Tiếng Gốc (Học ngoại ngữ)</option>
+          <option value="none">Tắt phụ đề nổi (Chỉ nghe đọc giọng)</option>
+        </select>
+      </div>
+
+      <!-- Audio Ducking -->
+      <div class="form-group">
+        <label for="selDucking">
+          <span class="icon">🔉</span> Giảm Tiếng Phim Khi Lồng Tiếng
+        </label>
+        <select id="selDucking" class="form-control">
+          <option value="10" selected>Giảm xuống 10% (Chống lẫn giọng - Khuyên dùng)</option>
+          <option value="0">Tắt hẳn tiếng phim (0% - Chỉ nghe giọng đọc)</option>
+          <option value="20">Giảm xuống 20%</option>
+          <option value="35">Giảm nhẹ xuống 35%</option>
+          <option value="100">Không giảm (100% - Giữ nguyên âm gốc)</option>
+        </select>
+      </div>
+
+      <!-- Adaptive Video Pacing / Speed Sync -->
+      <div class="form-group-inline">
+        <div class="form-check-info">
+          <span class="check-title">⚡ Thích Ứng Tốc Độ Video</span>
+          <span class="check-desc">Đồng bộ tốc độ đọc khi video tua nhanh (1.25x - 2.0x)</span>
+        </div>
+        <label class="switch switch-sm">
+          <input type="checkbox" id="chkSyncSpeed" checked>
+          <span class="slider round"></span>
+        </label>
+      </div>
+
+      <!-- Hard Subtitle OCR Scan -->
+      <div class="form-group-inline">
+        <div class="form-check-info">
+          <span class="check-title">📷 Quét Chữ Trên Video (OCR)</span>
+          <span class="check-desc">Tự quét khung hình khi phim có phụ đề dán chết</span>
+        </div>
+        <label class="switch switch-sm">
+          <input type="checkbox" id="chkOcrScan" checked>
+          <span class="slider round"></span>
+        </label>
+      </div>
+
+      <!-- Font Size Slider -->
+      <div class="form-group">
+        <div class="slider-header">
+          <label for="rngFontSize"><span class="icon">🔤</span> Cỡ Chữ Phụ Đề:</label>
+          <span class="slider-val" id="lblFontSize">26px</span>
+        </div>
+        <input type="range" id="rngFontSize" min="16" max="44" step="2" value="26" class="range-slider">
+      </div>
+    </div>
+
+    <!-- Quick Shortcuts and Footer -->
+    <footer class="popup-footer">
+      <div class="shortcut-tip">
+        <span>💡 Phím tắt: <strong>Alt + D</strong> (Bật/Tắt lồng tiếng)</span>
+      </div>
+      <div class="footer-actions">
+        <button type="button" id="btnTestVoice" class="btn btn-secondary">🔊 Thử Giọng</button>
+        <button type="button" id="btnOpenStudio" class="btn btn-primary">🚀 Mở LiveSub Studio</button>
+      </div>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
