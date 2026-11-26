@@ -134,10 +134,20 @@ impl GpuOcrEngine {
             .map(|o| o.name().to_string())
             .unwrap_or_else(|| "x".to_string());
 
-        let dictionary = Arc::new(
-            RecDictionary::from_path(dict_path)
-                .map_err(|e| format!("Dictionary load error {:?}: {e}", dict_path))?,
-        );
+        let mut dictionary = RecDictionary::from_path(dict_path)
+            .map_err(|e| format!("Dictionary load error {:?}: {e}", dict_path))?;
+        if let Some(shape) = rec_session
+            .outputs()
+            .first()
+            .and_then(|o| o.dtype().tensor_shape())
+        {
+            if let Some(&classes) = shape.last() {
+                if classes > 0 && (classes as usize) > dictionary.len() {
+                    dictionary = dictionary.with_space_char();
+                }
+            }
+        }
+        let dictionary = Arc::new(dictionary);
         let rec_post = RecPostProcessor::new(
             Arc::clone(&dictionary),
             RecPostProcessorConfig {

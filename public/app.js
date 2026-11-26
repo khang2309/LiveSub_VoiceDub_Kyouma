@@ -2078,7 +2078,7 @@ class LiveDubStudio {
         if (!response.ok) throw new Error(`OCR HTTP ${response.status}`);
         const data = await response.json();
         if (!data.empty && data.original) {
-          const hadEmptyGap = Boolean(this.ocrConsecutiveEmpty && this.ocrConsecutiveEmpty >= 1);
+          const hadEmptyGap = Boolean(this.ocrConsecutiveEmpty && this.ocrConsecutiveEmpty >= 6);
           this.ocrConsecutiveEmpty = 0;
           this.hasActiveHardSubtitles = true;
           this.hasSeenHardSubtitles = true;
@@ -2114,8 +2114,8 @@ class LiveDubStudio {
           this.handleOCRSubtitle(data);
         } else {
           this.ocrConsecutiveEmpty = (this.ocrConsecutiveEmpty || 0) + 1;
-          if (this.ocrConsecutiveEmpty >= 2) {
-            // After ~70ms of empty gap, reset lastOCRText so repeated dialogue lines speak in full
+          if (this.ocrConsecutiveEmpty >= 6) {
+            // Only after ~210ms+ of genuine blank subtitle frames, reset active line tracker
             this.lastOCRText = '';
             this.lastCleanText = '';
           }
@@ -2207,28 +2207,42 @@ class LiveDubStudio {
     if (!s1 || !s2) return false;
     if (s1 === s2) return true;
 
-    // If one sentence has added words or extension (length diff >= 4), they are distinct clauses/lines
-    if (Math.abs(s1.length - s2.length) >= 4) {
-      return false;
-    }
-
-    // Direct Levenshtein similarity on normalized text
+    // Direct Levenshtein similarity on normalized text (catches minor OCR noise suffixes/typos like "10_ E", "rồi/rột")
     const sim = this.ocrSimilarity(s1, s2);
-    // Short lines (<= 15 chars e.g. "Nhất trí!", "Thật à?", "Đi mau!", "Let's go!")
-    if (Math.min(s1.length, s2.length) <= 15) {
-      return sim >= 0.90;
+    const minLen = Math.min(s1.length, s2.length);
+    if (minLen <= 15) {
+      if (sim >= 0.88) return true;
+    } else if (sim >= 0.80) {
+      return true;
     }
 
-    return sim >= 0.88;
+    // Token-level overlap / contiguous substring match (catches partial line flickers or trailing OSD noise)
+    const w1 = s1.split(/\s+/).filter(Boolean);
+    const w2 = s2.split(/\s+/).filter(Boolean);
+    const minWords = Math.min(w1.length, w2.length);
+    if (minWords >= 4) {
+      if (s1.includes(s2) || s2.includes(s1)) return true;
+      const set2 = new Set(w2);
+      let shared = 0;
+      for (const w of w1) {
+        if (set2.has(w)) shared++;
+      }
+      if ((shared / minWords) >= 0.75) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   isGarbageOCR(text) {
     if (!text || typeof text !== 'string') return true;
     const trimmed = text.trim();
     if (!trimmed) return true;
+    if (trimmed.includes('[UNK]')) return true;
 
-    // Reject pirate site watermark banners (Kèo bóng lăn, Rạp chiếu, Cá cược, Nạp đầu, Tip...)
-    if (/(?:Rạp chi[eêểế]u|Kèo bóng|Bóng lăn|Cá cược|Khuyến mãi|Nạp đầu|Ăn to|Tập\s*\d+>|Acid Béo|Hoiro|Sunwin|3bet|Nohu)/i.test(trimmed)) {
+    // Reject pirate site watermark banners (Kèo bóng lăn, Rạp chiếu, Cá cược, Nạp đầu, Được Bảo Chứng Bởi, Đã Chơi, Tip...)
+    if (/(?:Rạp chi[eêểế]u|Kèo bóng|Bóng lăn|Cá cược|Khuyến mãi|Nạp đầu|Ăn to|Tập\s*\d+>|Acid Béo|Hoiro|Sunwin|3bet|Nohu|Được Bảo Chứng|Bảo Chứng Bởi|Đã Chơi|uiateuht|wiateukt|viateuht|tateukt|iateubd|iateuht|ateuhti|lateuhh)/i.test(trimmed)) {
       return true;
     }
 
@@ -2244,7 +2258,8 @@ class LiveDubStudio {
         currentLang = this.resolveOCRLanguage() || 'vi';
       }
     } catch (_) {}
-    const isVietsub = currentLang === 'vi' || (currentLang === 'auto' && this.detectedOCRLanguage === 'vi') || currentLang === 'auto';
+    const baseLang = String(currentLang).split(/[-_]/)[0].toLowerCase();
+    const isVietsub = baseLang === 'vi' || baseLang === 'auto';
     const isForeignLatin = !isVietsub;
 
     const cleanNorm = trimmed.replace(/^[^\wÀ-ỹ]+|[^\wÀ-ỹ]+$/gu, '').toLowerCase();
@@ -2354,7 +2369,8 @@ class LiveDubStudio {
         currentLang = this.resolveOCRLanguage() || 'auto';
       }
     } catch (_) {}
-    const isVietsubMode = currentLang === 'vi' || currentLang === 'auto' || (this.detectedOCRLanguage === 'vi');
+    const baseLang = String(currentLang).split(/[-_]/)[0].toLowerCase();
+    const isVietsubMode = baseLang === 'vi' || baseLang === 'auto' || (this.detectedOCRLanguage === 'vi');
     // Cleanups specific to Vietsub fansub videos (AnimeHay, web player UI, gambling ads)
     if (isVietsubMode) {
       if (/[a-zA-Zà-ỹÀ-Ỹ]/.test(raw)) {
@@ -2440,7 +2456,7 @@ class LiveDubStudio {
 
     const now = performance.now();
     if (!this.recentOCRHistory) this.recentOCRHistory = [];
-    this.recentOCRHistory = this.recentOCRHistory.filter(item => (now - item.time) < 2200);
+    this.recentOCRHistory = this.recentOCRHistory.filter(item => (now - item.time) < 8000);
 
     const stripAccents = (s) => (s || '').normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
@@ -2573,24 +2589,19 @@ class LiveDubStudio {
       .replace(/\bcòn nhó\b/gi, 'còn nhỏ');
     const cleanNorm = stripAccents(cleanRaw);
 
-    // Discard trailing sub-fragments (e.g. "thành trì" after "phục kích thành trì", or "lắng xuống. - Xin chào" after "Không khí Tết đã lắng xuống. - Xin chào")
+    // Discard partial flickers / sub-fragments of any subtitle shown within the last 8 seconds
     const isSubFragment = this.recentOCRHistory.some(item => {
       const histNorm = stripAccents(item.text);
       const histCleanNorm = stripAccents(item.cleanText || item.text);
-      if (histNorm.length >= rawNorm.length && rawNorm.length >= 3 && (histNorm.includes(rawNorm) || histNorm.endsWith(rawNorm))) {
-        // Chỉ coi là sub-fragment nếu độ dài câu mới ngắn hơn đáng kể (câu mới bị cắt đuôi <= 65% câu cũ)
-        if (rawNorm.length <= histNorm.length * 0.65) {
-          return true;
-        }
-      }
-      const rawTailNorm = (rawTokens.length > 2 && rawTokens[0].length === 1) ? stripAccents(rawTokens.slice(1).join(' ')) : '';
-      if (rawTailNorm && histNorm.includes(rawTailNorm) && rawTailNorm.length <= histNorm.length * 0.65) {
+      if (histNorm.length >= rawNorm.length && rawNorm.length >= 8 && (histNorm.includes(rawNorm) || histNorm.endsWith(rawNorm))) {
         return true;
       }
-      if (cleanNorm && histCleanNorm.length >= cleanNorm.length && cleanNorm.length >= 3 && (histCleanNorm.includes(cleanNorm) || histCleanNorm.endsWith(cleanNorm))) {
-        if (cleanNorm.length <= histCleanNorm.length * 0.65) {
-          return true;
-        }
+      const rawTailNorm = (rawTokens.length > 2 && rawTokens[0].length === 1) ? stripAccents(rawTokens.slice(1).join(' ')) : '';
+      if (rawTailNorm && rawTailNorm.length >= 8 && histNorm.includes(rawTailNorm)) {
+        return true;
+      }
+      if (cleanNorm && histCleanNorm.length >= cleanNorm.length && cleanNorm.length >= 8 && (histCleanNorm.includes(cleanNorm) || histCleanNorm.endsWith(cleanNorm))) {
+        return true;
       }
       return false;
     });
@@ -2620,21 +2631,24 @@ class LiveDubStudio {
     }
 
 
-    // Suppress if duplicate (only if subtitle hasn't cleared or disappeared)
-    const hasCleared = Boolean(data.hadEmptyGap || (this.ocrConsecutiveEmpty && this.ocrConsecutiveEmpty >= 1));
-    if (!hasCleared) {
-      if (
+    // Suppress duplicates: always check recent history across 6.5s for multi-word lines so
+    // transient blinks, watermarks, or partial flickers never cause the same line to speak twice.
+    const hasCleared = Boolean(data.hadEmptyGap);
+    if (
+      this.recentOCRHistory.some(item => {
+        const ageMs = now - item.time;
+        const maxDupWindow = (rawNorm.length >= 16 || !hasCleared) ? 6500 : 1200;
+        return ageMs < maxDupWindow && (
+          this.isDuplicateOCR(raw, item.text) ||
+          (item.cleanText && this.isDuplicateOCR(cleanRaw, item.cleanText))
+        );
+      }) ||
+      (!hasCleared && (
         (this.lastOCRText && this.isDuplicateOCR(raw, this.lastOCRText)) ||
-        (this.lastCleanText && this.isDuplicateOCR(cleanRaw, this.lastCleanText)) ||
-        this.recentOCRHistory.some(item => (now - item.time < 1200) && (this.isDuplicateOCR(raw, item.text) || (item.cleanText && this.isDuplicateOCR(cleanRaw, item.cleanText))))
-      ) {
-        return;
-      }
-    } else {
-      // Subtitle cleared and reappeared as a fresh dialogue line: reset duplicate memory so repeated phrases speak!
-      this.recentOCRHistory = [];
-      this.lastOCRText = '';
-      this.lastCleanText = '';
+        (this.lastCleanText && this.isDuplicateOCR(cleanRaw, this.lastCleanText))
+      ))
+    ) {
+      return;
     }
 
     this.lastOCRText = raw;

@@ -49,6 +49,17 @@ fn is_pure_ocr_junk(text: &str) -> bool {
     if t.is_empty() {
         return true;
     }
+    if t.contains("[UNK]") {
+        return true;
+    }
+    // Gambling / pirate watermark banners and site overlay phrases
+    static RE_GAMBLING_PHRASE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re_gambling = RE_GAMBLING_PHRASE.get_or_init(|| {
+        regex::Regex::new(r"(?i)(?:được\s+bảo\s+chứng|bảo\s+chứng\s+bởi|đã\s+chơi|khuyến\s+mãi|nạp\s+đầu|kèo\s+bóng|bóng\s+lăn|cá\s+cược|thương\s+hiệu\s+sunwin|lenkeobonglan|hobet|sunwin|nohu|3bet|santuithantai|rạp\s+chiếu|tập\s*\d+>|^[rhb]?[íi]t\s+l[uũ]\b)").unwrap()
+    });
+    if re_gambling.is_match(t) {
+        return true;
+    }
     // Pure timecodes or scrubber fragments like ":59", "59 :59", "2 Y", "Y, Ô", "10", "04:40 / 23:59"
     static RE_JUNK_TIMECODE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re_tc = RE_JUNK_TIMECODE.get_or_init(|| {
@@ -57,14 +68,14 @@ fn is_pure_ocr_junk(text: &str) -> bool {
     if re_tc.is_match(t) {
         return true;
     }
-    // Single or double character non-alphabetic or random ASCII junk e.g. "Or", "Si", "Og", "ạ E", "Cd", "Oy", "Cx"
+    // Single or double character non-alphabetic or random ASCII junk e.g. "Or", "Si", "Og", "ạ E", "Cd", "Oy", "Cx", "Xa"
     let letters: String = t.chars().filter(|c| c.is_alphabetic()).collect();
-    if letters.len() <= 2 {
+    if letters.chars().count() <= 2 {
         let low = letters.to_lowercase();
         static GENUINE_SHORT_VI: &[&str] = &[
             "ra", "đi", "có", "là", "và", "ở", "ăn", "về", "ta", "họ", "nó", "ba", "mẹ", "ơn", "ạ",
             "ơi", "ôi", "ơ", "dạ", "ừ", "ai", "gì", "rõ", "im", "đã", "sẽ", "kìa", "đây", "đó",
-            "xe", "cũ", "xa", "to", "bố", "cô", "chú", "bác", "anh", "em", "ông", "bà", "chị",
+            "xe", "cũ", "to", "bố", "cô", "chú", "bác", "anh", "em", "ông", "bà", "chị",
         ];
         if !GENUINE_SHORT_VI.contains(&low.as_str()) {
             return true;
@@ -75,11 +86,116 @@ fn is_pure_ocr_junk(text: &str) -> bool {
 
 fn clean_foreign_ocr_noise(text: &str) -> String {
     let re_player_junk = regex::Regex::new(r"(?i)\s*(?:On\s+O\s+Ép\s+On|Ổn\s+Áp\s+On|On\s+Cx\s+Oy|Oy\s+Em|Cài\s+đặt\s+Ơ\s+On|Cào\s+Cào|Cd\s+Ê\s+Ẩm|Cư\s+Pui|Kevin\s+(?:Cd|On|Oy)|On\s+Cào).*$").unwrap();
-    let cleaned = re_player_junk.replace_all(text, "").trim().to_string();
+    let mut cleaned = re_player_junk.replace_all(text, "").trim().to_string();
+    // Strip player timecodes, OSD buttons (e.g. "08:23 / 23:59", "10_ E", "# E", ". E")
+    static RE_OSD: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re_osd = RE_OSD.get_or_init(|| {
+        regex::Regex::new(r"(?i)(?:\b\d{1,2}[:.]\d{2}(?::\d{2})?(?:\s*[/|\\]\s*\d{1,2}[:.]\d{1,2})?\b|\s+(?:\d+_?\s*[E]|[#*]\s*[E]|[/|\\]\s*)$|\s+\.\s+[A-Z]$)").unwrap()
+    });
+    cleaned = re_osd.replace_all(&cleaned, "").trim().to_string();
+    cleaned = cleaned.replace("[UNK]", " ").split_whitespace().collect::<Vec<_>>().join(" ");
     if is_pure_ocr_junk(&cleaned) {
         return String::new();
     }
     cleaned
+}
+
+fn clean_and_validate_vietnamese_ocr(text: &str) -> String {
+    let lex = ocr_engine_rs::lexicon::Lexicon::global();
+    let raw_tokens: Vec<&str> = text.split_whitespace().collect();
+    if raw_tokens.is_empty() {
+        return String::new();
+    }
+
+    // Strip known anime-player/watermark gibberish tokens & stray isolated non-word edge tokens
+    let is_token_valid_vi = |tok: &str| -> bool {
+        let core = tok
+            .trim_matches(|c: char| !c.is_alphanumeric())
+            .to_lowercase();
+        if core.is_empty() {
+            return false;
+        }
+        if core.chars().all(|c| c.is_ascii_digit()) {
+            return true;
+        }
+        if core.chars().any(|c| c.is_ascii_digit()) {
+            return false;
+        }
+        let has_vowel = core.chars().any(|c| {
+            "aeiouyàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ"
+                .contains(c)
+        });
+        if !has_vowel {
+            return false;
+        }
+        lex.syllables.contains(&core) || lex.words.contains(&core)
+    };
+
+    let raw_alpha_count = raw_tokens
+        .iter()
+        .filter(|tok| tok.chars().any(|c| c.is_alphabetic()))
+        .count();
+    // For short <= 3-word OCR fragments, if ANY word isn't a real Vietnamese word/syllable
+    // (e.g. "rít lũ lei", "ít lũ Lmi", "Cuối Gg", "ta lu4"), reject the whole fragment.
+    if raw_alpha_count <= 3
+        && raw_tokens
+            .iter()
+            .filter(|tok| tok.chars().any(|c| c.is_alphabetic()))
+            .any(|tok| !is_token_valid_vi(tok))
+    {
+        return String::new();
+    }
+
+    // Strip leading/trailing non-Vietnamese watermark/OSD tokens (e.g. ". iateuhty", "10_ E", "ateuhti")
+    let mut start = 0;
+    let mut end = raw_tokens.len();
+    while start < end && !is_token_valid_vi(raw_tokens[start]) {
+        start += 1;
+    }
+    while end > start && !is_token_valid_vi(raw_tokens[end - 1]) {
+        end -= 1;
+    }
+    if start >= end {
+        return String::new();
+    }
+
+    let kept: Vec<&str> = raw_tokens[start..end].to_vec();
+    let alpha_tokens: Vec<&str> = kept
+        .iter()
+        .copied()
+        .filter(|tok| tok.chars().any(|c| c.is_alphabetic()))
+        .collect();
+    if alpha_tokens.is_empty() {
+        return String::new();
+    }
+
+    let valid_count = alpha_tokens.iter().filter(|t| is_token_valid_vi(t)).count();
+    let total = alpha_tokens.len();
+    if total == 1 {
+        let core = alpha_tokens[0]
+            .trim_matches(|c: char| !c.is_alphanumeric())
+            .to_lowercase();
+        // Reject single-word non-dialogue artifacts (e.g. "Xa", "Uin", "uiateuht")
+        static VALID_ONE_WORD_DIALOGUE: &[&str] = &[
+            "sao", "gì", "đâu", "nào", "không", "phải", "đúng", "thật", "khoan", "dừng",
+            "đứng", "chạy", "cút", "im", "thôi", "rồi", "xong", "cứu", "nguy", "chào",
+            "vâng", "dạ", "ừ", "hả", "ơi", "ôi", "ơ", "á", "được", "chắc", "biết",
+        ];
+        if valid_count == 0
+            || (core.chars().count() <= 3 && !VALID_ONE_WORD_DIALOGUE.contains(&core.as_str()))
+        {
+            return String::new();
+        }
+    } else if valid_count * 100 < total * 55 {
+        // Less than 55% genuine Vietnamese syllables -> background texture/watermark noise
+        return String::new();
+    }
+
+    let joined = kept.join(" ");
+    if is_pure_ocr_junk(&joined) {
+        return String::new();
+    }
+    joined
 }
 
 pub async fn api_ocr_subtitle(
@@ -149,7 +265,7 @@ pub async fn api_ocr_subtitle(
             .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, format!("OCR inference failed: {e}")))?;
         let accepted: Vec<(String, f32)> = res
             .into_iter()
-            .filter(|r| r.confidence >= 0.58)
+            .filter(|r| r.confidence >= 0.62)
             .filter_map(|r| {
                 let text = r.text.trim().to_owned();
                 (!text.is_empty()).then_some((text, r.confidence))
@@ -233,10 +349,20 @@ pub async fn api_ocr_subtitle(
         // Nguồn phụ đề tiếng Việt (Vietsub):
         let restored = state.ocr.restore_vietnamese(&rec_trimmed);
         let restored = preserve_recognized_tones(&rec_trimmed, &restored);
-        (restored.clone(), restored)
+        let validated = clean_and_validate_vietnamese_ocr(&restored);
+        if validated.is_empty() {
+            return Ok(Json(serde_json::json!({
+                "empty": true,
+                "original": "",
+                "translated": "",
+                "confidence": 0.0,
+                "timings": { "ocr_ms": ocr_ms }
+            })));
+        }
+        (validated.clone(), validated)
     } else {
         // Tự động nhận diện (Auto):
-        // Chỉ coi là Vietsub nếu có tối thiểu 2 dấu tiếng Việt rõ rệt hoặc từ vựng tiếng Việt phổ biến
+        // Chỉ coi là Vietsub nếu có tối thiểu 1 dấu tiếng Việt rõ rệt hoặc từ vựng tiếng Việt phổ biến
         let vi_markers_count = rec_trimmed
             .chars()
             .filter(|c| "àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ".contains(*c))
@@ -247,7 +373,17 @@ pub async fn api_ocr_subtitle(
         if is_genuine_vi {
             let restored = state.ocr.restore_vietnamese(&rec_trimmed);
             let restored = preserve_recognized_tones(&rec_trimmed, &restored);
-            (restored.clone(), restored)
+            let validated = clean_and_validate_vietnamese_ocr(&restored);
+            if validated.is_empty() {
+                return Ok(Json(serde_json::json!({
+                    "empty": true,
+                    "original": "",
+                    "translated": "",
+                    "confidence": 0.0,
+                    "timings": { "ocr_ms": ocr_ms }
+                })));
+            }
+            (validated.clone(), validated)
         } else {
             let trans = fetch_online_translation(&state, &rec_trimmed, "auto").await;
             if !trans.is_empty() {
@@ -319,7 +455,10 @@ fn preserve_recognized_tones(recognized: &str, restored: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::preserve_recognized_tones;
+    use super::{
+        clean_and_validate_vietnamese_ocr, clean_foreign_ocr_noise, is_pure_ocr_junk,
+        preserve_recognized_tones,
+    };
 
     #[test]
     fn preserves_tones_seen_by_the_visual_model() {
@@ -342,6 +481,52 @@ mod tests {
         assert_eq!(
             preserve_recognized_tones("Hắn biểt và thừ cúa tôi", "Hắn biết và thử của tôi"),
             "Hắn biết và thử của tôi"
+        );
+    }
+
+    #[test]
+    fn rejects_empty_screen_watermarks_and_gibberish() {
+        for junk in [
+            "uiateuht",
+            "wiateukt",
+            "iateubds",
+            "lateuhh",
+            "rít lũ lei",
+            "ít lũ Lmi",
+            "hít lulan",
+            "Cuối Gg",
+            "Uin",
+            "ta lu4",
+            "Ngưotặ",
+            "bít lũ/ uiateuhty",
+            "Được Bảo Chứng Bởi",
+            "Đã Chơi",
+            "Xa",
+            "Ch![UNK]n6i[UNK]dien",
+        ] {
+            let pre = clean_foreign_ocr_noise(junk);
+            if !pre.is_empty() {
+                assert!(
+                    is_pure_ocr_junk(&pre) || clean_and_validate_vietnamese_ocr(&pre).is_empty(),
+                    "Expected '{junk}' to be rejected as background/watermark junk"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn preserves_genuine_vietnamese_dialogue_and_strips_edge_watermark() {
+        assert_eq!(
+            clean_and_validate_vietnamese_ocr("Một cô gái từ nơi xa lạ. iateuhty"),
+            "Một cô gái từ nơi xa lạ."
+        );
+        assert_eq!(
+            clean_and_validate_vietnamese_ocr("Phải rồi, đó là lý do gia đình nàng tới tìm"),
+            "Phải rồi, đó là lý do gia đình nàng tới tìm"
+        );
+        assert_eq!(
+            clean_and_validate_vietnamese_ocr("Sao?"),
+            "Sao?"
         );
     }
 }
