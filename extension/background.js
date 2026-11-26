@@ -46,11 +46,15 @@ async function handleSynthesizeTTS(text, voice) {
 
   // 1. Try local LiveSub pure Rust native engine at http://localhost:3000
   try {
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 1800);
     const res = await fetch('http://localhost:3000/api/dub-subtitle', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: trimmed, voice: v })
+      body: JSON.stringify({ text: trimmed, voice: v }),
+      signal: controller.signal
     });
+    clearTimeout(tid);
     if (res.ok) {
       const data = await res.json();
       if (data && data.audio_base64) {
@@ -66,11 +70,15 @@ async function handleSynthesizeTTS(text, voice) {
 
   // 2. Fallback: try http://localhost:3000/api/tts
   try {
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 1800);
     const res = await fetch('http://localhost:3000/api/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: trimmed, voice: v })
+      body: JSON.stringify({ text: trimmed, voice: v }),
+      signal: controller.signal
     });
+    clearTimeout(tid);
     if (res.ok) {
       const blob = await res.blob();
       const reader = new FileReader();
@@ -92,26 +100,31 @@ async function handleSynthesizeTTS(text, voice) {
     }
   } catch (_) {}
 
-  // 3. Fallback: Edge-TTS / Google Translate TTS endpoint
+  // 3. Fallback: Google Translate TTS endpoint (short phrases)
   try {
-    const googleTTSUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(trimmed)}&tl=vi&client=tw-ob`;
-    const res = await fetch(googleTTSUrl);
-    if (res.ok) {
-      const blob = await res.blob();
-      const reader = new FileReader();
-      const base64Data = await new Promise(resolve => {
-        reader.onloadend = () => {
-          const resStr = reader.result;
-          resolve(resStr.split(',')[1] || '');
+    if (trimmed.length <= 160) {
+      const googleTTSUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(trimmed)}&tl=vi&client=tw-ob`;
+      const controller = new AbortController();
+      const tid = setTimeout(() => controller.abort(), 2500);
+      const res = await fetch(googleTTSUrl, { signal: controller.signal });
+      clearTimeout(tid);
+      if (res.ok) {
+        const blob = await res.blob();
+        const reader = new FileReader();
+        const base64Data = await new Promise(resolve => {
+          reader.onloadend = () => {
+            const resStr = reader.result;
+            resolve(resStr.split(',')[1] || '');
+          };
+          reader.readAsDataURL(blob);
+        });
+        return {
+          success: true,
+          audio_base64: base64Data,
+          audio_mime: 'audio/mpeg',
+          voice: 'google-vi'
         };
-        reader.readAsDataURL(blob);
-      });
-      return {
-        success: true,
-        audio_base64: base64Data,
-        audio_mime: 'audio/mpeg',
-        voice: 'google-vi'
-      };
+      }
     }
   } catch (_) {}
 
@@ -128,15 +141,20 @@ async function handleOcrFrame(base64Image, sourceLang = 'auto') {
     form.append('image', blob, 'frame.jpg');
     form.append('source_lang', sourceLang);
 
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 2000);
     const ocrRes = await fetch('http://localhost:3000/api/ocr-subtitle', {
       method: 'POST',
-      body: form
+      body: form,
+      signal: controller.signal
     });
+    clearTimeout(tid);
+
     if (ocrRes.ok) {
       return await ocrRes.json();
     }
   } catch (e) {
-    return { empty: true, error: String(e) };
+    return { empty: true, offline: true };
   }
   return { empty: true };
 }

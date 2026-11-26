@@ -17,6 +17,8 @@
   const btnTestVoice = document.getElementById('btnTestVoice');
   const btnOpenStudio = document.getElementById('btnOpenStudio');
 
+  let isLocalEngineOnline = false;
+
   // Default configuration
   const DEFAULT_CONFIG = {
     isDubbingActive: true,
@@ -70,11 +72,16 @@
   // 3. Ping local LiveSub Engine (Port 3000)
   async function checkLocalEngine() {
     try {
+      const controller = new AbortController();
+      const tid = setTimeout(() => controller.abort(), 1200);
       const res = await fetch('http://localhost:3000/api/pipeline-status', {
         method: 'GET',
-        cache: 'no-store'
+        cache: 'no-store',
+        signal: controller.signal
       });
+      clearTimeout(tid);
       if (res && res.ok) {
+        isLocalEngineOnline = true;
         statusDot.className = 'status-dot online';
         statusLabel.textContent = 'Native Pure Rust (3000)';
         statusLabel.style.color = '#86efac';
@@ -84,11 +91,16 @@
 
     // Fallback: check /api/health
     try {
+      const controller = new AbortController();
+      const tid = setTimeout(() => controller.abort(), 1200);
       const res = await fetch('http://localhost:3000/api/health', {
         method: 'GET',
-        cache: 'no-store'
+        cache: 'no-store',
+        signal: controller.signal
       });
+      clearTimeout(tid);
       if (res && res.ok) {
+        isLocalEngineOnline = true;
         statusDot.className = 'status-dot online';
         statusLabel.textContent = 'LiveSub Đang Chạy';
         statusLabel.style.color = '#86efac';
@@ -97,6 +109,7 @@
     } catch (_) {}
 
     // Not reachable -> Cloud Edge-TTS / Web Speech
+    isLocalEngineOnline = false;
     statusDot.className = 'status-dot offline';
     statusLabel.textContent = 'Đám Mây / Edge-TTS';
     statusLabel.style.color = '#fde047';
@@ -127,6 +140,11 @@
         try {
           const u = new SpeechSynthesisUtterance(testSample);
           u.lang = 'vi-VN';
+          const voices = window.speechSynthesis.getVoices();
+          if (voices && voices.length > 0) {
+            const viVoice = voices.find(v => v.lang === 'vi-VN' || v.lang.startsWith('vi'));
+            if (viVoice) u.voice = viVoice;
+          }
           window.speechSynthesis.speak(u);
         } catch (_) {}
       }
@@ -147,11 +165,33 @@
   });
 
   btnTestVoice.addEventListener('click', testVoice);
+
   btnOpenStudio.addEventListener('click', () => {
-    chrome.tabs.create({ url: 'http://localhost:3000' });
+    if (isLocalEngineOnline) {
+      chrome.tabs.create({ url: 'http://localhost:3000' });
+    } else {
+      const msg = [
+        '⚠️ Chưa phát hiện LiveSub Studio trên máy tính!',
+        '',
+        'Vui lòng khởi động phần mềm LiveSub Studio (setup.exe / biểu tượng LiveSub trên Desktop) để kích hoạt cổng 3000:',
+        '  • Quét chữ phụ đề dán chết trên video (Native Rust OCR)',
+        '  • Giọng đọc AI VieNeu-TTS Offline tự nhiên',
+        '',
+        '👉 Extension hiện tại vẫn đang tự động dùng chế độ Đám Mây (Edge-TTS / Giọng trình duyệt) để đọc phụ đề có sẵn trên YouTube, Netflix, v.v.',
+        '',
+        'Bạn có muốn thử mở trang http://localhost:3000 không?'
+      ].join('\n');
+
+      if (confirm(msg)) {
+        chrome.tabs.create({ url: 'http://localhost:3000' });
+      }
+    }
   });
 
   // Initialize
   loadSettings();
   checkLocalEngine();
+
+  // Periodic status poll while popup is open
+  setInterval(checkLocalEngine, 3500);
 })();
