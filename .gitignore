@@ -69,3 +69,5 @@ server_runtime.stderr.log
 
 .chrome_remote/
 *.log
+
+LiveSub_Studio_Extension.zip
