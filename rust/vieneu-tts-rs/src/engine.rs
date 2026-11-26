@@ -77,16 +77,24 @@ impl VieneuEngine {
             .with_name("vieneu-tts")
             .build()?;
 
-        let intra_threads = (std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(4)
-            / 3)
-        .max(2)
-        .min(4);
+        let cuda_ready = CUDA::is_available().unwrap_or(false);
+        let dml_ready = !cuda_ready && DirectML::is_available().unwrap_or(false);
+        // On CUDA/DirectML, keep ORT CPU intra_threads minimal (1) so 4 sessions don't spawn
+        // idle-spinning CPU worker pools that contend with CPU-bound VietOCR.
+        let intra_threads = if cuda_ready || dml_ready {
+            1
+        } else {
+            (std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(4)
+                / 2)
+            .max(2)
+            .min(4)
+        };
 
-        let ep_name = if CUDA::is_available().unwrap_or(false) {
+        let ep_name = if cuda_ready {
             "NVIDIA CUDA Hardware GPU"
-        } else if DirectML::is_available().unwrap_or(false) {
+        } else if dml_ready {
             "DirectML DirectX 12 Hardware GPU (NVIDIA RTX 3050)"
         } else {
             "CPU High-Performance P-cores"

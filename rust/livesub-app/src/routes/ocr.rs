@@ -120,23 +120,20 @@ pub async fn api_ocr_subtitle(
 
     let start_ocr = Instant::now();
 
-    // Decode image first so malformed uploads cannot reach the inference engine.
-    let decoded = image::load_from_memory(&img_data)
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid image: {e}")))?;
-
-    let is_blank = is_blank_subtitle(&decoded);
-
-    if is_blank {
-        return Ok(Json(serde_json::json!({
-            "empty": true,
-            "original": "",
-            "translated": "",
-            "confidence": 0.0
-        })));
-    }
-
     let (selected_engine, engine_name) = state.ocr_pool.select_engine(&source_lang);
-    let (recognized, ocr_confidence) = if let Some(engine) = selected_engine {
+    let (is_blank, recognized, ocr_confidence) = tokio::task::spawn_blocking(move || -> Result<(bool, String, f32), (StatusCode, String)> {
+        // Decode image inside blocking worker so async HTTP executor stays completely free.
+        let decoded = image::load_from_memory(&img_data)
+            .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid image: {e}")))?;
+
+        if is_blank_subtitle(&decoded) {
+            return Ok((true, String::new(), 0.0));
+        }
+
+        let Some(engine) = selected_engine else {
+            return Ok((false, String::new(), 0.0));
+        };
+
         let mut dyn_img = decoded;
         let (w, h) = (dyn_img.width(), dyn_img.height());
         // Scale up low-resolution subtitles with Lanczos3 filter to preserve Vietnamese circumflex (ô, ê, â) and diacritic marks
@@ -147,48 +144,49 @@ pub async fn api_ocr_subtitle(
             dyn_img = dyn_img.resize(new_w, new_h, image::imageops::FilterType::Lanczos3);
         }
 
-        tokio::task::spawn_blocking(move || -> Result<(String, f32), String> {
-            let res = engine.run_from_image(&dyn_img).map_err(|e| e.to_string())?;
-            let accepted: Vec<(String, f32)> = res
-                .into_iter()
-                .filter(|r| r.confidence >= 0.58)
-                .filter_map(|r| {
-                    let text = r.text.trim().to_owned();
-                    (!text.is_empty()).then_some((text, r.confidence))
-                })
-                .collect();
-            let mut joined = String::new();
-            let mut confidence_sum = 0.0_f32;
-            for (idx, (line, confidence)) in accepted.iter().enumerate() {
-                if idx > 0 && !joined.is_empty() {
-                    joined.push(' ');
-                }
-                joined.push_str(line);
-                confidence_sum += confidence;
+        let res = engine
+            .run_from_image(&dyn_img)
+            .map_err(|e| (StatusCode::UNPROCESSABLE_ENTITY, format!("OCR inference failed: {e}")))?;
+        let accepted: Vec<(String, f32)> = res
+            .into_iter()
+            .filter(|r| r.confidence >= 0.58)
+            .filter_map(|r| {
+                let text = r.text.trim().to_owned();
+                (!text.is_empty()).then_some((text, r.confidence))
+            })
+            .collect();
+        let mut joined = String::new();
+        let mut confidence_sum = 0.0_f32;
+        for (idx, (line, confidence)) in accepted.iter().enumerate() {
+            if idx > 0 && !joined.is_empty() {
+                joined.push(' ');
             }
-            let confidence = if accepted.is_empty() {
-                0.0
-            } else {
-                confidence_sum / accepted.len() as f32
-            };
-            Ok((joined, confidence))
-        })
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("OCR worker failed: {e}"),
-            )
-        })?
-        .map_err(|e| {
-            (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                format!("OCR inference failed: {e}"),
-            )
-        })?
-    } else {
-        (String::new(), 0.0)
-    };
+            joined.push_str(line);
+            confidence_sum += confidence;
+        }
+        let confidence = if accepted.is_empty() {
+            0.0
+        } else {
+            confidence_sum / accepted.len() as f32
+        };
+        Ok((false, joined, confidence))
+    })
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("OCR worker failed: {e}"),
+        )
+    })??;
+
+    if is_blank {
+        return Ok(Json(serde_json::json!({
+            "empty": true,
+            "original": "",
+            "translated": "",
+            "confidence": 0.0
+        })));
+    }
 
     let ocr_ms = start_ocr.elapsed().as_secs_f64() * 1000.0;
 

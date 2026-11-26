@@ -560,34 +560,28 @@ class LiveDubStudio {
       return Math.min(safeCap, Math.max(0.5, manualRate));
     }
     let rate = manualRate;
+    // Cap adaptive overdrive to keep natural voice prosody (prevents VieNeu from
+    // accelerating to 1.7x-2.0x chipmunk speed simply due to local synthesis time).
+    const adaptiveCap = Math.min(safeCap, Math.max(manualRate, 1.40));
 
-    // Realtime Lag Overdrive:
-    // Anime & movie dialogue is fast-paced (~4.8-5.5 syllables/sec).
-    // If the queue lags behind the video, immediately accelerate speech rate to eliminate cumulative delay.
-    if (queueLagMs > 1200) {
-      rate = Math.max(rate, 1.70);
-    } else if (queueLagMs > 700) {
-      rate = Math.max(rate, 1.50);
-    } else if (queueLagMs > 350) {
-      rate = Math.max(rate, 1.35);
-    } else if (queueLagMs > 150) {
-      rate = Math.max(rate, 1.25);
+    if (queueLagMs > 3000 || queueDepth >= 3) {
+      rate = Math.max(rate, Math.min(adaptiveCap, 1.40));
+    } else if (queueLagMs > 1800 || queueDepth >= 2) {
+      rate = Math.max(rate, Math.min(adaptiveCap, 1.30));
+    } else if (queueLagMs > 900) {
+      rate = Math.max(rate, Math.min(adaptiveCap, 1.22));
     }
 
-    if (queueDepth >= 2) {
-      rate = Math.max(rate, 1.30);
-    }
-
-    // Adaptive Speech Pacing: fit dialogue length to anime frame duration
+    // Adaptive Speech Pacing: fit dialogue length gently without rushing
     if (textLength > 0) {
       const estimatedSyllables = Math.max(1, textLength / 3.8);
       const estimatedSpeechSeconds = estimatedSyllables * 0.22;
       const targetDuration = originalDuration > 0
         ? originalDuration
-        : Math.max(1.0, textLength * 0.045);
+        : Math.max(1.2, textLength * 0.052);
       if (targetDuration > 0 && estimatedSpeechSeconds > targetDuration) {
         const fitRate = estimatedSpeechSeconds / targetDuration;
-        rate = Math.max(rate, fitRate);
+        rate = Math.max(rate, Math.min(adaptiveCap, fitRate));
       }
     }
 
@@ -1837,8 +1831,8 @@ class LiveDubStudio {
         sourceY = Math.floor(height * 0.70);
         sourceHeight = Math.max(1, Math.floor(height * 0.24));
       }
-      // Giữ nguyên độ phân giải gốc 1:1 (lên tới 1080p/1920px) từ Math.min(1, 960 / width) để không làm mờ hoặc mất các dấu phụ nhỏ
-      const scale = Math.min(1, 1920 / width);
+      // 1280px preserves crisp Vietnamese diacritic marks while keeping PNG encoding fast
+      const scale = Math.min(1, 1280 / width);
       const probeCanvas = document.createElement('canvas');
       probeCanvas.width = Math.max(1, Math.round(sourceWidth * scale));
       probeCanvas.height = Math.max(1, Math.round(sourceHeight * scale));
@@ -1961,9 +1955,9 @@ class LiveDubStudio {
         sourceY = Math.floor(height * 0.70);
         sourceHeight = Math.max(1, Math.floor(height * 0.28));
       }
-      // Target width 1440px - 1920px preserves high pixel density so Vietnamese tone marks
-      // (dấu sắc, huyền, hỏi, ngã, nặng) have crisp sub-pixel detail and are recognized with 100% precision
-      const targetWidth = Math.min(1920, Math.max(1280, Math.round(sourceWidth)));
+      // Target width 960px - 1280px preserves Vietnamese tone marks cleanly while cutting
+      // PNG encoding & backend decode latency by >2x compared to 1920px
+      const targetWidth = Math.min(1280, Math.max(960, Math.round(sourceWidth)));
       const scale = targetWidth / sourceWidth;
       this.ocrCanvas.width = targetWidth;
       this.ocrCanvas.height = Math.max(1, Math.round(sourceHeight * scale));
@@ -3881,6 +3875,12 @@ class LiveDubStudio {
           || item.generation !== this.dubbingGeneration
         );
         if (isStale()) continue;
+        // Drop severely stale backlog items (> 4.5s old) when newer subtitles are waiting
+        // so voiceover catches up naturally instead of piling up or rushing at 2x speed.
+        const itemLagMs = item.enqueuedAt ? (performance.now() - item.enqueuedAt) : 0;
+        if (!item.isChained && this.liveDubbingQueue.length >= 2 && itemLagMs > 4500) {
+          continue;
+        }
 
         // Start the current line before submitting another GPU synthesis request.
         try {

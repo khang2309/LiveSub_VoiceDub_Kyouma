@@ -83,7 +83,7 @@ async function handleSynthesizeTTS(text, voice) {
   // Local LiveSub pure Rust native engine at http://localhost:3000
   try {
     const controller = new AbortController();
-    const tid = setTimeout(() => controller.abort(), 1200);
+    const tid = setTimeout(() => controller.abort(), 4500);
     const res = await fetch('http://localhost:3000/api/dub-subtitle', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -122,7 +122,7 @@ async function handleOcrFrame(base64Image, sourceLang = 'auto') {
     form.append('source_lang', sourceLang);
 
     const controller = new AbortController();
-    const tid = setTimeout(() => controller.abort(), 1500);
+    const tid = setTimeout(() => controller.abort(), 3000);
     const ocrRes = await fetch('http://localhost:3000/api/ocr-subtitle', {
       method: 'POST',
       body: form,
