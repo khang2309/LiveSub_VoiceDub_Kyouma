@@ -137,9 +137,9 @@ pub async fn api_ocr_subtitle(
     let recognized = if let Some(engine) = selected_engine {
         let mut dyn_img = decoded;
         let (w, h) = (dyn_img.width(), dyn_img.height());
-        // Scale up low-resolution subtitles with Lanczos3 filter to preserve Vietnamese diacritic marks
-        if h < 42 {
-            let scale_factor = (54.0 / h as f32).max(1.5).min(2.5);
+        // Scale up low-resolution subtitles with Lanczos3 filter to preserve Vietnamese circumflex (ô, ê, â) and diacritic marks
+        if h < 64 {
+            let scale_factor = (72.0 / h as f32).max(1.3).min(2.5);
             let new_w = (w as f32 * scale_factor) as u32;
             let new_h = (h as f32 * scale_factor) as u32;
             dyn_img = dyn_img.resize(new_w, new_h, image::imageops::FilterType::Lanczos3);
