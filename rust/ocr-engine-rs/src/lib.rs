@@ -333,6 +333,22 @@ mod tests {
                 "Tôi thề sẽ trả tiền.",
             ),
             (
+                "Sao anh ta lại biết tên dược liệu thô làm từ rễ ó đầu phơi khó?",
+                "Sao anh ta lại biết tên dược liệu thô làm từ rễ ô đầu phơi khô?",
+            ),
+            (
+                "sóng trong căn nhà này",
+                "sống trong căn nhà này",
+            ),
+            (
+                "ăn đỏ thừa của bọn tôi",
+                "ăn đồ thừa của bọn tôi",
+            ),
+            (
+                "đến chỏ này đi",
+                "đến chỗ này đi",
+            ),
+            (
                 "Con tôi đổ bệnh rồi. 2 Y",
                 "Con tôi đổ bệnh rồi.",
             ),
