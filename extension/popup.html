@@ -14,7 +14,7 @@
         <div class="brand-logo">LS</div>
         <div class="brand-text">
           <h1>LiveSub Studio</h1>
-          <span class="badge-version">v1.2.0 • Chrome Extension</span>
+          <span class="badge-version">v1.2.1 • Chrome Extension</span>
         </div>
       </div>
       <div class="engine-status" id="engineStatus" title="Trạng thái hoạt động của Tiện ích">
@@ -131,20 +131,19 @@
     <div class="desktop-app-modal" id="appModal" style="display: none;">
       <div class="modal-card">
         <div class="modal-header">
-          <span class="modal-title">🖥️ Kết Nối Ứng Dụng LiveSub Desktop</span>
+          <span class="modal-title">🖥️ Kết Nối Ứng Dụng LiveSub Studio</span>
           <button type="button" class="modal-close-btn" id="btnCloseModal">✕</button>
         </div>
         <div class="modal-body">
-          <p class="modal-text">Ứng dụng LiveSub Desktop (file cài đặt setup.exe trên máy) chưa được khởi động.</p>
+          <p class="modal-text">Ứng dụng <strong>LiveSub Studio Desktop</strong> chưa được khởi động trên máy tính của bạn.</p>
           <div class="modal-badge-box">
-            <span class="modal-badge-ok">✅ Tiện ích vẫn đang hoạt động 100% độc lập!</span>
-            <span class="modal-subtext">Bạn vẫn có thể lồng tiếng và nghe đọc phụ đề trên mọi trang web xem phim bằng giọng AI trình duyệt mượt mà.</span>
+            <span class="modal-badge-ok">💡 Cách kết nối tính năng nâng cao (OCR GPU & VieNeu-TTS):</span>
+            <span class="modal-subtext">1. Mở icon <strong>LiveSub Studio</strong> ngoài màn hình Desktop / Start Menu.<br>2. Tiện ích Chrome sẽ tự động phát hiện và kết nối (chuyển sang màu xanh lá).</span>
           </div>
-          <p class="modal-notice">Khi cần tính năng nâng cao (Quét OCR video có phụ đề dán chết hoặc giọng VieNeu-TTS Offline), hãy mở phần mềm LiveSub trên máy tính.</p>
+          <p class="modal-notice">✅ Hiện tại trên Chrome, tiện ích vẫn lồng tiếng bình thường cho các video có phụ đề chuẩn bằng giọng AI trình duyệt.</p>
         </div>
         <div class="modal-actions">
-          <button type="button" class="btn btn-secondary" id="btnModalUnderstood">Đã Hiểu</button>
-          <button type="button" class="btn btn-outline" id="btnModalForceOpen">Vẫn Mở Localhost:3000</button>
+          <button type="button" class="btn btn-primary" id="btnModalUnderstood">Đã Hiểu</button>
         </div>
       </div>
     </div>

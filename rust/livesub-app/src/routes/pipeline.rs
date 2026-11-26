@@ -31,6 +31,14 @@ pub async fn api_overlay_toggle() -> Json<serde_json::Value> {
     Json(serde_json::json!({ "status": "ok" }))
 }
 
+pub async fn api_health() -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "status": "ok",
+        "app": "LiveSub Studio",
+        "version": "1.0.5"
+    }))
+}
+
 pub async fn api_tts_status(State(state): State<AppState>) -> Json<serde_json::Value> {
     let voices = state.vieneu.list_voices();
     let default_voice = state.vieneu.default_voice();

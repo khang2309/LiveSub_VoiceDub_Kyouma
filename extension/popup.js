@@ -1,5 +1,5 @@
 // LiveSub Studio Extension - Popup Controller
-// Version 1.2.0 - Standalone UI & Desktop Bridge
+// Version 1.2.1 - Standalone UI & Desktop Bridge
 
 (function () {
   'use strict';
@@ -22,7 +22,6 @@
   const appModal = document.getElementById('appModal');
   const btnCloseModal = document.getElementById('btnCloseModal');
   const btnModalUnderstood = document.getElementById('btnModalUnderstood');
-  const btnModalForceOpen = document.getElementById('btnModalForceOpen');
 
   let isLocalEngineOnline = false;
 
@@ -176,13 +175,6 @@
   if (btnModalUnderstood) {
     btnModalUnderstood.addEventListener('click', () => {
       appModal.style.display = 'none';
-    });
-  }
-
-  if (btnModalForceOpen) {
-    btnModalForceOpen.addEventListener('click', () => {
-      appModal.style.display = 'none';
-      chrome.tabs.create({ url: 'http://localhost:3000' });
     });
   }
 

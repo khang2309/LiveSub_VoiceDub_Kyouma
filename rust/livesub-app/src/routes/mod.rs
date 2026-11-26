@@ -27,6 +27,7 @@ pub fn build_router(state: AppState, public_dir: &Path) -> Router {
         .allow_headers(Any);
 
     Router::new()
+        .route("/api/health", get(pipeline::api_health))
         .route("/api/tts-status", get(pipeline::api_tts_status))
         .route("/api/tts/status", get(pipeline::api_tts_status))
         .route("/api/control/key", post(pipeline::api_control_key))

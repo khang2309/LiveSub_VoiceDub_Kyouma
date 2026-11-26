@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LiveSub Studio - AI Thuyết Minh & Lồng Tiếng Video Realtime",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Thuyết minh lồng tiếng AI đồng bộ từng giây cho mọi video (YouTube, AnimeVietsub, Netflix, Bilibili, phim web). Tự động giảm tiếng gốc, dịch và đọc mượt mà.",
   "icons": {
     "16": "icon16.png",

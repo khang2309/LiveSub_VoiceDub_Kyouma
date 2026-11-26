@@ -143,6 +143,7 @@
     if (/[{}\[\]\\]/.test(text)) return null;
     if (/metadataType|discontinuity|cuePoint|segment|timestamp|duration|bandwidth|X-TIMESTAMP|WEBVTT/i.test(text)) return null;
     if (text.includes('"') && (text.includes(':') || text.includes('metadata') || text.includes('type'))) return null;
+    if (/^"?\{.*\}?"?$/.test(text) || text.includes('{"') || text.includes('"}')) return null;
 
     // 3. Reject pure numbers, timestamps, durations, seek buttons (:59, 10, 14:12 / 23:59)
     if (/^[:0-9\s.,\-/]+$/.test(text)) return null;
@@ -547,19 +548,26 @@
       return;
     }
 
+    // STRICT ANTI-DUPLICATE: NEVER inject floating widget inside an iframe!
+    if (window.self !== window.top) {
+      if (existing) existing.remove();
+      return;
+    }
+
     const video = findActiveVideo();
     if (!video) {
       if (existing) existing.remove();
       return;
     }
 
-    // Only inject in top window OR if video is inside this specific iframe
+    // Only inject in top window
     if (!existing) {
       createFloatingWidget();
     }
   }
 
   function createFloatingWidget() {
+    if (window.self !== window.top) return; // Top window only!
     if (document.getElementById('livesub-floating-widget')) return;
 
     const widget = document.createElement('div');
@@ -612,6 +620,8 @@
   }
 
   function updateWidgetStatus(text) {
+    if (!text) return;
+    if (text.includes('metadataType') || text.includes('discontinuity') || text.includes('{') || text.includes('}')) return;
     const el = document.getElementById('livesub-widget-status');
     if (el) el.textContent = text;
   }
