@@ -376,6 +376,14 @@ mod tests {
                 "Trời tôi rồi, về thôi",
                 "Trời tối rồi, về thôi",
             ),
+            (
+                "Cậu ấy bảo sẽ không bỏ mặc cô đâu, đừng lo lắng quá.",
+                "Cậu ấy bảo sẽ không bỏ mặc cô đâu, đừng lo lắng quá.",
+            ),
+            (
+                "Hắn ta cũng không thể nào biểt được chuyện này đâu.",
+                "Hắn ta cũng không thể nào biết được chuyện này đâu.",
+            ),
         ];
 
         for (input, expected) in samples {

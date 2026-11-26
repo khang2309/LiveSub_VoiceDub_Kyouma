@@ -156,9 +156,15 @@ impl GpuOcrEngine {
             det,
             rec_session: Mutex::new(rec_session),
             rec_input_name,
-            det_pre: DetPreProcessor::new(DetPreProcessorConfig::default()),
+            det_pre: DetPreProcessor::new(DetPreProcessorConfig {
+                limit_side_len: 1600,
+                ..Default::default()
+            }),
             det_post: DetPostProcessor::new(DetPostProcessorConfig::default()),
-            det_unclipper: DetPolygonUnclipper::new(DetPolygonUnclipperConfig::default()),
+            det_unclipper: DetPolygonUnclipper::new(DetPolygonUnclipperConfig {
+                unclip_ratio: 1.65,
+                ..Default::default()
+            }),
             rec_pre,
             rec_post,
             rec_batch_size: 8,
@@ -215,7 +221,7 @@ impl GpuOcrEngine {
 
         let (scale_x, scale_y) = preprocessed_det.inverse_scale();
         let (width_f, height_f) = (image_dims.0 as f64, image_dims.1 as f64);
-        let polygons: Vec<Polygon<f64>> = boxes
+        let mut polygons: Vec<Polygon<f64>> = boxes
             .into_iter()
             .map(|det_box| {
                 let mut coords: Vec<geo_types::Coord<f64>> = det_box
@@ -226,21 +232,54 @@ impl GpuOcrEngine {
                         y: (y * scale_y).round().clamp(0.0, height_f),
                     })
                     .collect();
+                // Expand vertically by ~12% so tall stacked Vietnamese diacritics (Ấ, Ể, Ỗ, Ậ) are never clipped
+                let min_y = coords.iter().map(|c| c.y).fold(f64::INFINITY, f64::min);
+                let max_y = coords.iter().map(|c| c.y).fold(f64::NEG_INFINITY, f64::max);
+                let pad_y = ((max_y - min_y) * 0.12).clamp(2.0, 12.0);
+                for c in &mut coords {
+                    if (c.y - min_y) <= (max_y - min_y) * 0.5 {
+                        c.y = (c.y - pad_y).clamp(0.0, height_f);
+                    } else {
+                        c.y = (c.y + pad_y).clamp(0.0, height_f);
+                    }
+                }
                 coords.push(coords[0]);
                 Polygon::new(geo_types::LineString::from(coords), vec![])
             })
             .collect();
 
-        // 3. Crop text regions (Rotated quad preferred for clean perspective)
+        // Sort boxes in natural top-to-bottom, left-to-right reading order
+        polygons.sort_by(|a, b| {
+            let ra = polygon_to_text_region(a, image_dims);
+            let rb = polygon_to_text_region(b, image_dims);
+            let row_tol = (ra.height.min(rb.height) / 2).max(8);
+            if ra.y.abs_diff(rb.y) <= row_tol {
+                ra.x.cmp(&rb.x)
+            } else {
+                ra.y.cmp(&rb.y)
+            }
+        });
+
+        // 3. Crop text regions (Rotated quad preferred for clean perspective) and upscale small lines
+        let rec_target_h = self.rec_pre.config().target_height;
         let rgb = image.to_rgb8();
         let crops: Vec<RgbImage> = polygons
             .iter()
             .map(|polygon| {
-                if let Some(crop) = min_area_quad(polygon).and_then(|quad| crop_quad(&rgb, &quad)) {
-                    return crop;
+                let crop = if let Some(c) = min_area_quad(polygon).and_then(|quad| crop_quad(&rgb, &quad)) {
+                    c
+                } else {
+                    let region = polygon_to_text_region(polygon, image_dims);
+                    imageops::crop_imm(&rgb, region.x, region.y, region.width, region.height).to_image()
+                };
+                if crop.height() > 0 && crop.height() < 52 {
+                    let new_w = ((crop.width() as f32) * (rec_target_h as f32 / crop.height() as f32))
+                        .round()
+                        .max(1.0) as u32;
+                    imageops::resize(&crop, new_w, rec_target_h, imageops::FilterType::Lanczos3)
+                } else {
+                    crop
                 }
-                let region = polygon_to_text_region(polygon, image_dims);
-                imageops::crop_imm(&rgb, region.x, region.y, region.width, region.height).to_image()
             })
             .collect();
 

@@ -88,7 +88,7 @@ pub async fn api_pipeline_status(State(state): State<AppState>) -> Json<serde_js
         "supported_languages": ["vi", "en", "zh", "ja", "ko", "auto"],
         "sample_rate": 48000,
         "asr": {
-            "status": if asr_multi_ready || asr_en_ready { "ready" } else { "ready" },
+            "status": if asr_multi_ready || asr_en_ready { "ready" } else { "starting" },
             "device": "cuda:0 (NVIDIA GeForce RTX 3050 Laptop GPU)",
             "models": {
                 "multilingual": {

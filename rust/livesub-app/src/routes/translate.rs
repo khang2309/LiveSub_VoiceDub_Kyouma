@@ -8,6 +8,7 @@ use serde::Deserialize;
 #[derive(Deserialize)]
 pub struct TranslateRequest {
     pub text: String,
+    #[serde(alias = "from_lang")]
     pub source_lang: Option<String>,
 }
 

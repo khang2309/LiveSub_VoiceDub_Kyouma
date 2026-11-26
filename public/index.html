@@ -15,7 +15,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="LiveSub">
   <link rel="icon" href="icon.svg">
-  <link rel="stylesheet" href="style.css?v=20261124_v6">
+  <link rel="stylesheet" href="style.css?v=20261126_v7">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Roboto+Condensed:ital,wght@0,600;0,700;0,800;0,900;1,700&family=Oswald:wght@600;700&family=Young+Serif&display=swap" rel="stylesheet">
@@ -214,6 +214,29 @@
             <input type="url" id="webUrlInput" class="form-control" placeholder="https://www.youtube.com/watch?v=..." style="flex: 1; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-main); font-size: 0.88rem;">
             <button id="btnLoadWebUrl" class="btn btn-primary" type="button" style="white-space: nowrap; padding: 8px 16px; font-weight: 600;">▶️ Nạp Video</button>
           </div>
+          <div class="yt-mode-bar" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
+            <div class="mode-toggle-group" style="flex: 1; min-width: 260px;">
+              <button type="button" id="btnYtModeCC" class="btn-mode active" title="Lấy phụ đề sẵn (Closed Captions) từ YouTube">
+                📝 CC YouTube
+              </button>
+              <button type="button" id="btnYtModeOCR" class="btn-mode" title="Quét phụ đề chữ in trên khung hình video bằng GPU OCR (khi không có CC)">
+                📷 Quét OCR
+              </button>
+              <button type="button" id="btnYtModeWhisper" class="btn-mode" title="Nghe giọng nói trực tiếp bằng Whisper GPU CUDA (khi không có phụ đề)">
+                🎙️ Nghe Whisper
+              </button>
+            </div>
+            <div id="ytLiveCaptureControls" style="display: none; align-items: center; gap: 6px; flex-wrap: wrap;">
+              <select id="ytOcrZoneSelect" class="form-control form-control-compact select-zone" title="Vùng quét phụ đề OCR" style="display: none;">
+                <option value="bottom" selected>📐 1/3 Đáy</option>
+                <option value="split">📺 Nửa Dưới</option>
+                <option value="full">🖥️ Toàn Hình</option>
+              </select>
+              <button id="btnYtLiveCapture" class="btn-hero-action" type="button" style="height: 34px; padding: 0 12px; font-size: 0.82rem;">
+                <span id="btnYtLiveCaptureText">🎙️ Bắt Đầu Nghe Whisper</span>
+              </button>
+            </div>
+          </div>
           <div id="webVideoContainer" class="web-video-wrapper" style="display: none; position: relative;">
             <!-- Thanh điều khiển và nút đóng đặt lên TRÊN CÙNG để luôn nhìn thấy và thao tác được -->
             <div class="video-top-bar" style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; margin-bottom: 6px; background: rgba(0, 0, 0, 0.4); border-radius: 6px;">
@@ -230,7 +253,7 @@
                 <div id="invideoWebSubVi" class="invideo-sub-vi" style="display: none;" data-empty="true"></div>
               </div>
             </div>
-            <div id="webSyncNotice" class="web-sync-notice" style="display: none !important;"></div>
+            <div id="webSyncNotice" class="web-sync-notice" style="display: none;"></div>
           </div>
           <form id="webVideoForm" style="display: none;">
             <button id="btnWebLiveCapture" type="button">Bắt âm thanh</button>
@@ -366,6 +389,6 @@
 
   <script src="/vendor/ort/ort.min.js?v=1.31.1"></script>
   <script src="/vendor/vad/bundle.min.js?v=0.0.31"></script>
-  <script src="app.js?v=20261124_v6"></script>
+  <script src="app.js?v=20261126_v7"></script>
 </body>
 </html>

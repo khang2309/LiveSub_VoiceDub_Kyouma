@@ -9,6 +9,7 @@ pub fn ensure_whisper_cuda_server(
     model_path: &Path,
     host: &str,
     port: &str,
+    default_lang: &str,
 ) -> Option<Child> {
     let check_addr = format!("{}:{}", host, port);
     if std::net::TcpStream::connect(&check_addr).is_ok() {
@@ -17,11 +18,17 @@ pub fn ensure_whisper_cuda_server(
     }
 
     if !exe_path.is_file() || !model_path.is_file() {
-        eprintln!("⚠️ Whisper CUDA binary or model not found");
+        eprintln!(
+            "⚠️ Whisper CUDA binary or model not found: exe={:?} model={:?}",
+            exe_path, model_path
+        );
         return None;
     }
 
-    println!("🚀 Launching Whisper CUDA GPU Server (Port {})...", port);
+    println!(
+        "🚀 Launching Whisper CUDA GPU Server (Port {}, lang={})...",
+        port, default_lang
+    );
     let mut cmd = Command::new(exe_path);
     cmd.arg("-m")
         .arg(model_path)
@@ -29,6 +36,9 @@ pub fn ensure_whisper_cuda_server(
         .arg(port)
         .arg("--host")
         .arg(host)
+        .arg("-l")
+        .arg(default_lang)
+        .arg("--suppress-nst")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
 
@@ -39,10 +49,9 @@ pub fn ensure_whisper_cuda_server(
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
 
-    match cmd.spawn()
-    {
+    match cmd.spawn() {
         Ok(child) => {
-            for _ in 0..30 {
+            for _ in 0..40 {
                 std::thread::sleep(Duration::from_millis(150));
                 if std::net::TcpStream::connect(&check_addr).is_ok() {
                     println!("✅ Whisper CUDA GPU server ready on port {}", port);
@@ -58,6 +67,34 @@ pub fn ensure_whisper_cuda_server(
     }
 }
 
+fn is_whisper_non_speech(text: &str) -> bool {
+    let t = text.trim();
+    if t.is_empty() {
+        return true;
+    }
+    let low = t.to_lowercase();
+    if matches!(
+        low.as_str(),
+        "[blank_audio]"
+            | "[silence]"
+            | "(silence)"
+            | "[music]"
+            | "(music)"
+            | "[applause]"
+            | "(applause)"
+            | "[laughter]"
+            | "[音楽]"
+            | "(音楽)"
+            | "♪"
+            | "♪♪"
+            | "thank you."
+            | "you"
+    ) {
+        return true;
+    }
+    (t.starts_with('[') && t.ends_with(']')) || (t.starts_with('(') && t.ends_with(')'))
+}
+
 pub async fn transcribe_gpu_whisper(
     http_client: &reqwest::Client,
     server_url: &str,
@@ -69,30 +106,48 @@ pub async fn transcribe_gpu_whisper(
         .mime_str("audio/wav")
         .map_err(|e| e.to_string())?;
 
-    let mut form = reqwest::multipart::Form::new()
+    let normalized = source_lang
+        .split(['-', '_'])
+        .next()
+        .unwrap_or("auto")
+        .trim()
+        .to_lowercase();
+    let lang_arg = if normalized.is_empty() {
+        "auto".to_string()
+    } else {
+        normalized.clone()
+    };
+
+    let form = reqwest::multipart::Form::new()
         .part("file", part)
         .text("response_format", "json")
-        .text("temperature", "0.0");
+        .text("temperature", "0.0")
+        .text("language", lang_arg);
 
-    let normalized = source_lang.split(['-', '_']).next().unwrap_or("auto");
-    // Nếu là tiếng Anh và server Whisper chuyên tiếng Anh (cổng 8090) đang chạy, ưu tiên dùng cổng 8090
+    // Nếu là tiếng Anh và server Whisper chuyên tiếng Anh (cổng 8090) đang chạy, ưu tiên dùng cổng 8090;
+    // nếu cổng 8090 chưa sẵn sàng thì fallback sang server đa ngôn ngữ cổng 8089.
     let target_server = if normalized == "en" && std::net::TcpStream::connect("127.0.0.1:8090").is_ok() {
         "http://127.0.0.1:8090"
+    } else if server_url.contains(":8090") && std::net::TcpStream::connect("127.0.0.1:8090").is_err() {
+        "http://127.0.0.1:8089"
     } else {
         server_url
     };
 
-    if normalized != "auto" && !normalized.is_empty() {
-        form = form.text("language", normalized.to_string());
-    }
-
     let inference_endpoint = format!("{}/inference", target_server.trim_end_matches('/'));
     let resp = http_client
         .post(&inference_endpoint)
+        .timeout(Duration::from_secs(12))
         .multipart(form)
         .send()
         .await
-        .map_err(|e| format!("Whisper GPU CUDA communication error: {e}"))?;
+        .map_err(|e| format!("Whisper GPU CUDA communication error ({inference_endpoint}): {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Whisper GPU CUDA HTTP {status}: {body}"));
+    }
 
     let json_val = resp
         .json::<serde_json::Value>()
@@ -105,7 +160,7 @@ pub async fn transcribe_gpu_whisper(
         .unwrap_or("")
         .trim();
 
-    if text.is_empty() || text.contains("[BLANK_AUDIO]") || text.contains("[Silence]") {
+    if is_whisper_non_speech(text) {
         Ok(String::new())
     } else {
         Ok(text.to_string())

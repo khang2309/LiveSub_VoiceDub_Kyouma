@@ -1685,11 +1685,21 @@ select:focus-visible {
 }
 
 .web-sync-notice {
-  display: none !important;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: var(--text-main);
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
-.web-sync-notice.show {
-  display: none !important;
+.web-sync-notice .yt-fallback-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
 }
 
 .video-top-actions {

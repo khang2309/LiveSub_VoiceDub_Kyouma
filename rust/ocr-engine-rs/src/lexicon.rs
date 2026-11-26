@@ -429,13 +429,13 @@ fn cand_unigram_score(lex: &Lexicon, cand: &str, core_low: &str, is_strictly_una
             let has_confusable_tone = has_tone_sac(cand) || has_tone_hoi(cand);
             let has_distinctive = has_distinctive_tone(cand);
             if has_confusable_tone {
-                score += 15;
+                score += 24;
             } else if has_distinctive {
                 // Legitimate diacritics (dấu nặng, huyền, ngã) are strongly preserved
-                score += 45;
+                score += 48;
             } else {
-                // Vowel hat/horn without tone mark (e.g. "môi", "tra", "cơ") often dropped a tone mark in OCR
-                score += 15;
+                // Valid vowel hat/horn or plain tone words (e.g. "cô", "lo", "môi", "cơ")
+                score += 26;
             }
         } else if is_strictly_unacc && lex.syllables.contains(cand) {
             // Unaccented inputs (like "thit", "ban", "chi", "lai") should NOT get a large bonus
@@ -443,7 +443,9 @@ fn cand_unigram_score(lex: &Lexicon, cand: &str, core_low: &str, is_strictly_una
             score += 5;
         }
     } else if !is_strictly_unacc {
-        if is_sac_hoi_confusion(cand, core_low) {
+        if is_sac_hoi_confusion(cand, core_low)
+            && (!lex.syllables.contains(core_low) || is_rare_override_syllable(core_low))
+        {
             let cand_freq = unigram_frequency_score(cand);
             let core_freq = unigram_frequency_score(core_low);
             if cand_freq > core_freq {
@@ -451,24 +453,35 @@ fn cand_unigram_score(lex: &Lexicon, cand: &str, core_low: &str, is_strictly_una
             }
         }
         // Confusions between circumflex (ô, ê, â) vs acute (ó, é, á) or plain (o, e, a)
-        if is_hat_or_acute_confusion(cand, core_low) {
+        if is_hat_or_acute_confusion(cand, core_low)
+            && (!lex.syllables.contains(core_low) || is_rare_override_syllable(core_low))
+        {
             let cand_freq = unigram_frequency_score(cand);
             let core_freq = unigram_frequency_score(core_low);
             if cand_freq > core_freq {
                 score += 5;
             }
         }
-        // Syllable with hat (ô, ê, â) that lost acute tone mark during OCR (e.g. non-words "kêt", "hêt", "tiêp", "mât", "bât", "nhât", "tât")
+        // Syllable with hat (ô, ê, â) that lost acute tone mark or was misread with hỏi/ngã/huyền on a stop coda (-p, -t, -c, -ch)
         if is_missing_acute_over_hat(cand, core_low) && !lex.syllables.contains(core_low) {
             let cand_freq = unigram_frequency_score(cand);
             if cand_freq >= 15 {
-                score += 24;
+                score += 28;
             }
         }
-        // Vietnamese stop codas (-p, -t, -c, -ch) CANNOT be toneless! Syllables like "kêt", "hêt", "tiêp", "mât" must have tone
-        if ends_with_stop_coda(core_low) && !has_tone_sac(core_low) && !has_distinctive_tone(core_low) && !lex.syllables.contains(core_low) {
-            if has_tone_sac(cand) || has_distinctive_tone(cand) {
-                score += 24;
+        // Vietnamese stop codas (-p, -t, -c, -ch) CANNOT be toneless or carry hỏi/ngã/huyền!
+        // When OCR drops the acute mark or misreads sắc as hỏi (e.g. "biểt", "kêt", "hêt", "tiêp", "mât"),
+        // restore sắc strongly when the base letters match (avoiding skeleton-matched overrides like "đuac" -> "được").
+        if strip_accents(cand) == strip_accents(core_low)
+            && ends_with_stop_coda(core_low)
+            && !has_tone_sac(core_low)
+            && !has_distinctive_tone(core_low)
+            && !lex.syllables.contains(core_low)
+        {
+            if has_tone_sac(cand) {
+                score += 46;
+            } else if has_distinctive_tone(cand) {
+                score += 20;
             }
         }
     }
@@ -614,6 +627,7 @@ fn transition_score(lex: &Lexicon, p: &str, c: &str) -> i32 {
         ("chết", "đi") | ("đi", "sống") | ("sống", "lại") | ("khiến", "một") | ("một", "phần") | ("phần", "cơ") => 50,
         ("thằng", "bé") | ("tê", "liệt") | ("nó", "cũng") | ("cũng", "mất") => 50,
         ("nhớ", "lại") | ("lại", "đi") | ("dùng", "tay") => 50,
+        ("lo", "lắng") | ("đừng", "lo") | ("bỏ", "mặc") | ("mặc", "cô") | ("cô", "đâu") | ("nào", "biết") => 75,
         _ => {
             let bigram = format!("{} {}", p, c);
             if lex.words.contains(&bigram) {
@@ -739,6 +753,11 @@ pub fn is_rare_override_syllable(s: &str) -> bool {
             | "nhai"
             | "chang"
             | "tung"
+            | "thừ"
+            | "lăng"
+            | "ây"
+            | "biểt"
+            | "cúa"
     )
 }
 
@@ -772,7 +791,7 @@ fn unigram_frequency_score(cand: &str) -> i32 {
         | "thai" | "đấy" | "cố" | "tối" | "thối" | "lối" | "mấy" | "mất" | "bất" | "nhất" | "tất" | "kết" | "hết" | "tiếp" | "tiếc" | "tiếng" | "chiếc"
         | "cậu" | "chẳng" | "thèm" | "ngại" | "kia" | "thằng" | "nhóc" | "mày" | "nhãi" | "món"
         | "miệng" | "thật" | "bảo" | "đoán" | "đoạn" | "kém" | "chết" | "sống" | "khiến" | "phần" | "nhớ"
-        | "dùng" | "đắt" | "tiền" | "ngào" | "quản" | "cơ" => 15,
+        | "dùng" | "đắt" | "tiền" | "ngào" | "quản" | "cơ" | "thử" | "lo" | "lắng" | "mặc" => 15,
         _ => 0,
     }
 }

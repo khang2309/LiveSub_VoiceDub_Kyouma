@@ -245,8 +245,11 @@ class LiveDubStudio {
       this.ocrScanZone = savedZone;
     }
     const savedCaptionMode = localStorage.getItem('livesub_caption_mode');
-    if (savedCaptionMode && this.webCaptionMode) {
-      this.setRadioGroupValue(this.webCaptionMode, savedCaptionMode === 'auto' ? 'has_captions' : savedCaptionMode);
+    if (savedCaptionMode) {
+      const normalizedYt = savedCaptionMode === 'auto' ? 'has_captions' : savedCaptionMode;
+      this.setYouTubeMode(normalizedYt);
+    } else {
+      this.setYouTubeMode('has_captions');
     }
     const savedCaptionLanguage = localStorage.getItem('livesub_caption_language');
     if (savedCaptionLanguage && this.webCaptionLanguage) {
@@ -334,6 +337,14 @@ class LiveDubStudio {
     this.btnWebLiveCapture = document.getElementById('btnWebLiveCapture');
     this.webCaptionMode = document.getElementById('webCaptionMode');
     this.webCaptionLanguage = document.getElementById('webCaptionLanguage');
+    this.btnYtModeCC = document.getElementById('btnYtModeCC');
+    this.btnYtModeOCR = document.getElementById('btnYtModeOCR');
+    this.btnYtModeWhisper = document.getElementById('btnYtModeWhisper');
+    this.ytLiveCaptureControls = document.getElementById('ytLiveCaptureControls');
+    this.btnYtLiveCapture = document.getElementById('btnYtLiveCapture');
+    this.btnYtLiveCaptureText = document.getElementById('btnYtLiveCaptureText');
+    this.ytOcrZoneSelect = document.getElementById('ytOcrZoneSelect');
+    this.currentYtMode = 'has_captions';
     this.sourceIntelligenceState = document.getElementById('sourceIntelligenceState');
     this.sourceIntelligenceHint = document.getElementById('sourceIntelligenceHint');
     this.btnMasterDubToggle = document.getElementById('btnMasterDubToggle');
@@ -708,7 +719,26 @@ class LiveDubStudio {
       });
     }
     if (this.btnWebLiveCapture) {
-      this.btnWebLiveCapture.addEventListener('click', () => this.toggleSystemAudio());
+      this.btnWebLiveCapture.addEventListener('click', () => this.startYouTubeLiveCapture());
+    }
+    if (this.btnYtModeCC) {
+      this.btnYtModeCC.addEventListener('click', () => this.setYouTubeMode('has_captions'));
+    }
+    if (this.btnYtModeOCR) {
+      this.btnYtModeOCR.addEventListener('click', () => this.setYouTubeMode('hard_sub'));
+    }
+    if (this.btnYtModeWhisper) {
+      this.btnYtModeWhisper.addEventListener('click', () => this.setYouTubeMode('audio_only'));
+    }
+    if (this.btnYtLiveCapture) {
+      this.btnYtLiveCapture.addEventListener('click', () => this.startYouTubeLiveCapture());
+    }
+    if (this.ytOcrZoneSelect) {
+      this.ytOcrZoneSelect.addEventListener('change', (e) => {
+        this.ocrScanZone = e.target.value;
+        if (this.ocrZoneSelect) this.ocrZoneSelect.value = e.target.value;
+        try { localStorage.setItem('livesub_ocr_zone', e.target.value); } catch (_) {}
+      });
     }
     if (this.webCaptionMode) {
       this.webCaptionMode.addEventListener('change', () => {
@@ -1111,6 +1141,9 @@ class LiveDubStudio {
     if (typeof this.stopDubbingAudio === 'function') {
       this.stopDubbingAudio(false, false);
     }
+    if (this.isListening && this.activeSource === 'weburl' && typeof this.stopListening === 'function') {
+      this.stopListening();
+    }
     if (typeof this.releaseYouTubeDubbingHold === 'function') {
       this.releaseYouTubeDubbingHold();
     }
@@ -1126,7 +1159,7 @@ class LiveDubStudio {
   }
 
   switchSourceTab(source) {
-    if (this.activeSource === 'system' && source !== 'system') {
+    if (this.isListening && this.activeSource !== source) {
       if (typeof this.stopListening === 'function') {
         this.stopListening();
       }
@@ -1540,6 +1573,11 @@ class LiveDubStudio {
     this.autoDetectedSourceLang = null;
     this.lastOCRText = '';
     this.lastCleanText = '';
+    if (this.systemCaptureMode) {
+      const radioVal = mode === 'whisper' ? 'audio_only' : (mode === 'ocr' ? 'hard_sub' : 'auto');
+      this.setRadioGroupValue(this.systemCaptureMode, radioVal);
+      try { localStorage.setItem('livesub_system_capture_mode', radioVal); } catch (_) {}
+    }
     if (this.chkEnableWhisper) {
       this.chkEnableWhisper.checked = (mode === 'whisper' || mode === 'auto');
     }
@@ -1669,9 +1707,8 @@ class LiveDubStudio {
       this.hasSeenHardSubtitles = false;
       this._hasNotifiedVietsubMode = false;
       this.lastHardSubTime = 0;
-      const captureMode = this.getRadioGroupValue(this.systemCaptureMode, 'auto');
-      const isWhisperMode = (this.currentSystemMode === 'whisper') || (this.getRadioGroupValue(this.systemCaptureMode, 'hard_sub') === 'audio_only');
-      const isAutoMode = (this.currentSystemMode === 'auto') || (captureMode === 'auto');
+      const isWhisperMode = this.currentSystemMode === 'whisper';
+      const isAutoMode = this.currentSystemMode === 'auto';
       this.isOCRModeActive = !isWhisperMode;
       this.isHybridModeActive = isAutoMode;
       this.btnSystemAudioText.textContent = 'Dừng Xem & Lồng Tiếng';
@@ -1920,7 +1957,9 @@ class LiveDubStudio {
     this._isOcrVideoExternal = isExternalVideo;
     this.isListening = true;
     this.isOCRModeActive = true;
-    this.activeSource = 'system';
+    if (this.activeSource !== 'weburl') {
+      this.activeSource = 'system';
+    }
     if (this.activeAbortController) this.activeAbortController.abort();
     while (this.speechQueue.length) this.speechQueue.shift().resolve();
     this.lastOCRText = '';
@@ -1955,9 +1994,9 @@ class LiveDubStudio {
         sourceY = Math.floor(height * 0.70);
         sourceHeight = Math.max(1, Math.floor(height * 0.28));
       }
-      // Target width 960px - 1280px preserves Vietnamese tone marks cleanly while cutting
-      // PNG encoding & backend decode latency by >2x compared to 1920px
-      const targetWidth = Math.min(1280, Math.max(960, Math.round(sourceWidth)));
+      // Target width 960px - 1600px preserves thin Vietnamese tone marks on 1080p/1440p screens
+      // while GPU DirectML processes the strip in ~40-50ms
+      const targetWidth = Math.min(1600, Math.max(960, Math.round(sourceWidth)));
       const scale = targetWidth / sourceWidth;
       this.ocrCanvas.width = targetWidth;
       this.ocrCanvas.height = Math.max(1, Math.round(sourceHeight * scale));
@@ -2643,8 +2682,157 @@ class LiveDubStudio {
     this.isSeekPreempt = false;
   }
 
+  setYouTubeMode(mode) {
+    const valid = ['has_captions', 'hard_sub', 'audio_only'].includes(mode) ? mode : 'has_captions';
+    this.currentYtMode = valid;
+    if (this.webCaptionMode) {
+      this.setRadioGroupValue(this.webCaptionMode, valid);
+    }
+    try { localStorage.setItem('livesub_caption_mode', valid); } catch (_) {}
+
+    if (this.btnYtModeCC) this.btnYtModeCC.classList.toggle('active', valid === 'has_captions');
+    if (this.btnYtModeOCR) this.btnYtModeOCR.classList.toggle('active', valid === 'hard_sub');
+    if (this.btnYtModeWhisper) this.btnYtModeWhisper.classList.toggle('active', valid === 'audio_only');
+
+    if (this.ytLiveCaptureControls) {
+      this.ytLiveCaptureControls.style.display = (valid === 'hard_sub' || valid === 'audio_only') ? 'flex' : 'none';
+    }
+    if (this.ytOcrZoneSelect) {
+      this.ytOcrZoneSelect.style.display = (valid === 'hard_sub') ? 'inline-block' : 'none';
+      this.ytOcrZoneSelect.value = this.ocrScanZone || 'bottom';
+    }
+    this.updateYouTubeCaptureButtonUI();
+    this.updateSourceIntelligenceControls();
+    this.updateAppliedSettings();
+  }
+
+  updateYouTubeCaptureButtonUI() {
+    if (!this.btnYtLiveCapture || !this.btnYtLiveCaptureText) return;
+    const isYtCapturing = this.isListening && this.activeSource === 'weburl';
+    if (isYtCapturing) {
+      this.btnYtLiveCapture.classList.remove('btn-primary');
+      this.btnYtLiveCapture.classList.add('btn-danger');
+      this.btnYtLiveCaptureText.textContent = (this.currentYtMode === 'hard_sub')
+        ? '⏹ Dừng Quét Sub OCR'
+        : '⏹ Dừng Nghe Whisper';
+    } else {
+      this.btnYtLiveCapture.classList.remove('btn-danger');
+      this.btnYtLiveCapture.classList.add('btn-primary');
+      this.btnYtLiveCaptureText.textContent = (this.currentYtMode === 'hard_sub')
+        ? '📷 Bắt Đầu Quét Sub OCR'
+        : '🎙️ Bắt Đầu Nghe Whisper';
+    }
+  }
+
+  renderYouTubeNoCaptionsFallback(message) {
+    if (!this.webSyncNotice) return;
+    this.webSyncNotice.innerHTML = `
+      <div>⚠️ <strong>${this.escapeHtml(message)}</strong></div>
+      <div style="margin-top: 4px; color: var(--text-muted);">Video này không có phụ đề CC sẵn. Chọn trực tiếp bên dưới để tiếp tục dịch & lồng tiếng:</div>
+      <div class="yt-fallback-actions">
+        <button type="button" class="btn btn-primary btn-sm" id="btnYtFallbackWhisper">🎙️ Bật Nghe Whisper ngay</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="btnYtFallbackOCR">📷 Bật Quét Sub OCR ngay</button>
+      </div>
+    `;
+    this.webSyncNotice.style.display = 'block';
+    const btnW = document.getElementById('btnYtFallbackWhisper');
+    const btnO = document.getElementById('btnYtFallbackOCR');
+    if (btnW) btnW.addEventListener('click', () => this.startYouTubeLiveCapture('audio_only'));
+    if (btnO) btnO.addEventListener('click', () => this.startYouTubeLiveCapture('hard_sub'));
+  }
+
+  async startYouTubeLiveCapture(forcedMode = null) {
+    if (forcedMode) {
+      this.setYouTubeMode(forcedMode);
+    }
+    if (this.isListening && this.activeSource === 'weburl') {
+      this.stopListening();
+      return;
+    }
+
+    const mode = this.currentYtMode === 'hard_sub' ? 'hard_sub' : 'audio_only';
+    this.ensureAudioUnlocked();
+    const AudioCtx = typeof window !== 'undefined' ? (window.AudioContext || window.webkitAudioContext) : null;
+    if (AudioCtx) {
+      if (!this.audioContext || this.audioContext.state === 'closed') {
+        this.audioContext = new AudioCtx();
+      }
+      if (this.audioContext && this.audioContext.state === 'suspended') {
+        await this.audioContext.resume().catch(() => {});
+      }
+    }
+
+    if (this.isListening) {
+      this.stopListening();
+    }
+
+    try {
+      this.mediaStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false
+        },
+        preferCurrentTab: true,
+        selfBrowserSurface: 'include'
+      });
+
+      const audioTracks = this.mediaStream.getAudioTracks();
+      const hasAudio = audioTracks.length > 0;
+
+      this.activeSource = 'weburl';
+      this.isListening = true;
+      this.detectedOCRLanguage = null;
+      this.hasActiveHardSubtitles = false;
+      this.hasSeenHardSubtitles = false;
+      this._hasNotifiedVietsubMode = false;
+      this.isOCRModeActive = (mode === 'hard_sub');
+      this.isHybridModeActive = false;
+
+      this.mediaStream.getVideoTracks().forEach(track => {
+        track.onended = () => {
+          if (this.isListening && this.activeSource === 'weburl') {
+            this.stopListening();
+          }
+        };
+      });
+
+      this.updateYouTubeCaptureButtonUI();
+      this.updateMasterDubUI();
+
+      if (mode === 'hard_sub') {
+        if (this.webSyncNotice) {
+          this.webSyncNotice.innerHTML = '📷 <strong>Đang quét phụ đề OCR</strong> trực tiếp trên khung hình video YouTube.';
+          this.webSyncNotice.style.display = 'block';
+        }
+        this.showToast('📷 Đang quét phụ đề OCR cho video YouTube!');
+        await this.startHardSubtitleOCR(this.mediaStream);
+      } else {
+        if (!hasAudio) {
+          if (this.webSyncNotice) {
+            this.webSyncNotice.innerHTML = '⚠️ <strong>Chưa nhận được âm thanh!</strong> Khi chọn chia sẻ cửa sổ/tab, hãy chọn tab/màn hình đang phát YouTube và nhớ tích ô <em>"Chia sẻ âm thanh" (Share audio)</em>.';
+            this.webSyncNotice.style.display = 'block';
+          }
+          this.showToast('⚠️ Hãy chọn lại và tích "Chia sẻ âm thanh" để Whisper nghe được tiếng!');
+        } else {
+          if (this.webSyncNotice) {
+            this.webSyncNotice.innerHTML = '🎙️ <strong>Whisper GPU CUDA đang nghe tiếng nói</strong> từ video YouTube và lồng tiếng realtime.';
+            this.webSyncNotice.style.display = 'block';
+          }
+          this.showToast('🎙️ Whisper GPU đang nghe âm thanh YouTube!');
+          await this.setupVADAndRecording(this.mediaStream);
+        }
+      }
+    } catch (err) {
+      if (err && err.name !== 'NotAllowedError') {
+        this.showToast('❌ Lỗi bật ' + (mode === 'hard_sub' ? 'OCR' : 'Whisper') + ': ' + err.message);
+      }
+    }
+  }
+
   buildYouTubeSubtitleRequest(url) {
-    const mode = this.webCaptionMode ? (this.webCaptionMode.value || (typeof this.getRadioGroupValue === 'function' && this.getRadioGroupValue(this.webCaptionMode)) || 'has_captions') : 'has_captions';
+    const mode = this.currentYtMode || (this.webCaptionMode ? (this.webCaptionMode.value || (typeof this.getRadioGroupValue === 'function' && this.getRadioGroupValue(this.webCaptionMode)) || 'has_captions') : 'has_captions');
     let lang = this.webCaptionLanguage ? (this.webCaptionLanguage.value || (typeof this.getRadioGroupValue === 'function' && this.getRadioGroupValue(this.webCaptionLanguage)) || null) : null;
     if (!lang) {
       const el = this.sourceLangSelect || this.sourceLang || (typeof document !== 'undefined' && document.getElementById ? document.getElementById('sourceLang') : null);
@@ -2680,16 +2868,22 @@ class LiveDubStudio {
     if (this.webSyncNotice) this.webSyncNotice.style.display = 'none';
     const subtitleRequest = this.buildYouTubeSubtitleRequest(val);
     if (subtitleRequest.caption_mode === 'audio_only') {
-      this.webSyncNotice.innerHTML = ' <strong>Chế độ chỉ có tiếng:</strong> Phát video, sau đó bấm “Bắt Âm Thanh Tab” và chọn đúng tab có video.';
-      this.setSourceIntelligenceState('whisper', 'Whisper realtime', 'Đang bỏ qua CC theo lựa chọn của bạn. Bật thu âm Tab để nhận dạng tiếng nói trực tiếp.');
+      if (this.webSyncNotice) {
+        this.webSyncNotice.innerHTML = '🎙️ <strong>Chế độ Nghe Whisper:</strong> Phát video rồi bấm <strong>“🎙️ Bắt Đầu Nghe Whisper”</strong> ở trên và chọn tab/màn hình (tích Chia sẻ âm thanh).';
+        this.webSyncNotice.style.display = 'block';
+      }
+      this.setSourceIntelligenceState('whisper', 'Whisper realtime', 'Đang bỏ qua CC theo lựa chọn của bạn. Bấm Bắt Đầu Nghe Whisper để nhận dạng tiếng nói trực tiếp.');
       this.ytSegments = [];
       this.currentYtSegmentIdx = -1;
       this.initOrUpdateYouTubePlayer(videoId);
       return;
     }
     if (subtitleRequest.caption_mode === 'hard_sub') {
-      this.webSyncNotice.innerHTML = ' <strong>Chế độ phụ đề đóng cứng / OCR:</strong> Đang phát video. Hãy bấm nút <strong>“Bắt Âm Thanh Tab”</strong> bên trên và chọn <em>Chia sẻ tab này</em> để OCR quét phụ đề trên khung hình.';
-      this.setSourceIntelligenceState('ocr', 'Quét OCR khung hình', 'Đang đọc chữ dính trên hình. Bấm nút Bắt Âm Thanh Tab để bật OCR.');
+      if (this.webSyncNotice) {
+        this.webSyncNotice.innerHTML = '📷 <strong>Chế độ Quét Sub OCR:</strong> Phát video rồi bấm <strong>“📷 Bắt Đầu Quét Sub OCR”</strong> ở trên để đọc phụ đề chữ in trên video.';
+        this.webSyncNotice.style.display = 'block';
+      }
+      this.setSourceIntelligenceState('ocr', 'Quét OCR khung hình', 'Đang đọc chữ dính trên hình. Bấm Bắt Đầu Quét Sub OCR để quét trực tiếp.');
       this.ytSegments = [];
       this.currentYtSegmentIdx = -1;
       this.initOrUpdateYouTubePlayer(videoId);
@@ -2730,14 +2924,14 @@ class LiveDubStudio {
         this.subViDisplay.textContent = '▶️ Đang phát video và lồng tiếng...';
         this.subSourceDisplay.textContent = `Đã đồng bộ ${data.segments.length} câu thoại`;
       } else {
-        this.webSyncNotice.innerHTML = `ℹ️ ${data.error || 'Video không có phụ đề sẵn'}. Bạn hãy chọn nguồn <strong>"Màn hình / Tab Phim"</strong> để LiveSub quét phụ đề OCR trực tiếp trên video!`;
-        this.setSourceIntelligenceState('error', 'Không có track phù hợp', 'Hãy chuyển sang nguồn "Màn hình / Tab Phim" để quét OCR trực tiếp.');
+        this.renderYouTubeNoCaptionsFallback(data.error || 'Video không có phụ đề sẵn (Closed Captions)');
+        this.setSourceIntelligenceState('error', 'Không có phụ đề CC', 'Chọn Nghe Whisper hoặc Quét Sub OCR ngay bên dưới video.');
       }
     } catch (e) {
       if (e.name === 'AbortError' || loadGeneration !== this.youtubeLoadGeneration) return;
       console.warn('Subtitles fetch error:', e);
-      this.webSyncNotice.innerHTML = 'ℹ️ Hãy chọn nguồn "Màn hình / Tab Phim" để LiveSub quét phụ đề OCR trực tiếp trên video!';
-      this.setSourceIntelligenceState('error', 'Không tải được CC', 'Kiểm tra mạng rồi thử lại, hoặc dùng nguồn "Màn hình / Tab Phim" để OCR trực tiếp.');
+      this.renderYouTubeNoCaptionsFallback('Không tải được phụ đề CC từ YouTube');
+      this.setSourceIntelligenceState('error', 'Không tải được CC', 'Thử lại hoặc bật Nghe Whisper / Quét Sub OCR ngay bên dưới.');
     }
 
     // 2. Initialize YouTube Player
@@ -3637,6 +3831,16 @@ class LiveDubStudio {
         signal: this.activeAbortController.signal
       });
 
+      if (!response.ok) {
+        const errText = await response.text().catch(() => '');
+        console.warn(`Transcribe HTTP ${response.status}:`, errText);
+        if (!this._lastWhisperErrAt || (performance.now() - this._lastWhisperErrAt) > 5000) {
+          this._lastWhisperErrAt = performance.now();
+          this.showToast(`⚠️ Whisper GPU chưa sẵn sàng (${response.status}). Đang thử lại...`);
+        }
+        return;
+      }
+
       const data = await response.json();
       if (data.timings) this.realtimeMetrics.lastServerTimings = data.timings;
       if (this.isOCRModeActive && this.hasActiveHardSubtitles) return;
@@ -4504,6 +4708,7 @@ class LiveDubStudio {
         ? 'BẮT ĐẦU NGHE & LỒNG TIẾNG (WHISPER)'
         : 'BẮT ĐẦU ĐỌC & LỒNG TIẾNG SUB';
     }
+    this.updateYouTubeCaptureButtonUI();
     this.updateMasterDubUI();
 
     if (this.btnMicText) this.btnMicText.textContent = 'Bật Microphone';

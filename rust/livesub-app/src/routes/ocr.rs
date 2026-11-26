@@ -210,7 +210,7 @@ pub async fn api_ocr_subtitle(
         norm_lang.as_str(),
         "en" | "ja" | "zh" | "ko" | "th" | "fr" | "de" | "es" | "ru"
     );
-    let is_vietnamese_source = !is_foreign_source;
+    let is_vietnamese_source = norm_lang == "vi";
 
     // Luôn lọc bỏ rác video player UI buttons, scrubber timestamps, player OSD
     let rec_trimmed = clean_foreign_ocr_noise(&recognized);
@@ -280,23 +280,37 @@ fn has_vietnamese_tone_mark(text: &str) -> bool {
     text.chars().any(|c| VIETNAMESE_TONE_MARKS.contains(c))
 }
 
-/// The language model may add missing accents, but it must not replace a tone
-/// mark the visual recognizer actually saw (for example sắc -> hỏi).
+/// The language model may add missing accents and repair invalid/confusable OCR syllables
+/// (e.g. "biểt" -> "biết", "thừ" -> "thử", "cúa" -> "của"), while preserving clean valid
+/// tone marks recognized by the visual model (e.g. "Tôi muốn thử").
 fn preserve_recognized_tones(recognized: &str, restored: &str) -> String {
     let source: Vec<_> = recognized.split_whitespace().collect();
     let candidate: Vec<_> = restored.split_whitespace().collect();
     if source.len() != candidate.len() {
-        return recognized.to_owned();
+        return restored.to_owned();
     }
 
+    let lex = ocr_engine_rs::lexicon::Lexicon::global();
     source
         .iter()
         .zip(candidate)
         .map(|(original, replacement)| {
-            if has_vietnamese_tone_mark(original) {
-                *original
-            } else {
+            let core_orig = original
+                .trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase();
+            let core_repl = replacement
+                .trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase();
+            if core_orig.is_empty() || core_orig == core_repl {
+                return replacement;
+            }
+            let is_valid_orig = lex.syllables.contains(&core_orig);
+            let is_rare_ocr_confusion =
+                ocr_engine_rs::lexicon::is_rare_override_syllable(&core_orig);
+            if !is_valid_orig || is_rare_ocr_confusion || !has_vietnamese_tone_mark(original) {
                 replacement
+            } else {
+                *original
             }
         })
         .collect::<Vec<_>>()
@@ -320,6 +334,14 @@ mod tests {
         assert_eq!(
             preserve_recognized_tones("Toi muon thu", "Tôi muốn thử"),
             "Tôi muốn thử"
+        );
+    }
+
+    #[test]
+    fn permits_fixing_invalid_and_confusable_tones() {
+        assert_eq!(
+            preserve_recognized_tones("Hắn biểt và thừ cúa tôi", "Hắn biết và thử của tôi"),
+            "Hắn biết và thử của tôi"
         );
     }
 }

@@ -47,8 +47,8 @@ pub async fn run_server(config: AppConfig) {
 
     let (key_tx, _key_rx) = tokio::sync::broadcast::channel::<String>(32);
 
-    let whisper_child = None;
-    let whisper_en_child = None;
+    let whisper_child_handle = Arc::new(Mutex::new(None));
+    let whisper_en_child_handle = Arc::new(Mutex::new(None));
     let router = Arc::new(TranslationRouter::new());
     let http_client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
@@ -70,8 +70,8 @@ pub async fn run_server(config: AppConfig) {
         audio_cache: Arc::new(RwLock::new(HashMap::with_capacity(1024))),
         trans_cache: Arc::new(RwLock::new(HashMap::with_capacity(1024))),
         key_tx,
-        _whisper_child: Arc::new(Mutex::new(whisper_child)),
-        _whisper_en_child: Arc::new(Mutex::new(whisper_en_child)),
+        _whisper_child: whisper_child_handle.clone(),
+        _whisper_en_child: whisper_en_child_handle.clone(),
         tts_sem: Arc::new(tokio::sync::Semaphore::new(1)),
     };
 
@@ -104,6 +104,44 @@ pub async fn run_server(config: AppConfig) {
             return;
         }
     };
+
+    // Launch Whisper CUDA GPU servers (8089 multilingual + 8090 dedicated English) in background
+    let whisper_bin = config.whisper_bin_path.clone();
+    let whisper_multi_model = config.whisper_model_path.clone();
+    let whisper_en_model = config.whisper_en_model_path.clone();
+    let w_multi_slot = whisper_child_handle.clone();
+    let w_en_slot = whisper_en_child_handle.clone();
+    tokio::task::spawn_blocking(move || {
+        let multi_bin = whisper_bin.clone();
+        let multi_handle = std::thread::spawn(move || {
+            services::whisper::ensure_whisper_cuda_server(
+                &multi_bin,
+                &whisper_multi_model,
+                "127.0.0.1",
+                "8089",
+                "auto",
+            )
+        });
+        let en_handle = std::thread::spawn(move || {
+            services::whisper::ensure_whisper_cuda_server(
+                &whisper_bin,
+                &whisper_en_model,
+                "127.0.0.1",
+                "8090",
+                "en",
+            )
+        });
+        if let Ok(child) = multi_handle.join() {
+            if let Ok(mut guard) = w_multi_slot.lock() {
+                *guard = child;
+            }
+        }
+        if let Ok(child) = en_handle.join() {
+            if let Ok(mut guard) = w_en_slot.lock() {
+                *guard = child;
+            }
+        }
+    });
 
     // Warm up GPU OCR DirectX12/CUDA shaders in background so the very first subtitle runs at ~40ms
     if let Some(vi_ocr) = ocr_warmup {
