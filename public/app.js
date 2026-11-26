@@ -3695,102 +3695,19 @@ class LiveDubStudio {
     const raw = String(text || '').trim();
     if (!raw) return [];
 
-    // 1. Split on explicit linebreaks (multi-line subtitles in movies/anime)
+    // Subtitle dialogue: Treat each dialogue line as a single coherent sentence!
+    // DO NOT artificially chop a sentence into 3-4 tiny pieces with conjunctions or arbitrary word counts.
+    // That causes disjointed stuttering, unnatural pauses, and compounded network latency.
     const rawLines = raw.split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
-    const candidateParts = [];
-    for (let i = 0; i < rawLines.length; i++) {
-      const line = rawLines[i];
-      const sentParts = line.split(/(?<=[.!?…])\s+/).filter(Boolean);
-      for (let j = 0; j < sentParts.length; j++) {
-        let trimmed = sentParts[j].trim();
-        if (trimmed) {
-          if (i < rawLines.length - 1 && j === sentParts.length - 1 && !/[,;:.!?…–—]$/.test(trimmed)) {
-            trimmed += ',';
-          }
-          candidateParts.push(trimmed);
-        }
+    const result = [];
+    for (const line of rawLines) {
+      // Split only on distinct multi-sentence boundaries: ". ", "! ", "? "
+      const sents = line.split(/(?<=[.!?…])\s+/).map(s => s.trim()).filter(Boolean);
+      for (const sent of sents) {
+        if (sent) result.push(sent);
       }
     }
-
-    // 2. Stream chunking for long sentences: synthesize the first clause immediately (~250-350ms)
-    // while the remaining clauses synthesize in parallel in the background, eliminating the 2-second wait!
-    const finalClauses = [];
-    for (const part of candidateParts) {
-      const words = part.split(/\s+/).filter(Boolean);
-      if (words.length <= 7 && part.length <= 42) {
-        finalClauses.push(part);
-        continue;
-      }
-
-      let splitDone = false;
-      // A. Natural comma / punctuation pause
-      const punctMatch = part.match(/^(.*?)([,;:—–])\s+(.+)$/);
-      if (punctMatch) {
-        const left = punctMatch[1].trim() + punctMatch[2];
-        const right = punctMatch[3].trim();
-        const leftWords = left.split(/\s+/).filter(Boolean).length;
-        const rightWords = right.split(/\s+/).filter(Boolean).length;
-        if (leftWords >= 3 && rightWords >= 2) {
-          finalClauses.push(left);
-          if (rightWords > 7) {
-            finalClauses.push(...this.splitSentenceIntoClauses(right));
-          } else {
-            finalClauses.push(right);
-          }
-          splitDone = true;
-        }
-      }
-      if (splitDone) continue;
-
-      // B. Conjunction split closest to the middle
-      const conjRegex = /\s+(nhưng|mà|vì|khi|nếu|để|thì|nên|cho nên|do đó|trước khi|sau khi|và|hoặc|hôm nay|bởi vì|thế nên|rồi|sẽ|chứ|song|tuy)\s+/gi;
-      let match;
-      let bestSplitIndex = -1;
-      let minDistanceToCenter = Infinity;
-      const midWordIdx = Math.floor(words.length / 2);
-
-      while ((match = conjRegex.exec(part)) !== null) {
-        const leftSub = part.slice(0, match.index);
-        const wCount = leftSub.split(/\s+/).filter(Boolean).length;
-        if (wCount >= 3 && (words.length - wCount) >= 2) {
-          const dist = Math.abs(wCount - midWordIdx);
-          if (dist < minDistanceToCenter) {
-            minDistanceToCenter = dist;
-            bestSplitIndex = match.index;
-          }
-        }
-      }
-
-      if (bestSplitIndex > 0) {
-        let leftPart = part.slice(0, bestSplitIndex).trim();
-        let rightPart = part.slice(bestSplitIndex).trim();
-        finalClauses.push(leftPart);
-        if (rightPart.split(/\s+/).filter(Boolean).length > 7) {
-          finalClauses.push(...this.splitSentenceIntoClauses(rightPart));
-        } else {
-          finalClauses.push(rightPart);
-        }
-        continue;
-      }
-
-      // C. Word boundary fallback if still >= 8 words
-      if (words.length >= 8) {
-        const splitPoint = Math.min(6, Math.max(4, Math.floor(words.length / 2)));
-        let leftPart = words.slice(0, splitPoint).join(' ');
-        let rightPart = words.slice(splitPoint).join(' ');
-        finalClauses.push(leftPart);
-        if (rightPart.split(/\s+/).filter(Boolean).length > 7) {
-          finalClauses.push(...this.splitSentenceIntoClauses(rightPart));
-        } else {
-          finalClauses.push(rightPart);
-        }
-        continue;
-      }
-
-      finalClauses.push(part);
-    }
-
-    return finalClauses.length > 0 ? finalClauses : [raw];
+    return result.length > 0 ? result : [raw];
   }
 
   enqueueLiveDubbing(text, historyId, sourceText = '', capturedAt = null, finalizedAt = null, serverTimings = null, originalDuration = 0, source = 'unknown', onStart = null) {
@@ -3964,7 +3881,7 @@ class LiveDubStudio {
             // Pipeline prefetch: start synthesizing next queued item in background the exact moment this one plays!
             if (this.liveDubbingQueue.length > 0) {
               const nextItem = this.liveDubbingQueue[0];
-              if (nextItem && nextItem.voice && nextItem.voice.startsWith('vieneu') && nextItem.text) {
+              if (nextItem && nextItem.voice && nextItem.text) {
                 this.prefetchLiveTts(nextItem.text, nextItem.voice);
               }
             }
@@ -3972,7 +3889,7 @@ class LiveDubStudio {
           const originalDuration = item.originalDuration || (item.finalizedAt && item.capturedAt ? Math.max(0, (item.finalizedAt - item.capturedAt) / 1000) : 0);
           const queueLagMs = item.enqueuedAt ? (performance.now() - item.enqueuedAt) : 0;
           const currentQueueDepth = this.liveDubbingQueue.length + 1;
-          if (item.voice.startsWith('vieneu')) {
+          if (item.voice.startsWith('vieneu') || item.voice.startsWith('edge') || item.voice.startsWith('ms:')) {
             await this.playStreamingTts(
               item.text,
               item.voice,

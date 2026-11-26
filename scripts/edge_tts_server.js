@@ -4,18 +4,18 @@ const { EdgeTTS } = require('node-edge-tts');
 // Bảng cấu hình toàn bộ giọng VieNeu-TTS & Microsoft Studio Neural
 // Nam: vi-VN-NamMinhNeural, Nữ: vi-VN-HoaiMyNeural
 const VOICE_PRESETS = {
-  // Giọng Nam Studio Neural
-  'namminh': { voice: 'vi-VN-NamMinhNeural', pitch: '+0Hz', rate: '+0%' },
-  'thaison': { voice: 'vi-VN-NamMinhNeural', pitch: '+0Hz', rate: '+0%' },
-  'thienminh': { voice: 'vi-VN-NamMinhNeural', pitch: '+0Hz', rate: '+0%' },
-  'quangson': { voice: 'vi-VN-NamMinhNeural', pitch: '+0Hz', rate: '+0%' },
-  'adam': { voice: 'vi-VN-NamMinhNeural', pitch: '+0Hz', rate: '+0%' },
+  // Giọng Nam Studio Neural (Rate +10% để đọc khớp nhịp phim nhanh nhẹn)
+  'namminh': { voice: 'vi-VN-NamMinhNeural', pitch: '+0Hz', rate: '+10%' },
+  'thaison': { voice: 'vi-VN-NamMinhNeural', pitch: '+0Hz', rate: '+10%' },
+  'thienminh': { voice: 'vi-VN-NamMinhNeural', pitch: '+0Hz', rate: '+10%' },
+  'quangson': { voice: 'vi-VN-NamMinhNeural', pitch: '+0Hz', rate: '+10%' },
+  'adam': { voice: 'vi-VN-NamMinhNeural', pitch: '+0Hz', rate: '+10%' },
 
-  // Giọng Nữ Studio Neural
-  'hoaimy': { voice: 'vi-VN-HoaiMyNeural', pitch: '+0Hz', rate: '+0%' },
-  'trucly': { voice: 'vi-VN-HoaiMyNeural', pitch: '+0Hz', rate: '+0%' },
-  'thuydung': { voice: 'vi-VN-HoaiMyNeural', pitch: '+0Hz', rate: '+0%' },
-  'maianh': { voice: 'vi-VN-HoaiMyNeural', pitch: '+0Hz', rate: '+0%' }
+  // Giọng Nữ Studio Neural (Rate +10% để đọc khớp nhịp phim nhanh nhẹn)
+  'hoaimy': { voice: 'vi-VN-HoaiMyNeural', pitch: '+0Hz', rate: '+10%' },
+  'trucly': { voice: 'vi-VN-HoaiMyNeural', pitch: '+0Hz', rate: '+10%' },
+  'thuydung': { voice: 'vi-VN-HoaiMyNeural', pitch: '+0Hz', rate: '+10%' },
+  'maianh': { voice: 'vi-VN-HoaiMyNeural', pitch: '+0Hz', rate: '+10%' }
 };
 
 function removeVietnameseAccents(str) {
