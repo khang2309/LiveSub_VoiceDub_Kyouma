@@ -15,12 +15,28 @@ pub async fn fetch_online_translation(state: &AppState, text: &str, source_lang:
         }
     }
 
-    let lang_code = SourceLanguage::from_str(source_lang).code();
-    let sl = if lang_code == "auto" {
-        "auto"
+    let trimmed_lang = source_lang.trim();
+    let lower_lang = trimmed_lang.to_lowercase();
+    let sl_owned: String = if lower_lang.is_empty() || lower_lang == "auto" {
+        "auto".to_string()
+    } else if lower_lang.starts_with("zh") {
+        if lower_lang.contains("tw") || lower_lang.contains("hant") {
+            "zh-TW".to_string()
+        } else {
+            "zh-CN".to_string()
+        }
     } else {
-        lang_code
+        let prefix = lower_lang.split(['-', '_']).next().unwrap_or("auto");
+        let mapped = SourceLanguage::from_str(prefix);
+        if mapped != SourceLanguage::Auto {
+            mapped.code().to_string()
+        } else if (2..=3).contains(&prefix.len()) && prefix.chars().all(|c| c.is_ascii_alphabetic()) {
+            prefix.to_string()
+        } else {
+            "auto".to_string()
+        }
     };
+    let sl = sl_owned.as_str();
 
     // Engine 1: Google Translate single endpoint (client=gtx) - fast (<60ms), 100% reliable, full UTF-8 diacritics
     let gtx_url = format!(

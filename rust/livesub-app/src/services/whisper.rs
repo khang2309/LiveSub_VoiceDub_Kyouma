@@ -30,6 +30,9 @@ pub fn ensure_whisper_cuda_server(
         port, default_lang
     );
     let mut cmd = Command::new(exe_path);
+    if let Some(dir) = exe_path.parent() {
+        cmd.current_dir(dir);
+    }
     cmd.arg("-m")
         .arg(model_path)
         .arg("--port")
@@ -51,7 +54,7 @@ pub fn ensure_whisper_cuda_server(
 
     match cmd.spawn() {
         Ok(child) => {
-            for _ in 0..40 {
+            for _ in 0..60 {
                 std::thread::sleep(Duration::from_millis(150));
                 if std::net::TcpStream::connect(&check_addr).is_ok() {
                     println!("✅ Whisper CUDA GPU server ready on port {}", port);
@@ -65,6 +68,49 @@ pub fn ensure_whisper_cuda_server(
             None
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct WhisperTranscription {
+    pub text: String,
+    pub detected_lang: Option<String>,
+}
+
+pub fn normalize_whisper_language(raw: &str) -> Option<&'static str> {
+    let trimmed = raw.trim().to_lowercase();
+    if trimmed.is_empty() || trimmed == "auto" {
+        return None;
+    }
+    let code = match trimmed.split(['-', '_']).next().unwrap_or("") {
+        "en" | "english" => "en",
+        "vi" | "vietnamese" => "vi",
+        "th" | "thai" => "th",
+        "ja" | "jp" | "japanese" => "ja",
+        "zh" | "cmn" | "chinese" => "zh",
+        "ko" | "kor" | "korean" => "ko",
+        "fr" | "french" => "fr",
+        "de" | "german" => "de",
+        "es" | "spanish" => "es",
+        "ru" | "russian" => "ru",
+        "id" | "indonesian" => "id",
+        "ms" | "malay" => "ms",
+        "lo" | "lao" => "lo",
+        "km" | "khmer" => "km",
+        "hi" | "hindi" => "hi",
+        "ar" | "arabic" => "ar",
+        "pt" | "portuguese" => "pt",
+        "it" | "italian" => "it",
+        "tr" | "turkish" => "tr",
+        "nl" | "dutch" => "nl",
+        "pl" | "polish" => "pl",
+        "uk" | "ukrainian" => "uk",
+        "tl" | "tagalog" => "tl",
+        "my" | "burmese" | "myanmar" => "my",
+        "ta" | "tamil" => "ta",
+        "yue" | "cantonese" => "zh",
+        _ => return None,
+    };
+    Some(code)
 }
 
 fn is_whisper_non_speech(text: &str) -> bool {
@@ -83,12 +129,11 @@ fn is_whisper_non_speech(text: &str) -> bool {
             | "[applause]"
             | "(applause)"
             | "[laughter]"
+            | "(laughter)"
             | "[音楽]"
             | "(音楽)"
             | "♪"
             | "♪♪"
-            | "thank you."
-            | "you"
     ) {
         return true;
     }
@@ -100,7 +145,7 @@ pub async fn transcribe_gpu_whisper(
     server_url: &str,
     audio_bytes: &[u8],
     source_lang: &str,
-) -> Result<String, String> {
+) -> Result<WhisperTranscription, String> {
     let part = reqwest::multipart::Part::bytes(audio_bytes.to_vec())
         .file_name("audio.wav")
         .mime_str("audio/wav")
@@ -120,12 +165,12 @@ pub async fn transcribe_gpu_whisper(
 
     let form = reqwest::multipart::Form::new()
         .part("file", part)
-        .text("response_format", "json")
+        .text("response_format", "verbose_json")
         .text("temperature", "0.0")
         .text("language", lang_arg);
 
     // Nếu là tiếng Anh và server Whisper chuyên tiếng Anh (cổng 8090) đang chạy, ưu tiên dùng cổng 8090;
-    // nếu cổng 8090 chưa sẵn sàng thì fallback sang server đa ngôn ngữ cổng 8089.
+    // mọi ngôn ngữ khác (bao gồm Tiếng Thái 'th', Nhật, Trung, Hàn, auto...) dùng server đa ngôn ngữ cổng 8089.
     let target_server = if normalized == "en" && std::net::TcpStream::connect("127.0.0.1:8090").is_ok() {
         "http://127.0.0.1:8090"
     } else if server_url.contains(":8090") && std::net::TcpStream::connect("127.0.0.1:8090").is_err() {
@@ -161,8 +206,21 @@ pub async fn transcribe_gpu_whisper(
         .trim();
 
     if is_whisper_non_speech(text) {
-        Ok(String::new())
-    } else {
-        Ok(text.to_string())
+        return Ok(WhisperTranscription {
+            text: String::new(),
+            detected_lang: None,
+        });
     }
+
+    let detected_lang = json_val
+        .get("detected_language")
+        .or_else(|| json_val.get("language"))
+        .and_then(|v| v.as_str())
+        .and_then(normalize_whisper_language)
+        .map(str::to_string);
+
+    Ok(WhisperTranscription {
+        text: text.to_string(),
+        detected_lang,
+    })
 }

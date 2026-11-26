@@ -85,14 +85,14 @@ pub async fn api_pipeline_status(State(state): State<AppState>) -> Json<serde_js
         "engine": "LiveSub 100% Pure Rust Dedicated Multi-Model Engine",
         "device": "cuda:0 (NVIDIA GeForce RTX 3050 Laptop GPU, 4096 MiB)",
         "active_language": "multi-model",
-        "supported_languages": ["vi", "en", "zh", "ja", "ko", "auto"],
+        "supported_languages": ["vi", "th", "en", "zh", "ja", "ko", "fr", "de", "es", "ru", "id", "ms", "lo", "km", "hi", "pt", "it", "ar", "auto"],
         "sample_rate": 48000,
         "asr": {
             "status": if asr_multi_ready || asr_en_ready { "ready" } else { "starting" },
             "device": "cuda:0 (NVIDIA GeForce RTX 3050 Laptop GPU)",
             "models": {
                 "multilingual": {
-                    "model": "ggml-base.bin (99+ languages: vi, ja, zh, ko)",
+                    "model": "ggml-base.bin (99+ languages: vi, th, ja, zh, ko, ...)",
                     "port": 8089,
                     "active": asr_multi_ready
                 },

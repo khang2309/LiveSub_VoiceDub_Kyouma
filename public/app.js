@@ -223,7 +223,7 @@ class LiveDubStudio {
     if (savedLang && this.sourceLangSelect) {
       this.sourceLangSelect.value = savedLang;
     } else if (this.sourceLangSelect) {
-      this.sourceLangSelect.value = 'vi-VN';
+      this.sourceLangSelect.value = 'auto';
     }
     const savedSubMode = localStorage.getItem('livesub_sub_mode');
     if (savedSubMode && ['bilingual', 'vi_only', 'source_only', 'en_only'].includes(savedSubMode)) {
@@ -821,9 +821,13 @@ class LiveDubStudio {
           } else if (val.startsWith('zh')) {
             this.oneTouchDetectionPill.innerHTML = '⚡ <strong>Phụ đề Tiếng Trung:</strong> OCR PP-OCR v4 (Hán tự) siêu tốc ~20ms, dịch trực tiếp & lồng tiếng Việt';
           } else if (val.startsWith('ko')) {
-            this.oneTouchDetectionPill.innerHTML = '⚡ <strong>Phụ đề Tiếng Hàn:</strong> OCR PP-OCR v3 (Hangul) siêu tốc ~20ms, dịch trực tiếp & lồng tiếng Việt';
+            this.oneTouchDetectionPill.innerHTML = '⚡ <strong>Tiếng Hàn:</strong> Nhận diện & dịch sang Tiếng Việt';
+          } else if (val.startsWith('th')) {
+            this.oneTouchDetectionPill.innerHTML = '🇹🇭 <strong>Tiếng Thái:</strong> Whisper GPU nghe tiếng Thái & dịch sang Tiếng Việt';
+          } else if (val === 'auto') {
+            this.oneTouchDetectionPill.innerHTML = '🌐 <strong>Tự động nhận diện:</strong> Tự phát hiện ngôn ngữ nói/chữ & dịch sang Tiếng Việt';
           } else {
-            this.oneTouchDetectionPill.innerHTML = `⚡ <strong>Đang quét phụ đề (${val.toUpperCase()}):</strong> Tự động nhận diện & lồng tiếng`;
+            this.oneTouchDetectionPill.innerHTML = `⚡ <strong>Ngôn ngữ (${val.toUpperCase()}):</strong> Tự động nhận diện & dịch sang Tiếng Việt`;
           }
         }
         localStorage.setItem('livesub_sourcelang', val);
@@ -1565,10 +1569,69 @@ class LiveDubStudio {
   }
 
   // --- SOURCE 1: SYSTEM AUDIO ---
+  populateSourceLangOptions(mode = 'whisper') {
+    if (!this.sourceLangSelect) return;
+    const prevVal = this.sourceLangSelect.value || (typeof localStorage !== 'undefined' ? localStorage.getItem('livesub_sourcelang') : null) || 'auto';
+    const isOcr = mode === 'ocr';
+    const autoLabel = isOcr
+      ? '🌐 Tự động nhận diện'
+      : (mode === 'auto' ? '🌐 Tự động Hybrid (OCR + Whisper)' : '🌐 Tự động nhận diện (Mọi ngôn ngữ)');
+    const options = [
+      ['auto', autoLabel],
+      ['th-TH', '🇹🇭 Tiếng Thái (Thai)'],
+      ['en-US', '🇬🇧 Tiếng Anh'],
+      ['ja-JP', '🇯🇵 Tiếng Nhật'],
+      ['zh-CN', '🇨🇳 Tiếng Trung'],
+      ['ko-KR', '🇰🇷 Tiếng Hàn'],
+      ['vi-VN', '🇻🇳 Tiếng Việt (Không dịch)'],
+      ['fr-FR', '🇫🇷 Tiếng Pháp'],
+      ['de-DE', '🇩🇪 Tiếng Đức'],
+      ['es-ES', '🇪🇸 Tiếng Tây Ban Nha'],
+      ['ru-RU', '🇷🇺 Tiếng Nga'],
+      ['id-ID', '🇮🇩 Tiếng Indonesia'],
+      ['ms-MY', '🇲🇾 Tiếng Malaysia'],
+      ['lo-LA', '🇱🇦 Tiếng Lào'],
+      ['km-KH', '🇰🇭 Tiếng Campuchia (Khmer)'],
+      ['hi-IN', '🇮🇳 Tiếng Ấn Độ (Hindi)'],
+      ['pt-PT', '🇵🇹 Tiếng Bồ Đào Nha'],
+      ['it-IT', '🇮🇹 Tiếng Ý'],
+      ['ar-SA', '🇸🇦 Tiếng Ả Rập']
+    ];
+    this.sourceLangSelect.innerHTML = options
+      .map(([v, label]) => `<option value="${v}">${label}</option>`)
+      .join('');
+    const hasPrev = options.some(([v]) => v === prevVal);
+    this.sourceLangSelect.value = hasPrev ? prevVal : 'auto';
+  }
+
+  cleanupAudioCapture() {
+    if (this._vadWatchdogTimer) {
+      clearInterval(this._vadWatchdogTimer);
+      this._vadWatchdogTimer = null;
+    }
+    if (this.neuralVAD) {
+      const vadToDestroy = this.neuralVAD;
+      this.neuralVAD = null;
+      this.neuralVADActive = false;
+      try { vadToDestroy.destroy().catch(() => {}); } catch (_) {}
+    }
+    if (this.scriptNode) {
+      try { this.scriptNode.disconnect(); } catch (_) {}
+      this.scriptNode = null;
+    }
+    if (this.mediaStreamSource) {
+      try { this.mediaStreamSource.disconnect(); } catch (_) {}
+      this.mediaStreamSource = null;
+    }
+  }
+
   setSystemMode(mode) {
     this.currentSystemMode = mode;
     this.isOCRModeActive = (mode === 'ocr' || mode === 'auto');
     this.isHybridModeActive = (mode === 'auto');
+    if (mode === 'whisper') {
+      this.hasActiveHardSubtitles = false;
+    }
     this.detectedOCRLanguage = null;
     this.autoDetectedSourceLang = null;
     this.lastOCRText = '';
@@ -1587,82 +1650,49 @@ class LiveDubStudio {
         this.startHardSubtitleOCR(this.mediaStream);
       } else if (mode === 'whisper') {
         this.stopHardSubtitleOCR();
+        this.hasActiveHardSubtitles = false;
         this.setupVADAndRecording(this.mediaStream);
       } else {
         this.startHardSubtitleOCR(this.mediaStream);
         this.setupVADAndRecording(this.mediaStream);
       }
     }
+    this.populateSourceLangOptions(mode);
     if (mode === 'ocr') {
-      const savedLang = this.sourceLangSelect ? this.sourceLangSelect.value : (localStorage.getItem('livesub_sourcelang') || 'auto');
       if (this.btnModeSub) this.btnModeSub.classList.add('active');
       if (this.btnModeAudio) this.btnModeAudio.classList.remove('active');
       if (this.btnModeHybrid) this.btnModeHybrid.classList.remove('active');
       if (this.lblSourceLang) this.lblSourceLang.textContent = 'Ngôn Ngữ Phụ Đề:';
-      if (this.sourceLangSelect) {
-        this.sourceLangSelect.innerHTML = `
-          <option value="auto">🌐 Tự động nhận diện</option>
-          <option value="en-US">🇬🇧 Tiếng Anh (Dịch sang Việt)</option>
-          <option value="ja-JP">🇯🇵 Tiếng Nhật (Dịch sang Việt)</option>
-          <option value="zh-CN">🇨🇳 Tiếng Trung (Dịch sang Việt)</option>
-          <option value="ko-KR">🇰🇷 Tiếng Hàn (Dịch sang Việt)</option>
-          <option value="vi-VN">🇻🇳 Tiếng Việt (Không dịch)</option>
-        `;
-        this.sourceLangSelect.value = savedLang || 'auto';
-      }
-      if (!this.isListening) {
-        if (this.btnSystemAudioText) this.btnSystemAudioText.textContent = 'BẮT ĐẦU ĐỌC & LỒNG TIẾNG SUB';
+      if (!this.isListening && this.btnSystemAudioText) {
+        this.btnSystemAudioText.textContent = 'BẮT ĐẦU ĐỌC & LỒNG TIẾNG SUB';
       }
       if (this.oneTouchDetectionPill) {
         this.oneTouchDetectionPill.innerHTML = '📷 Đang đọc sub OCR (~150ms)';
       }
     } else if (mode === 'auto') {
-      const savedLang = this.sourceLangSelect ? this.sourceLangSelect.value : (localStorage.getItem('livesub_sourcelang') || 'auto');
       if (this.btnModeSub) this.btnModeSub.classList.remove('active');
       if (this.btnModeAudio) this.btnModeAudio.classList.remove('active');
       if (this.btnModeHybrid) this.btnModeHybrid.classList.add('active');
       if (this.lblSourceLang) this.lblSourceLang.textContent = 'Ngôn Ngữ Video:';
-      if (this.sourceLangSelect) {
-        this.sourceLangSelect.innerHTML = `
-          <option value="auto">🌐 Tự động Hybrid (OCR + Whisper)</option>
-          <option value="vi-VN">🇻🇳 Tiếng Việt (Phụ đề / Nói)</option>
-          <option value="ja-JP">🇯🇵 Tiếng Nhật (Anime)</option>
-          <option value="en-US">🇬🇧 Tiếng Anh</option>
-          <option value="zh-CN">🇨🇳 Tiếng Trung</option>
-          <option value="ko-KR">🇰🇷 Tiếng Hàn</option>
-        `;
-        this.sourceLangSelect.value = savedLang || 'auto';
-      }
-      if (!this.isListening) {
-        if (this.btnSystemAudioText) this.btnSystemAudioText.textContent = 'BẮT ĐẦU XEM & DỊCH TỰ ĐỘNG';
+      if (!this.isListening && this.btnSystemAudioText) {
+        this.btnSystemAudioText.textContent = 'BẮT ĐẦU XEM & DỊCH TỰ ĐỘNG';
       }
       if (this.oneTouchDetectionPill) {
         this.oneTouchDetectionPill.innerHTML = '⚡ Chế độ Hybrid: Tự động OCR + Whisper GPU';
       }
     } else {
-      const savedLang = this.sourceLangSelect ? this.sourceLangSelect.value : (localStorage.getItem('livesub_sourcelang') || 'auto');
       if (this.btnModeSub) this.btnModeSub.classList.remove('active');
       if (this.btnModeAudio) this.btnModeAudio.classList.add('active');
       if (this.btnModeHybrid) this.btnModeHybrid.classList.remove('active');
       if (this.lblSourceLang) this.lblSourceLang.textContent = 'Tiếng Nói Nhân Vật:';
-      if (this.sourceLangSelect) {
-        this.sourceLangSelect.innerHTML = `
-          <option value="auto">🌐 Tự động (Whisper GPU)</option>
-          <option value="ja-JP">🇯🇵 Tiếng Nhật (Anime)</option>
-          <option value="en-US">🇬🇧 Tiếng Anh</option>
-          <option value="zh-CN">🇨🇳 Tiếng Trung</option>
-          <option value="ko-KR">🇰🇷 Tiếng Hàn</option>
-          <option value="vi-VN">🇻🇳 Tiếng Việt</option>
-        `;
-        this.sourceLangSelect.value = savedLang || 'auto';
-      }
-      if (!this.isListening) {
-        if (this.btnSystemAudioText) this.btnSystemAudioText.textContent = 'BẮT ĐẦU NGHE & LỒNG TIẾNG (WHISPER)';
+      if (!this.isListening && this.btnSystemAudioText) {
+        this.btnSystemAudioText.textContent = 'BẮT ĐẦU NGHE & LỒNG TIẾNG (WHISPER)';
       }
       if (this.oneTouchDetectionPill) {
         this.oneTouchDetectionPill.innerHTML = '🎙️ Đang nghe Whisper GPU (~0.3s)';
       }
     }
+    this.updateAppliedSettings();
   }
 
   async toggleSystemAudio() {
@@ -2107,6 +2137,8 @@ class LiveDubStudio {
               this.oneTouchDetectionPill.innerHTML = '⚡ <strong>Phụ đề Tiếng Trung:</strong> OCR PP-OCR v4 (Hán tự) siêu tốc ~20ms, dịch trực tiếp & lồng tiếng Việt';
             } else if (currentLang.startsWith('ko')) {
               this.oneTouchDetectionPill.innerHTML = '⚡ <strong>Phụ đề Tiếng Hàn:</strong> OCR PP-OCR v3 (Hangul) siêu tốc ~20ms, dịch trực tiếp & lồng tiếng Việt';
+            } else if (currentLang.startsWith('th')) {
+              this.oneTouchDetectionPill.innerHTML = '🇹🇭 <strong>Tiếng Thái:</strong> Đang quét chữ & dịch trực tiếp sang Tiếng Việt';
             } else {
               this.oneTouchDetectionPill.innerHTML = `⚡ <strong>Đang quét phụ đề (${currentLang.toUpperCase()}):</strong> Tự động nhận diện & lồng tiếng`;
             }
@@ -3339,6 +3371,13 @@ class LiveDubStudio {
   // Never drops speech syllables, resamples to 16kHz for instant GPU Whisper!
   // =========================================================================
   async setupVADAndRecording(stream) {
+    this.cleanupAudioCapture();
+    const audioTracks = stream && stream.getAudioTracks ? stream.getAudioTracks() : [];
+    if (audioTracks.length === 0) {
+      this.showToast('⚠️ Chưa có âm thanh từ video/tab! Hãy bấm Dừng rồi chọn lại và tích ô "Chia sẻ âm thanh / Share audio".');
+      return false;
+    }
+
     this.isListening = true;
     this.lastProcessedText = '';
     this.lastTranscriptContext = '';
@@ -3354,10 +3393,7 @@ class LiveDubStudio {
       await this.audioContext.resume();
     }
 
-    const audioTracks = stream.getAudioTracks();
-    const audioStream = audioTracks.length > 0 ? new MediaStream(audioTracks) : stream;
-
-    // STORE TO PREVENT V8 GARBAGE COLLECTION
+    const audioStream = new MediaStream(audioTracks);
     this.mediaStreamSource = this.audioContext.createMediaStreamSource(audioStream);
     const sampleRate = this.audioContext.sampleRate || 48000;
     const scriptNode = this.audioContext.createScriptProcessor(4096, 1, 1);
@@ -3369,11 +3405,24 @@ class LiveDubStudio {
     this.preRollBuffers = [];
     this.isCapturingSpeech = false;
     this.captureStartedAt = 0;
-    this.vadNoiseFloor = 0.0025;
+    this.vadNoiseFloor = 0.0020;
     this.neuralVADActive = false;
+    this._lastVadEventAt = performance.now();
+    this._sustainedAudibleBlocks = 0;
+    this._vadFlushingCeiling = false;
+
+    const dispatchVadAudio16k = (audio) => {
+      if (!this.isListening || (this.isOCRModeActive && this.hasActiveHardSubtitles) || !audio || audio.length < 3200) return;
+      const wavBlob = this.encodeWAV16k([audio], 16000);
+      wavBlob.livesubCapturedAt = this.captureStartedAt || performance.now();
+      wavBlob.livesubFinalizedAt = performance.now();
+      this.captureStartedAt = 0;
+      this._lastVadEventAt = performance.now();
+      this.realtimeMetrics.naturalSpeechSplits++;
+      if (wavBlob.size > 800) this.sendSpeechPhraseToAI(wavBlob);
+    };
 
     const triggerSendClause = (reason = 'natural') => {
-      // Collect at least 0.4s of audio (~4 blocks at 48k)
       const minBlocks = Math.max(3, Math.round((0.4 * sampleRate) / 4096));
       if (this.pcmBuffers.length < minBlocks || this.currentChunkMaxRms < 0.0002) {
         this.pcmBuffers = [];
@@ -3403,13 +3452,11 @@ class LiveDubStudio {
       }
     };
 
-    // Prefer a local neural VAD over raw volume thresholds. Silero sees speech
-    // probability instead of only loudness, so background music and short
-    // pauses are much less likely to split an actor in the middle of a line.
-    // Audio is returned at Whisper-native 16 kHz and never leaves the browser
-    // until a complete phrase has been detected.
     if ((!this.isOCRModeActive || this.isHybridModeActive) && window.vad && window.vad.MicVAD) {
       try {
+        if (window.ort && window.ort.env && window.ort.env.wasm) {
+          window.ort.env.wasm.numThreads = 1;
+        }
         const vadStream = audioStream;
         this.neuralVAD = await window.vad.MicVAD.new({
           model: 'v5',
@@ -3421,48 +3468,56 @@ class LiveDubStudio {
           getStream: async () => vadStream,
           pauseStream: async () => {},
           resumeStream: async () => vadStream,
-          positiveSpeechThreshold: 0.42,
-          negativeSpeechThreshold: 0.30,
-          // 350 ms redemption preserves natural sentences while triggering dubbing with near-zero latency
+          positiveSpeechThreshold: 0.38,
+          negativeSpeechThreshold: 0.25,
           redemptionMs: 350,
           preSpeechPadMs: 180,
           minSpeechMs: 200,
           submitUserSpeechOnPause: true,
           onSpeechStart: () => {
             this.captureStartedAt = performance.now();
+            this._lastVadEventAt = performance.now();
           },
-          onSpeechRealStart: () => {},
+          onSpeechRealStart: () => {
+            this._lastVadEventAt = performance.now();
+          },
           onVADMisfire: () => {
             this.captureStartedAt = 0;
+            this._lastVadEventAt = performance.now();
           },
-          onFrameProcessed: (probabilities) => {
-            // Split continuous monologues (> 4.2s) to prevent unbounded buffers and voiceover lag
-            if (this.captureStartedAt && probabilities) {
+          onFrameProcessed: () => {
+            if (this.captureStartedAt && !this._vadFlushingCeiling) {
               const elapsed = performance.now() - this.captureStartedAt;
-              const isCeiling = elapsed > 4200;
-              if (isCeiling && this.neuralVAD && this.neuralVAD.frameProcessor) {
-                this.neuralVAD.frameProcessor.redemptionCounter = this.neuralVAD.frameProcessor.redemptionFrames || 999;
+              if (elapsed > 4200 && this.neuralVAD && this.neuralVAD.frameProcessor && typeof this.neuralVAD.frameProcessor.endSegment === 'function') {
+                this._vadFlushingCeiling = true;
+                try {
+                  this.neuralVAD.frameProcessor.endSegment((ev) => {
+                    if (ev && ev.audio && ev.audio.length >= 3200) {
+                      this.realtimeMetrics.hardSpeechSplits++;
+                      dispatchVadAudio16k(ev.audio);
+                    }
+                  });
+                } catch (_) {
+                } finally {
+                  this.captureStartedAt = 0;
+                  this._vadFlushingCeiling = false;
+                }
               }
             }
           },
           onSpeechEnd: (audio) => {
-            if (!this.isListening || (this.isOCRModeActive && this.hasActiveHardSubtitles) || !audio || audio.length < 3200) return;
-            const wavBlob = this.encodeWAV16k([audio], 16000);
-            wavBlob.livesubCapturedAt = this.captureStartedAt || performance.now();
-            wavBlob.livesubFinalizedAt = performance.now();
-            this.captureStartedAt = 0;
-            this.realtimeMetrics.naturalSpeechSplits++;
-            if (wavBlob.size > 800) this.sendSpeechPhraseToAI(wavBlob);
+            dispatchVadAudio16k(audio);
           }
         });
         await this.neuralVAD.start();
         this.neuralVADActive = true;
-        this.showToast('Silero VAD local đã bật — chống cắt ngang câu.');
+        this._lastVadEventAt = performance.now();
+        this.showToast('🎙️ Silero VAD + Whisper GPU đã bật!');
       } catch (error) {
         console.warn('Silero VAD unavailable; using adaptive RMS fallback', error);
         this.neuralVAD = null;
         this.neuralVADActive = false;
-        this.showToast('Silero VAD chưa tải được, đang dùng VAD dự phòng.');
+        this.showToast('🎙️ Whisper GPU đang nghe bằng bộ tách âm thanh RMS.');
       }
     }
 
@@ -3470,7 +3525,6 @@ class LiveDubStudio {
       if (!this.isListening) return;
       const input = e.inputBuffer.getChannelData(0);
 
-      // 1. RMS Energy Calculation
       let sumSq = 0;
       for (let i = 0; i < input.length; i++) {
         sumSq += input[i] * input[i];
@@ -3478,29 +3532,37 @@ class LiveDubStudio {
       const rms = Math.sqrt(sumSq / input.length);
       const percent = Math.min(100, Math.round(rms * 100 * 12));
 
-      this.audioMeterFill.style.width = `${percent}%`;
-      this.meterPercentText.textContent = `${percent}%`;
+      if (this.audioMeterFill) this.audioMeterFill.style.width = `${percent}%`;
+      if (this.meterPercentText) this.meterPercentText.textContent = `${percent}%`;
 
       if (rms < 0.0001) {
         this.zeroAudioCounter = (this.zeroAudioCounter || 0) + 1;
-        if (this.zeroAudioCounter === 45 && this.isListening) {
-          if (this.activeSource === 'system') {
-            this.showToast('⚠️ VAD 0%: Chưa nhận được tiếng! Hãy chắc chắn video đang phát và bạn đã tích ô "Chia sẻ âm thanh" (Share audio) khi chọn Tab.');
-          }
+        if (this.zeroAudioCounter === 45 && this.isListening && this.activeSource === 'system') {
+          this.showToast('⚠️ VAD 0%: Chưa nhận được tiếng! Hãy chắc chắn video đang phát và bạn đã tích ô "Chia sẻ âm thanh" (Share audio) khi chọn Tab.');
         }
       } else {
         this.zeroAudioCounter = 0;
       }
 
-      // Silero owns phrase endpointing. This ScriptProcessor remains connected
-      // only for the level meter and the missing-shared-audio warning.
+      if (this.neuralVADActive && !(this.isOCRModeActive && this.hasActiveHardSubtitles)) {
+        if (rms >= 0.0045) {
+          this._sustainedAudibleBlocks++;
+        } else {
+          this._sustainedAudibleBlocks = Math.max(0, this._sustainedAudibleBlocks - 1);
+        }
+        if (this._sustainedAudibleBlocks >= 30 && (performance.now() - (this._lastVadEventAt || 0)) > 2800) {
+          console.warn('Silero VAD produced no speech events on audible audio; falling back to RMS VAD');
+          this.neuralVADActive = false;
+          if (this.neuralVAD) { try { this.neuralVAD.pause(); } catch (_) {} }
+          this.showToast('⚡ Tự động chuyển sang bộ tách âm thanh RMS cho Whisper.');
+        }
+      }
+
       if (this.neuralVADActive || (this.isOCRModeActive && this.hasActiveHardSubtitles)) return;
 
-      // 2. Speech state machine with ~170 ms pre-roll. Long stretches of
-      // silence are not uploaded to Whisper, which cuts ASR time noticeably.
       const block = new Float32Array(input);
       if (!this.isCapturingSpeech) {
-        const speechStartThreshold = Math.max(0.004, this.vadNoiseFloor * 1.7);
+        const speechStartThreshold = Math.max(0.0035, this.vadNoiseFloor * 1.65);
         this.preRollBuffers.push(block);
         if (this.preRollBuffers.length > 3) this.preRollBuffers.shift();
         if (rms >= speechStartThreshold) {
@@ -3511,9 +3573,7 @@ class LiveDubStudio {
           this.currentChunkMaxRms = rms;
           this.consecutiveQuietBlocks = 0;
         } else {
-          // Follow stable movie ambience/music slowly. Speech must rise above
-          // this baseline instead of a fixed RMS threshold.
-          this.vadNoiseFloor = this.vadNoiseFloor * 0.92 + Math.min(rms, 0.02) * 0.08;
+          this.vadNoiseFloor = this.vadNoiseFloor * 0.92 + Math.min(rms, 0.012) * 0.08;
         }
         return;
       }
@@ -3522,21 +3582,16 @@ class LiveDubStudio {
       if (rms > this.currentChunkMaxRms) {
         this.currentChunkMaxRms = rms;
       }
-
       if (rms < this.currentChunkMaxRms * 0.55) {
-        this.vadNoiseFloor = this.vadNoiseFloor * 0.95 + Math.min(rms, 0.02) * 0.05;
+        this.vadNoiseFloor = this.vadNoiseFloor * 0.95 + Math.min(rms, 0.012) * 0.05;
       }
-      const speechEndThreshold = Math.max(0.0032, this.vadNoiseFloor * 1.3);
+      const speechEndThreshold = Math.max(0.0028, this.vadNoiseFloor * 1.25);
       if (rms < speechEndThreshold) {
         this.consecutiveQuietBlocks++;
       } else {
         this.consecutiveQuietBlocks = 0;
       }
 
-      // Low-latency streaming pipeline:
-      // 1. Natural sentence endpoint: ~255ms pause (3 quiet blocks @ 85ms) after >= 0.65s speech.
-      // 2. Clause break on breathing pause: ~170ms pause (2 quiet blocks) after >= 2.5s speech.
-      // 3. Monologue ceiling: 4.5s hard-limit prevents accumulating excessive speech buffer.
       const maxBlocks = Math.round((4.5 * sampleRate) / 4096);
       const minSpeechBlocks = Math.round((0.65 * sampleRate) / 4096);
       const clauseSpeechBlocks = Math.round((2.5 * sampleRate) / 4096);
@@ -3552,6 +3607,7 @@ class LiveDubStudio {
 
     this.mediaStreamSource.connect(scriptNode);
     scriptNode.connect(this.audioContext.destination);
+    return true;
   }
 
   // Pure 16-bit Mono WAV 16,000 Hz Encoder (Whisper Native)
@@ -3707,20 +3763,19 @@ class LiveDubStudio {
       const data = await response.json();
       if (data.timings) this.realtimeMetrics.lastServerTimings = data.timings;
       if (this.isOCRModeActive && this.hasActiveHardSubtitles) return;
-      if (selectedSourceLang === 'auto' && data.detected_lang && data.detected_lang !== 'auto') {
+      if (selectedSourceLang === 'auto' && data.detected_lang && data.detected_lang !== 'auto' && data.original && data.original.trim().length >= 12) {
         this.autoDetectedSourceLang = data.detected_lang;
       }
 
       if (!data.empty && data.original) {
+        const viText = (data.translated && data.translated.trim()) ? data.translated.trim() : data.original.trim();
         if (data.original.toLowerCase() !== this.lastProcessedText.toLowerCase()) {
           this.lastProcessedText = data.original;
           this.lastTranscriptContext = `${this.lastTranscriptContext} ${data.original}`.trim().slice(-500);
-          const record = this.addHistory(data.original, data.translated, data.detected_lang || 'auto');
+          const record = this.addHistory(data.original, viText, data.detected_lang || 'auto');
 
-          // Display translated subtitle immediately for zero perceived latency,
-          // in tight sync with video speech, while voiceover plays smoothly.
-          this.displaySubtitle(data.original, data.translated);
-          if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = data.translated;
+          this.displaySubtitle(data.original, viText);
+          if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = viText;
           if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = data.original;
 
           const captureDuration = (captureMeta && captureMeta.capturedAt && captureMeta.finalizedAt)
@@ -3729,7 +3784,7 @@ class LiveDubStudio {
 
           if (this.isDubbingEnabled) {
             this.enqueueLiveDubbing(
-              data.translated,
+              viText,
               record.id,
               data.original,
               captureMeta ? captureMeta.capturedAt : performance.now(),
@@ -3740,7 +3795,7 @@ class LiveDubStudio {
           }
         }
       }
-    } catch (err) {
+        } catch (err) {
       if (err.name !== 'AbortError') {
         console.warn('Transcribe error:', err);
       }
@@ -4533,26 +4588,7 @@ class LiveDubStudio {
       if (queued && queued.resolve) queued.resolve();
     }
 
-    if (this.neuralVAD) {
-      const vadToDestroy = this.neuralVAD;
-      this.neuralVAD = null;
-      this.neuralVADActive = false;
-      vadToDestroy.destroy().catch(error => console.warn('Cannot stop Silero VAD cleanly', error));
-    }
-
-    if (this.scriptNode) {
-      try {
-        this.scriptNode.disconnect();
-      } catch (e) {}
-      this.scriptNode = null;
-    }
-
-    if (this.mediaStreamSource) {
-      try {
-        this.mediaStreamSource.disconnect();
-      } catch (e) {}
-      this.mediaStreamSource = null;
-    }
+    this.cleanupAudioCapture();
 
     if (this.mediaStream) {
       this.mediaStream.getTracks().forEach(t => t.stop());

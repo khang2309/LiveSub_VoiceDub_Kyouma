@@ -74,12 +74,25 @@
         <div class="control-cell" style="min-width: 180px;">
           <label for="sourceLang" id="lblSourceLang" class="control-label">Ngôn Ngữ Gốc:</label>
           <select id="sourceLang" class="form-control form-control-compact">
-            <option value="vi-VN" selected>🇻🇳 Tiếng Việt (Không dịch)</option>
-            <option value="auto">🌐 Tự động nhận diện</option>
+            <option value="auto" selected>🌐 Tự động nhận diện (Mọi ngôn ngữ)</option>
+            <option value="th-TH">🇹🇭 Tiếng Thái (Thai)</option>
             <option value="en-US">🇬🇧 Tiếng Anh</option>
             <option value="ja-JP">🇯🇵 Tiếng Nhật</option>
             <option value="zh-CN">🇨🇳 Tiếng Trung</option>
             <option value="ko-KR">🇰🇷 Tiếng Hàn</option>
+            <option value="vi-VN">🇻🇳 Tiếng Việt (Không dịch)</option>
+            <option value="fr-FR">🇫🇷 Tiếng Pháp</option>
+            <option value="de-DE">🇩🇪 Tiếng Đức</option>
+            <option value="es-ES">🇪🇸 Tiếng Tây Ban Nha</option>
+            <option value="ru-RU">🇷🇺 Tiếng Nga</option>
+            <option value="id-ID">🇮🇩 Tiếng Indonesia</option>
+            <option value="ms-MY">🇲🇾 Tiếng Malaysia</option>
+            <option value="lo-LA">🇱🇦 Tiếng Lào</option>
+            <option value="km-KH">🇰🇭 Tiếng Campuchia (Khmer)</option>
+            <option value="hi-IN">🇮🇳 Tiếng Ấn Độ (Hindi)</option>
+            <option value="pt-PT">🇵🇹 Tiếng Bồ Đào Nha</option>
+            <option value="it-IT">🇮🇹 Tiếng Ý</option>
+            <option value="ar-SA">🇸🇦 Tiếng Ả Rập</option>
           </select>
         </div>
 
@@ -374,6 +387,7 @@
         <input type="radio" name="webCaptionLanguage" value="zh">
         <input type="radio" name="webCaptionLanguage" value="ja">
         <input type="radio" name="webCaptionLanguage" value="ko">
+        <input type="radio" name="webCaptionLanguage" value="th">
       </fieldset>
       <p id="sourceIntelligenceHint"></p>
 
@@ -389,6 +403,6 @@
 
   <script src="/vendor/ort/ort.min.js?v=1.31.1"></script>
   <script src="/vendor/vad/bundle.min.js?v=0.0.31"></script>
-  <script src="app.js?v=20261126_v8"></script>
+  <script src="app.js?v=20261126_v9"></script>
 </body>
 </html>
