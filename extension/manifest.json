@@ -1,21 +1,41 @@
 {
   "manifest_version": 3,
-  "name": "LiveSub - YouTube AI Thuyết Minh & Lồng Tiếng Realtime",
-  "version": "1.0.0",
-  "description": "Thuyết minh lồng tiếng AI đồng bộ từng giây cho YouTube. Dừng là dừng, tua là tua, tự động giảm tiếng gốc chống lẫn giọng!",
+  "name": "LiveSub Studio - AI Thuyết Minh & Lồng Tiếng Video Realtime",
+  "version": "1.1.0",
+  "description": "Thuyết minh lồng tiếng AI đồng bộ từng giây cho mọi video (YouTube, AnimeVietsub, Netflix, Bilibili, phim web). Tự động giảm tiếng gốc, dịch và đọc mượt mà.",
   "icons": {
-    "48": "icon.png",
-    "128": "icon.png"
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    },
+    "default_title": "LiveSub Studio - Điều khiển Lồng Tiếng"
+  },
+  "background": {
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["*://*.youtube.com/*"],
+      "matches": ["<all_urls>"],
       "js": ["content.js"],
       "css": ["style.css"],
-      "run_at": "document_end"
+      "run_at": "document_idle",
+      "all_frames": true
     }
   ],
   "permissions": [
-    "storage"
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://localhost:3000/*",
+    "https://*/*"
   ]
 }
