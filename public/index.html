@@ -86,17 +86,23 @@
         <div class="control-cell" style="flex: 1; min-width: 220px;">
           <label for="voiceSelect" class="control-label">Giọng Lồng Tiếng:</label>
           <select id="voiceSelect" class="form-control form-control-compact select-highlight">
-            <option value="vieneu:Trúc Ly" selected>🎙️ Trúc Ly (Nữ Dịu Dàng)</option>
-            <option value="vieneu:Hải Đăng">🎙️ Hải Đăng (Nam Trầm Ấm)</option>
-            <option value="vieneu:Thiện Minh">🎙️ Thiện Minh (Nam Kể Chuyện)</option>
-            <option value="vieneu:Mai Anh">🎙️ Mai Anh (Nữ Trẻ Trung)</option>
-            <option value="vieneu:Thùy Dung">🎙️ Thùy Dung (Nữ Truyền Cảm)</option>
-            <option value="vieneu:Thái Sơn">🎙️ Thái Sơn (Nam Hùng Hồn)</option>
-            <option value="vieneu:Ngọc Huyền">🎙️ Ngọc Huyền (Nữ Miền Nam Ngọt Ngào)</option>
-            <option value="vieneu:Quỳnh Anh">🎙️ Quỳnh Anh (Nữ Trong Trẻo)</option>
-            <option value="vieneu:Đức Trí">🎙️ Đức Trí (Nam Tri Thức)</option>
-            <option value="vieneu:Minh Đức">🎙️ Minh Đức (Nam Tự Nhiên)</option>
-            <option value="vieneu:Kim Thanh">🎙️ Kim Thanh (Nữ Chuẩn Mực)</option>
+            <optgroup label="⚡ Microsoft Edge-TTS Neural (~200ms - Siêu Tốc Khuyên Dùng)">
+              <option value="edge:Hoài My" selected>⚡ Hoài My (Nữ Truyền Cảm - Siêu Tốc)</option>
+              <option value="edge:Nam Minh">⚡ Nam Minh (Nam Trầm Ấm - Siêu Tốc)</option>
+            </optgroup>
+            <optgroup label="🎙️ VieNeu-TTS Neural (100% Offline GPU CUDA)">
+              <option value="vieneu:Trúc Ly">🎙️ Trúc Ly (Nữ Dịu Dàng - GPU)</option>
+              <option value="vieneu:Hải Đăng">🎙️ Hải Đăng (Nam Trầm Ấm - GPU)</option>
+              <option value="vieneu:Thiện Minh">🎙️ Thiện Minh (Nam Kể Chuyện - GPU)</option>
+              <option value="vieneu:Mai Anh">🎙️ Mai Anh (Nữ Trẻ Trung - GPU)</option>
+              <option value="vieneu:Thùy Dung">🎙️ Thùy Dung (Nữ Truyền Cảm - GPU)</option>
+              <option value="vieneu:Thái Sơn">🎙️ Thái Sơn (Nam Hùng Hồn - GPU)</option>
+              <option value="vieneu:Ngọc Huyền">🎙️ Ngọc Huyền (Nữ Miền Nam Ngọt Ngào - GPU)</option>
+              <option value="vieneu:Quỳnh Anh">🎙️ Quỳnh Anh (Nữ Trong Trẻo - GPU)</option>
+              <option value="vieneu:Đức Trí">🎙️ Đức Trí (Nam Tri Thức - GPU)</option>
+              <option value="vieneu:Minh Đức">🎙️ Minh Đức (Nam Tự Nhiên - GPU)</option>
+              <option value="vieneu:Kim Thanh">🎙️ Kim Thanh (Nữ Chuẩn Mực - GPU)</option>
+            </optgroup>
           </select>
         </div>
 

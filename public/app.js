@@ -121,11 +121,11 @@ class LiveDubStudio {
   }
 
   getEffectiveVoice() {
-    const selected = this.voiceSelect ? this.voiceSelect.value : 'vieneu:Trúc Ly';
+    const selected = this.voiceSelect ? this.voiceSelect.value : 'edge:Hoài My';
     if (selected === 'auto-fast') {
-      return this.autoVoiceProvider || 'vieneu:Trúc Ly';
+      return this.autoVoiceProvider || 'edge:Hoài My';
     }
-    return selected || 'vieneu:Trúc Ly';
+    return selected || 'edge:Hoài My';
   }
 
   updateAppliedSettings() {
@@ -214,9 +214,9 @@ class LiveDubStudio {
     const savedVoice = localStorage.getItem('livesub_voice');
     if (savedVoice && this.voiceSelect) {
       const exists = Array.from(this.voiceSelect.options || []).some(o => o.value === savedVoice);
-      this.voiceSelect.value = exists ? savedVoice : 'vieneu:Trúc Ly';
+      this.voiceSelect.value = exists ? savedVoice : 'edge:Hoài My';
     } else if (this.voiceSelect) {
-      this.voiceSelect.value = 'vieneu:Trúc Ly';
+      this.voiceSelect.value = 'edge:Hoài My';
     }
 
     const savedLang = localStorage.getItem('livesub_sourcelang');
@@ -1475,6 +1475,8 @@ class LiveDubStudio {
     const selectedVoice = this.voiceSelect.value;
     const voice = this.getEffectiveVoice();
     const sampleTexts = {
+      'edge:Hoài My': 'Xin chào, tôi là Hoài My, giọng đọc nữ nhẹ nhàng và truyền cảm của Microsoft Edge Neural.',
+      'edge:Nam Minh': 'Xin chào quý vị và các bạn, tôi là Nam Minh, giọng đọc nam trầm ấm của Microsoft Edge Neural.',
       'auto-fast': 'Xin chào, đây là giọng đọc được hệ thống đo và chọn tự động theo tốc độ thực tế.',
       'vieneu:Trúc Ly': 'Xin chào, tôi là Trúc Ly từ mô hình VieNeu-TTS, phong cách nói tự nhiên và truyền cảm.',
       'vieneu:Thiện Minh': 'Chào bạn, tôi là Thiện Minh, giọng đọc kể chuyện truyền cảm của VieNeu-TTS.',

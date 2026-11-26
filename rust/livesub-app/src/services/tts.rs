@@ -16,7 +16,7 @@ pub async fn synthesize_tts_bytes(state: &AppState, text: &str, voice: Option<&s
         state.ocr.restore_vietnamese(&cleaned)
     };
 
-    let selected_voice = voice.unwrap_or("Trúc Ly");
+    let selected_voice = voice.unwrap_or("edge:Hoài My");
     let cache_key = format!("tts:{}:{}", selected_voice, target_text);
 
     // 1. Check in-memory audio cache
@@ -26,24 +26,60 @@ pub async fn synthesize_tts_bytes(state: &AppState, text: &str, voice: Option<&s
         }
     }
 
-    // 2. Pure Rust native offline VieNeu-TTS synthesis (torch-free, python-free)
-    // Serialized single-flight GPU execution: prevents mutex contention, threadpool clogging, and latency buildup over time
-    let _permit = state.tts_sem.acquire().await;
+    // 2. High-speed Realtime Edge-TTS (~200ms) integration
+    let voice_lower = selected_voice.to_lowercase();
+    let is_edge = voice_lower.starts_with("edge:")
+        || voice_lower.starts_with("ms:")
+        || voice_lower.contains("hoài my")
+        || voice_lower.contains("hoaimy")
+        || voice_lower.contains("nam minh")
+        || voice_lower.contains("namminh")
+        || voice_lower == "edge"
+        || voice_lower == "auto-fast";
 
+    if is_edge {
+        let edge_voice_param = if voice_lower.contains("nam") { "namminh" } else { "hoaimy" };
+        let edge_url = "http://127.0.0.1:3005/api/tts";
+        let payload = serde_json::json!({
+            "text": target_text,
+            "voice": edge_voice_param
+        });
+
+        if let Ok(resp) = state.http_client.post(edge_url).json(&payload).send().await {
+            if resp.status().is_success() {
+                if let Ok(bytes) = resp.bytes().await {
+                    let vec = bytes.to_vec();
+                    if !vec.is_empty() {
+                        if let Ok(mut c) = state.audio_cache.write() {
+                            if c.len() >= 512 {
+                                if let Some(oldest_key) = c.keys().next().cloned() {
+                                    c.remove(&oldest_key);
+                                }
+                            }
+                            c.insert(cache_key, vec.clone());
+                        }
+                        return Some(vec);
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Pure Rust native offline VieNeu-TTS synthesis (torch-free, python-free)
+    // Parallel GPU generation: semaphore lock removed to enable concurrent sentence generation
     let vieneu = state.vieneu.clone();
     let text_clone = target_text.clone();
-    let voice_clone = selected_voice.to_string();
+    let clean_voice = selected_voice.replace("vieneu:", "");
 
     let wav_res = tokio::task::spawn_blocking(move || {
-        vieneu.infer(&text_clone, &voice_clone)
+        vieneu.infer(&text_clone, &clean_voice)
     })
     .await;
 
     if let Ok(Ok(wav_bytes)) = wav_res {
         if !wav_bytes.is_empty() {
             if let Ok(mut c) = state.audio_cache.write() {
-                // Generous synthesis cache: sinh thoải mái nhiều câu để xem video mượt mà không bị ngắt quãng
-                if c.len() >= 256 {
+                if c.len() >= 512 {
                     if let Some(oldest_key) = c.keys().next().cloned() {
                         c.remove(&oldest_key);
                     }
@@ -61,9 +97,12 @@ pub async fn synthesize_tts_bytes(state: &AppState, text: &str, voice: Option<&s
 
 pub async fn synthesize_tts(state: &AppState, text: &str, voice: Option<&str>) -> Response {
     if let Some(audio_vec) = synthesize_tts_bytes(state, text, voice).await {
+        let is_wav = audio_vec.starts_with(b"RIFF");
+        let ctype = if is_wav { "audio/wav" } else { "audio/mpeg" };
+
         let mut res = audio_vec.into_response();
         res.headers_mut()
-            .insert(header::CONTENT_TYPE, HeaderValue::from_static("audio/wav"));
+            .insert(header::CONTENT_TYPE, HeaderValue::from_static(ctype));
         res.headers_mut().insert(
             header::CACHE_CONTROL,
             HeaderValue::from_static("public, max-age=86400"),
@@ -76,7 +115,7 @@ pub async fn synthesize_tts(state: &AppState, text: &str, voice: Option<&str>) -
     } else {
         (
             StatusCode::BAD_GATEWAY,
-            "VieNeu-TTS native engine did not produce audio",
+            "TTS engine did not produce audio",
         )
             .into_response()
     }
