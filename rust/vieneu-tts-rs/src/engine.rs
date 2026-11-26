@@ -1,13 +1,28 @@
 use std::io::Cursor;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use ndarray::{Array1, Array2, Array3, Array4, ArrayView1, Axis};
-use ort::ep::{CUDA, DirectML, ExecutionProvider};
+use ort::ep::CUDA;
 use ort::session::builder::GraphOptimizationLevel;
 use ort::session::Session;
 use ort::value::Tensor;
 use rand::thread_rng;
 use tokenizers::Tokenizer;
+
+static SHARED_ORT_ENV: OnceLock<ort::environment::Environment> = OnceLock::new();
+
+/// Returns the single shared ONNX Runtime environment for the entire process,
+/// allowing both VieNeu-TTS and OCR engines to share CUDA/DirectML execution providers.
+pub fn shared_ort_env() -> Result<ort::environment::Environment, VieneuError> {
+    if let Some(env) = SHARED_ORT_ENV.get() {
+        return Ok(env.clone());
+    }
+    let env = ort::init()
+        .with_name("livesub-gpu")
+        .build()?;
+    let _ = SHARED_ORT_ENV.set(env.clone());
+    Ok(SHARED_ORT_ENV.get().cloned().unwrap_or(env))
+}
 
 use crate::error::VieneuError;
 use crate::heads::VieneuHeads;
@@ -73,67 +88,60 @@ pub struct VieneuEngine {
 
 impl VieneuEngine {
     pub fn new(config: VieneuEngineConfig) -> Result<Self, VieneuError> {
-        let env = ort::init()
-            .with_name("vieneu-tts")
-            .build()?;
+        let env = shared_ort_env()?;
+        let cpu_threads = (std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+            / 2)
+        .max(2)
+        .min(4);
 
-        let cuda_ready = CUDA::is_available().unwrap_or(false);
-        let dml_ready = !cuda_ready && DirectML::is_available().unwrap_or(false);
-        // On CUDA/DirectML, keep ORT CPU intra_threads minimal (1) so 4 sessions don't spawn
-        // idle-spinning CPU worker pools that contend with CPU-bound VietOCR.
-        let intra_threads = if cuda_ready || dml_ready {
-            1
-        } else {
-            (std::thread::available_parallelism()
-                .map(|n| n.get())
-                .unwrap_or(4)
-                / 2)
-            .max(2)
-            .min(4)
+        #[derive(Clone, Copy)]
+        enum EpMode {
+            Cuda,
+            Cpu,
+        }
+
+        let create_session = |path: &PathBuf, mode: EpMode| -> Result<Session, VieneuError> {
+            let b = Session::builder(&env)?
+                .with_optimization_level(GraphOptimizationLevel::Level3)
+                .unwrap_or_else(|e| e.recover())
+                .with_intra_threads(match mode {
+                    EpMode::Cpu => cpu_threads,
+                    EpMode::Cuda => 1,
+                })
+                .unwrap_or_else(|e| e.recover());
+
+            let mut b = match mode {
+                EpMode::Cuda => b
+                    .with_execution_providers([CUDA::default().build().error_on_failure()])
+                    .map_err(|e| VieneuError::Ort(e.to_string()))?,
+                EpMode::Cpu => b,
+            };
+            Ok(b.commit_from_file(path)?)
         };
-
-        let ep_name = if cuda_ready {
-            "NVIDIA CUDA Hardware GPU"
-        } else if dml_ready {
-            "DirectML DirectX 12 Hardware GPU (NVIDIA RTX 3050)"
-        } else {
-            "CPU High-Performance P-cores"
-        };
-
-        tracing::info!(
-            "Loading VieNeu-TTS models from {:?} with {} threads ({})",
-            config.onnx_dir,
-            intra_threads,
-            ep_name
-        );
-        println!("🚀 VieNeu-TTS: Đang kích hoạt tăng tốc phần cứng -> {}", ep_name);
 
         let prefill_path = config.onnx_dir.join("vieneu_prefill.onnx");
         let decode_path = config.onnx_dir.join("vieneu_decode_step.onnx");
         let acoustic_path = config.onnx_dir.join("vieneu_acoustic_cached.onnx");
 
-        let make_builder = || -> Result<ort::session::builder::SessionBuilder, VieneuError> {
-            let mut b = Session::builder(&env)?
-                .with_optimization_level(GraphOptimizationLevel::Level3)
-                .unwrap_or_else(|e| e.recover())
-                .with_intra_threads(intra_threads)
-                .unwrap_or_else(|e| e.recover());
-
-            if CUDA::is_available().unwrap_or(false) {
-                b = b.with_execution_providers([CUDA::default().build()])
-                    .unwrap_or_else(|e| e.recover());
-            } else if DirectML::is_available().unwrap_or(false) {
-                b = b.with_execution_providers([DirectML::default().build()])
-                    .unwrap_or_else(|e| e.recover());
+        let (ep_mode, ep_name, sess_pre) = match create_session(&prefill_path, EpMode::Cuda) {
+            Ok(s) => (EpMode::Cuda, "NVIDIA CUDA Hardware GPU", s),
+            Err(cuda_err) => {
+                // Note: DirectML has high per-call dispatch overhead on autoregressive 1-token loops
+                // (~1,500 calls/sentence -> 5x slower than multi-core CPU). Only use CUDA or multi-core CPU here.
+                tracing::warn!("VieNeu CUDA EP unavailable ({}), using Multi-Core CPU...", cuda_err);
+                let s = create_session(&prefill_path, EpMode::Cpu)?;
+                (EpMode::Cpu, "CPU Multi-Core P-cores (CUDA DLLs absent)", s)
             }
-
-            Ok(b)
         };
 
-        let sess_pre = make_builder()?.commit_from_file(&prefill_path)?;
-        let sess_dec = make_builder()?.commit_from_file(&decode_path)?;
-        let sess_ac = make_builder()?.commit_from_file(&acoustic_path)?;
-        let sess_codec = make_builder()?.commit_from_file(&config.codec_onnx_path)?;
+        println!("🚀 VieNeu-TTS: Đang kích hoạt tăng tốc phần cứng -> {}", ep_name);
+        tracing::info!("Loading VieNeu-TTS models from {:?} ({})", config.onnx_dir, ep_name);
+
+        let sess_dec = create_session(&decode_path, ep_mode)?;
+        let sess_ac = create_session(&acoustic_path, ep_mode)?;
+        let sess_codec = create_session(&config.codec_onnx_path, ep_mode)?;
 
         let tokenizer = Tokenizer::from_file(&config.tokenizer_path)
             .map_err(|e| VieneuError::Tokenizer(e.to_string()))?;

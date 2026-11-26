@@ -67,6 +67,12 @@ pub async fn api_tts_status(State(state): State<AppState>) -> Json<serde_json::V
 
 pub async fn api_pipeline_status(State(state): State<AppState>) -> Json<serde_json::Value> {
     let ocr_vi_ready = state.ocr_pool.vietnamese.is_some();
+    let ocr_device = state
+        .ocr_pool
+        .vietnamese
+        .as_ref()
+        .map(|e| e.device_label())
+        .unwrap_or("CPU");
     let ocr_en_ready = state.ocr_pool.english.is_some();
     let ocr_zh_ready = state.ocr_pool.chinese.is_some();
     let ocr_ja_ready = state.ocr_pool.japanese.is_some();
@@ -115,6 +121,7 @@ pub async fn api_pipeline_status(State(state): State<AppState>) -> Json<serde_js
         },
         "ocr": {
             "status": if ocr_vi_ready || ocr_en_ready { "ready" } else { "ready" },
+            "device": ocr_device,
             "models": {
                 "vietnamese": {
                     "engine": "VietOCR VieSVTR",

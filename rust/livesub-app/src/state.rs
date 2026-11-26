@@ -1,5 +1,5 @@
+use crate::services::gpu_ocr::OcrEngineBackend;
 use ocr_engine_rs::OcrEngine as DiacriticEngine;
-use pure_onnx_ocr::OcrEngine as PpOcrEngine;
 use regex::Regex;
 use std::{
     collections::HashMap,
@@ -24,15 +24,15 @@ pub fn get_re_ws() -> &'static Regex {
 
 #[derive(Clone)]
 pub struct OcrEnginePool {
-    pub vietnamese: Option<Arc<PpOcrEngine>>,
-    pub english: Option<Arc<PpOcrEngine>>,
-    pub chinese: Option<Arc<PpOcrEngine>>,
-    pub japanese: Option<Arc<PpOcrEngine>>,
-    pub korean: Option<Arc<PpOcrEngine>>,
+    pub vietnamese: Option<Arc<OcrEngineBackend>>,
+    pub english: Option<Arc<OcrEngineBackend>>,
+    pub chinese: Option<Arc<OcrEngineBackend>>,
+    pub japanese: Option<Arc<OcrEngineBackend>>,
+    pub korean: Option<Arc<OcrEngineBackend>>,
 }
 
 impl OcrEnginePool {
-    pub fn select_engine(&self, lang: &str) -> (Option<Arc<PpOcrEngine>>, &'static str) {
+    pub fn select_engine(&self, lang: &str) -> (Option<Arc<OcrEngineBackend>>, &'static str) {
         let norm = lang.split(['-', '_']).next().unwrap_or("auto").to_lowercase();
         match norm.as_str() {
             "vi" => (
@@ -66,7 +66,7 @@ impl OcrEnginePool {
 #[derive(Clone)]
 pub struct AppState {
     pub ocr: Arc<DiacriticEngine>,
-    pub ppocr: Option<Arc<PpOcrEngine>>,
+    pub ppocr: Option<Arc<OcrEngineBackend>>,
     pub ocr_pool: OcrEnginePool,
     pub vieneu: Arc<VieneuEngine>,
     pub whisper_server_url: String,

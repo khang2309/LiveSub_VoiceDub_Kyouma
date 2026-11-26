@@ -75,6 +75,7 @@ pub async fn run_server(config: AppConfig) {
         tts_sem: Arc::new(tokio::sync::Semaphore::new(1)),
     };
 
+    let ocr_warmup = state.ocr_pool.vietnamese.clone();
     let app = routes::build_router(state, &config.public_dir);
 
     println!(
@@ -103,6 +104,14 @@ pub async fn run_server(config: AppConfig) {
             return;
         }
     };
+
+    // Warm up GPU OCR DirectX12/CUDA shaders in background so the very first subtitle runs at ~40ms
+    if let Some(vi_ocr) = ocr_warmup {
+        tokio::task::spawn_blocking(move || {
+            let dummy = image::DynamicImage::new_rgb8(960, 288);
+            let _ = vi_ocr.run_from_image(&dummy);
+        });
+    }
 
     if let Err(e) = axum::serve(listener, app).await {
         eprintln!("⚠️ Axum server terminated: {e}");

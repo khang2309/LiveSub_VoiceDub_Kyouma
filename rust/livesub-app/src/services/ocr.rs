@@ -1,7 +1,8 @@
 use crate::config::AppConfig;
+use crate::services::gpu_ocr::{GpuOcrEngine, OcrEngineBackend, SharedDetSession};
 use crate::state::OcrEnginePool;
 use image::{DynamicImage, GenericImageView};
-use pure_onnx_ocr::{OcrEngine as PpOcrEngine, OcrEngineBuilder};
+use pure_onnx_ocr::OcrEngineBuilder;
 use std::{path::Path, sync::Arc};
 
 pub fn load_ppocr_model(
@@ -10,12 +11,44 @@ pub fn load_ppocr_model(
     dict_path: &Path,
     yaml: Option<&str>,
     name: &str,
-) -> Option<Arc<PpOcrEngine>> {
+) -> Option<Arc<OcrEngineBackend>> {
+    load_ppocr_model_with_det(None, det_path, rec_path, dict_path, yaml, name, 64)
+}
+
+pub fn load_ppocr_model_with_det(
+    shared_det: Option<&Arc<SharedDetSession>>,
+    det_path: &Path,
+    rec_path: &Path,
+    dict_path: &Path,
+    yaml: Option<&str>,
+    name: &str,
+    target_height: u32,
+) -> Option<Arc<OcrEngineBackend>> {
     if !det_path.is_file() || !rec_path.is_file() || !dict_path.is_file() {
         eprintln!("⚠️ Model files not found for {name}: rec={rec_path:?}, dict={dict_path:?}");
         return None;
     }
 
+    // 1. Prefer GPU ONNX Runtime execution (NVIDIA CUDA / DirectML)
+    let det_handle = if let Some(existing) = shared_det {
+        Ok(Arc::clone(existing))
+    } else {
+        SharedDetSession::load(det_path).map(Arc::new)
+    };
+
+    if let Ok(det) = det_handle {
+        match GpuOcrEngine::load(det, rec_path, dict_path, target_height) {
+            Ok(gpu_engine) => {
+                println!("🚀 OCR Model: {name} loaded on {} (Zero CPU bottleneck)", gpu_engine.ep_name);
+                return Some(Arc::new(OcrEngineBackend::Gpu(Arc::new(gpu_engine))));
+            }
+            Err(e) => {
+                eprintln!("⚠️ GPU OCR init failed for {name}, falling back to CPU tract-onnx: {e}");
+            }
+        }
+    }
+
+    // 2. Fallback to pure_onnx_ocr (CPU tract-onnx)
     let mut builder = OcrEngineBuilder::new();
     builder = builder
         .det_model_path(det_path)
@@ -28,8 +61,8 @@ pub fn load_ppocr_model(
 
     match builder.build() {
         Ok(engine) => {
-            println!("🚀 OCR Model: {name} loaded successfully (Pure Rust)");
-            Some(Arc::new(engine))
+            println!("🚀 OCR Model: {name} loaded successfully (CPU fallback)");
+            Some(Arc::new(OcrEngineBackend::Cpu(Arc::new(engine))))
         }
         Err(e) => {
             eprintln!("⚠️ Failed to build {name}: {e}");
@@ -42,49 +75,66 @@ pub fn load_all_ocr_models(config: &AppConfig) -> OcrEnginePool {
     let vi_yaml = "PreProcess:\n  transform_ops:\n  - RecResizeImg:\n      image_shape:\n      - 3\n      - 64\n      - 320\nPostProcess:\n  name: CTCLabelDecode\n";
     let ppocr_yaml = "PreProcess:\n  transform_ops:\n  - RecResizeImg:\n      image_shape:\n      - 3\n      - 48\n      - 320\nPostProcess:\n  name: CTCLabelDecode\n";
 
-    // 1. Model chuyên dụng Tiếng Việt (VietOCR VieSVTR - 229 ký tự dấu)
-    let vietnamese = load_ppocr_model(
+    // Share ONE DBNet detection session in GPU VRAM across all 5 languages
+    let shared_det = if config.det_model_path.is_file() {
+        SharedDetSession::load(&config.det_model_path).ok().map(Arc::new)
+    } else {
+        None
+    };
+
+    // 1. Model chuyên dụng Tiếng Việt (VietOCR VieSVTR - 229 ký tự dấu, chiều cao 64px)
+    let vietnamese = load_ppocr_model_with_det(
+        shared_det.as_ref(),
         &config.det_model_path,
         &config.vi_rec_model_path,
         &config.vi_dict_path,
         Some(vi_yaml),
         "VietOCR Native Model (VieSVTR / Tiếng Việt)",
+        64,
     );
 
-    // 2. Model chuyên dụng Tiếng Anh (PP-OCRv4 Latin / English - 95 ký tự)
-    let english = load_ppocr_model(
+    // 2. Model chuyên dụng Tiếng Anh (PP-OCRv4 Latin / English - 95 ký tự, chiều cao 48px)
+    let english = load_ppocr_model_with_det(
+        shared_det.as_ref(),
         &config.det_model_path,
         &config.en_rec_model_path,
         &config.en_dict_path,
         Some(ppocr_yaml),
         "PP-OCRv4 English Dedicated Model",
+        48,
     );
 
-    // 3. Model chuyên dụng Tiếng Trung (PP-OCRv4 Chinese - 6625 ký tự Hán)
-    let chinese = load_ppocr_model(
+    // 3. Model chuyên dụng Tiếng Trung (PP-OCRv4 Chinese - 6625 ký tự Hán, chiều cao 48px)
+    let chinese = load_ppocr_model_with_det(
+        shared_det.as_ref(),
         &config.det_model_path,
         &config.zh_rec_model_path,
         &config.zh_dict_path,
         Some(ppocr_yaml),
         "PP-OCRv4 Chinese Dedicated Model",
+        48,
     );
 
-    // 4. Model chuyên dụng Tiếng Nhật (PP-OCRv3 Japanese - 4399 ký tự Hiragana/Katakana/Kanji)
-    let japanese = load_ppocr_model(
+    // 4. Model chuyên dụng Tiếng Nhật (PP-OCRv3 Japanese - 4399 ký tự, chiều cao 48px)
+    let japanese = load_ppocr_model_with_det(
+        shared_det.as_ref(),
         &config.det_model_path,
         &config.ja_rec_model_path,
         &config.ja_dict_path,
         Some(ppocr_yaml),
         "PP-OCRv3 Japanese Dedicated Model",
+        48,
     );
 
-    // 5. Model chuyên dụng Tiếng Hàn (PP-OCRv3 Korean - Hangul Chuyên dụng)
-    let korean = load_ppocr_model(
+    // 5. Model chuyên dụng Tiếng Hàn (PP-OCRv3 Korean - Hangul, chiều cao 48px)
+    let korean = load_ppocr_model_with_det(
+        shared_det.as_ref(),
         &config.det_model_path,
         &config.ko_rec_model_path,
         &config.ko_dict_path,
         Some(ppocr_yaml),
         "PP-OCRv3 Korean Dedicated Model",
+        48,
     );
 
     OcrEnginePool {
@@ -100,7 +150,7 @@ pub fn load_ppocr_vietnamese(
     det_path: &Path,
     rec_path: &Path,
     dict_path: &Path,
-) -> Option<Arc<PpOcrEngine>> {
+) -> Option<Arc<OcrEngineBackend>> {
     let yaml = "PreProcess:\n  transform_ops:\n  - RecResizeImg:\n      image_shape:\n      - 3\n      - 64\n      - 320\nPostProcess:\n  name: CTCLabelDecode\n";
     load_ppocr_model(det_path, rec_path, dict_path, Some(yaml), "VietOCR VieSVTR")
 }
