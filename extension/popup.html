@@ -14,14 +14,23 @@
         <div class="brand-logo">LS</div>
         <div class="brand-text">
           <h1>LiveSub Studio</h1>
-          <span class="badge-version">v1.1.0 • Chrome Extension</span>
+          <span class="badge-version">v1.2.0 • Chrome Extension</span>
         </div>
       </div>
-      <div class="engine-status" id="engineStatus" title="Trạng thái kết nối LiveSub Local Engine (Port 3000)">
+      <div class="engine-status" id="engineStatus" title="Trạng thái hoạt động của Tiện ích">
         <span class="status-dot online" id="statusDot"></span>
-        <span class="status-label" id="statusLabel">Đang kiểm tra...</span>
+        <span class="status-label" id="statusLabel">Chế Độ Độc Lập</span>
       </div>
     </header>
+
+    <!-- Standalone / Mode Banner -->
+    <div class="status-banner" id="statusBanner">
+      <div class="banner-icon">✨</div>
+      <div class="banner-content">
+        <div class="banner-title" id="bannerTitle">Tiện ích hoạt động Độc Lập</div>
+        <div class="banner-desc" id="bannerDesc">Tự động nhận diện phụ đề trên YouTube, Netflix, Web phim và lồng tiếng trực tiếp bằng AI trình duyệt.</div>
+      </div>
+    </div>
 
     <!-- Master Switch -->
     <div class="card master-card">
@@ -43,18 +52,16 @@
           <span class="icon">🎙️</span> Giọng Đọc Thuyết Minh
         </label>
         <select id="selVoice" class="form-control">
-          <optgroup label="🌟 VieNeu-TTS Neural (100% Offline Pure Rust)">
-            <option value="Trúc Ly" selected>Trúc Ly (Nữ Hà Nội - Truyền cảm & Tự nhiên)</option>
-            <option value="Nam Minh">Nam Minh (Nam Hà Nội - Trầm ấm & Chững chạc)</option>
-            <option value="Bảo Ngọc">Bảo Ngọc (Nữ Sài Gòn - Ngọt ngào & Năng động)</option>
-            <option value="Khánh Nam">Khánh Nam (Nam Sài Gòn - Rõ ràng & Tự tin)</option>
+          <optgroup label="🌐 Giọng AI Trình Duyệt & Cloud (0ms Latency - Khuyên Dùng)">
+            <option value="vi-VN-Standard" selected>Tự Động Chọn Giọng Tiếng Việt Tốt Nhất</option>
+            <option value="vi-VN-Female">Giọng Nữ Tiếng Việt (Google / Microsoft)</option>
+            <option value="vi-VN-Male">Giọng Nam Tiếng Việt (Google / Microsoft)</option>
           </optgroup>
-          <optgroup label="☁️ Microsoft Edge-TTS (Đám mây Trực tuyến)">
-            <option value="vi-VN-HoaiMyNeural">Hoài My (Nữ Microsoft Tiếng Việt)</option>
-            <option value="vi-VN-NamMinhNeural">Nam Minh (Nam Microsoft Tiếng Việt)</option>
-          </optgroup>
-          <optgroup label="🌐 Trình Duyệt / Google Voice">
-            <option value="google-vi">Google Voice Tiếng Việt</option>
+          <optgroup label="🌟 VieNeu-TTS Neural (Khi mở App Desktop)">
+            <option value="Trúc Ly">Trúc Ly (Nữ Hà Nội - Truyền cảm)</option>
+            <option value="Nam Minh">Nam Minh (Nam Hà Nội - Trầm ấm)</option>
+            <option value="Bảo Ngọc">Bảo Ngọc (Nữ Sài Gòn - Ngọt ngào)</option>
+            <option value="Khánh Nam">Khánh Nam (Nam Sài Gòn - Tự tin)</option>
           </optgroup>
         </select>
       </div>
@@ -65,10 +72,10 @@
           <span class="icon">💬</span> Chế Độ Hiển Thị Phụ Đề
         </label>
         <select id="selSubMode" class="form-control">
-          <option value="bilingual">Song ngữ (Gốc + Tiếng Việt)</option>
           <option value="vi_only" selected>Chỉ Tiếng Việt (Vietsub chuẩn)</option>
+          <option value="bilingual">Song ngữ (Gốc + Tiếng Việt)</option>
           <option value="source_only">Chỉ Tiếng Gốc (Học ngoại ngữ)</option>
-          <option value="none">Tắt phụ đề nổi (Chỉ nghe đọc giọng)</option>
+          <option value="none">Tắt phụ đề chữ (Chỉ nghe đọc giọng)</option>
         </select>
       </div>
 
@@ -98,14 +105,14 @@
         </label>
       </div>
 
-      <!-- Hard Subtitle OCR Scan -->
+      <!-- Non-intrusive: Floating Widget Toggle -->
       <div class="form-group-inline">
         <div class="form-check-info">
-          <span class="check-title">📷 Quét Chữ Trên Video (OCR)</span>
-          <span class="check-desc">Tự quét khung hình khi phim có phụ đề dán chết</span>
+          <span class="check-title">📺 Hiển Thị Nút Nổi Trên Video</span>
+          <span class="check-desc">Nút điều khiển góc video (Mặc định: Tắt để xem phim thoáng mắt)</span>
         </div>
         <label class="switch switch-sm">
-          <input type="checkbox" id="chkOcrScan" checked>
+          <input type="checkbox" id="chkShowWidget">
           <span class="slider round"></span>
         </label>
       </div>
@@ -120,6 +127,28 @@
       </div>
     </div>
 
+    <!-- Info / Alert Modal for Desktop App -->
+    <div class="desktop-app-modal" id="appModal" style="display: none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <span class="modal-title">🖥️ Kết Nối Ứng Dụng LiveSub Desktop</span>
+          <button type="button" class="modal-close-btn" id="btnCloseModal">✕</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-text">Ứng dụng LiveSub Desktop (file cài đặt setup.exe trên máy) chưa được khởi động.</p>
+          <div class="modal-badge-box">
+            <span class="modal-badge-ok">✅ Tiện ích vẫn đang hoạt động 100% độc lập!</span>
+            <span class="modal-subtext">Bạn vẫn có thể lồng tiếng và nghe đọc phụ đề trên mọi trang web xem phim bằng giọng AI trình duyệt mượt mà.</span>
+          </div>
+          <p class="modal-notice">Khi cần tính năng nâng cao (Quét OCR video có phụ đề dán chết hoặc giọng VieNeu-TTS Offline), hãy mở phần mềm LiveSub trên máy tính.</p>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btnModalUnderstood">Đã Hiểu</button>
+          <button type="button" class="btn btn-outline" id="btnModalForceOpen">Vẫn Mở Localhost:3000</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Quick Shortcuts and Footer -->
     <footer class="popup-footer">
       <div class="shortcut-tip">
@@ -127,7 +156,7 @@
       </div>
       <div class="footer-actions">
         <button type="button" id="btnTestVoice" class="btn btn-secondary">🔊 Thử Giọng</button>
-        <button type="button" id="btnOpenStudio" class="btn btn-primary">🚀 Mở LiveSub Studio</button>
+        <button type="button" id="btnOpenStudio" class="btn btn-primary">🚀 LiveSub Desktop</button>
       </div>
     </footer>
   </div>

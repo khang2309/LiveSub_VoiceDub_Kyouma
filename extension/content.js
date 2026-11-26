@@ -1,5 +1,6 @@
 // LiveSub Studio - Universal Video AI Dubbing Content Script
-// Synchronous timeline playback, auto audio ducking, DOM caption extraction, and optional video canvas OCR.
+// Version 1.2.0 - 100% Standalone Web Extension & Native Desktop Integration
+// Zero-latency browser speech synthesis, non-intrusive subtitle overlay, strict anti-metadata filtering.
 
 (function () {
   'use strict';
@@ -10,10 +11,12 @@
     subMode: 'vi_only',
     duckPercent: 10,
     syncSpeed: true,
-    ocrScan: true,
+    ocrScan: false,
+    showFloatingWidget: false, // Default FALSE: Keep video player completely clean and unobtrusive
     fontSize: 26
   };
 
+  let isLocalEngineOnline = false;
   let userOriginalVolume = null;
   let currentAudio = null;
   let lastProcessedText = '';
@@ -35,7 +38,15 @@
     }
   }
 
-  // Listen for storage changes across all frames and popup in real-time
+  // Pre-load browser voices for instant 0ms speech synthesis
+  if (typeof window.speechSynthesis !== 'undefined') {
+    window.speechSynthesis.onvoiceschanged = () => {
+      // Warm up voices
+      try { window.speechSynthesis.getVoices(); } catch (_) {}
+    };
+  }
+
+  // Listen for storage changes across frames in real-time
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local') {
@@ -63,16 +74,34 @@
     });
   }
 
-  function applyConfigToUI() {
-    const toggleBtn = document.getElementById('livesub-floating-toggle');
-    if (toggleBtn) {
-      toggleBtn.textContent = config.isDubbingActive ? 'BẬT' : 'TẮT';
-      toggleBtn.classList.toggle('active', config.isDubbingActive);
+  // Check local engine availability (Port 3000)
+  async function checkLocalEngineStatus() {
+    try {
+      const controller = new AbortController();
+      const tid = setTimeout(() => controller.abort(), 400);
+      const res = await fetch('http://localhost:3000/api/health', {
+        method: 'GET',
+        cache: 'no-store',
+        signal: controller.signal
+      });
+      clearTimeout(tid);
+      isLocalEngineOnline = (res && res.ok);
+    } catch (_) {
+      isLocalEngineOnline = false;
     }
-    const invideoSpan = document.querySelector('#livesub-invideo-sub span');
+  }
+
+  function applyConfigToUI() {
+    // 1. Manage Floating Widget display
+    updateFloatingWidget();
+
+    // 2. Update subtitle font size if rendered
+    const invideoSpan = document.querySelector('#livesub-invideo-sub .livesub-sub-pill');
     if (invideoSpan) {
       invideoSpan.style.fontSize = `${config.fontSize || 26}px`;
     }
+
+    // 3. Handle pause/resume
     if (!config.isDubbingActive) {
       stopCurrentAudio();
       restoreVideoVolume();
@@ -87,15 +116,15 @@
   function findActiveVideo() {
     const videos = Array.from(document.querySelectorAll('video'));
     if (videos.length === 0) return null;
-    // Prefer video that is currently playing
+    // Prefer video currently playing
     const playing = videos.find(v => !v.paused && v.currentTime > 0);
     if (playing) return playing;
-    // Prefer video with real dimensions
+    // Prefer video with realistic dimensions
     const visible = videos.find(v => v.offsetWidth > 160 && v.offsetHeight > 90);
     return visible || videos[0];
   }
 
-  // Validate and clean candidate subtitle string from cues or DOM
+  // Strict anti-metadata and dialogue validation
   function cleanAndValidateSubtitle(rawText) {
     if (!rawText || typeof rawText !== 'string') return null;
 
@@ -110,23 +139,23 @@
 
     // 2. Reject JSON metadata strings (common in HLS / DASH / Video.js in-band metadata)
     // E.g.: {"metadataType":"discontinuity"}, [{"type":"cuePoint"}], {"timestamp":123}
-    if ((text.startsWith('{') && text.endsWith('}')) || (text.startsWith('[') && text.endsWith(']'))) return null;
-    if (/["']?metadataType["']?\s*:/i.test(text)) return null;
-    if (/["']?discontinuity["']?/i.test(text)) return null;
-    if (/["']?(id|type|stream|segment|timestamp|duration|bandwidth)["']?\s*:/i.test(text) && text.includes('{')) return null;
+    if (text.startsWith('{') || text.startsWith('[') || text.endsWith('}') || text.endsWith(']')) return null;
+    if (/[{}\[\]\\]/.test(text)) return null;
+    if (/metadataType|discontinuity|cuePoint|segment|timestamp|duration|bandwidth|X-TIMESTAMP|WEBVTT/i.test(text)) return null;
+    if (text.includes('"') && (text.includes(':') || text.includes('metadata') || text.includes('type'))) return null;
 
-    // 3. Reject WebVTT protocol headers or cues
-    if (/^WEBVTT/i.test(text) || /^X-TIMESTAMP/i.test(text) || /-->/.test(text)) return null;
-
-    // 4. Reject pure numbers, timestamps, duration, or seek buttons (:59, 10, 14:12 / 23:59)
+    // 3. Reject pure numbers, timestamps, durations, seek buttons (:59, 10, 14:12 / 23:59)
     if (/^[:0-9\s.,\-/]+$/.test(text)) return null;
     if (/^\d{1,2}:\d{2}(:\d{2})?(\s*[\/\-]\s*\d{1,2}:\d{2}(:\d{2})?)?$/.test(text)) return null;
 
-    // 5. Reject player UI control buttons & watermarks
+    // 4. Reject player UI control buttons & watermarks
     if (/^(Dù\s*\d+|Tập\s*\d+|Next|Prev|Play|Pause|Mute|Volume|Fullscreen|Rạp chiếu|Mở rộng|Bình luận|Cài đặt|Chất lượng|Server|AHS|HY|VIP)\s*$/i.test(text)) return null;
 
-    // 6. Must contain at least one Vietnamese or Latin letter
+    // 5. Must contain at least one Vietnamese or Latin letter
     if (!/[a-zA-ZÀ-ỹ]/.test(text)) return null;
+
+    // 6. Dialogue sentences rarely exceed 280 characters
+    if (text.length > 280) return null;
 
     return text;
   }
@@ -210,6 +239,9 @@
       currentAudio.currentTime = 0;
       currentAudio = null;
     }
+    if (typeof window.speechSynthesis !== 'undefined') {
+      window.speechSynthesis.cancel();
+    }
   }
 
   // Handle Dialogue Text Event
@@ -227,18 +259,24 @@
     if (text === lastProcessedText) return;
     lastProcessedText = text;
 
-    updateWidgetStatus(`🎙️ "${text.substring(0, 22)}${text.length > 22 ? '...' : ''}"`);
+    updateWidgetStatus(`🎙️ "${text.substring(0, 20)}${text.length > 20 ? '...' : ''}"`);
+    showInVideoSubtitle(text, sourceText);
+
+    // If local engine is offline, use zero-latency browser speech synthesis immediately!
+    if (!isLocalEngineOnline) {
+      speakViaWebSpeech(text);
+      return;
+    }
 
     // Check cache
     const cacheKey = `${config.voice}:::${text}`;
     if (audioCache.has(cacheKey)) {
       const cached = audioCache.get(cacheKey);
-      showInVideoSubtitle(cached.displayText, sourceText);
       playDubbedAudio(cached.audioUrl);
       return;
     }
 
-    // Send to background service worker for TTS synthesis
+    // Local engine is online -> send to background for high quality VieNeu-TTS
     if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
       chrome.runtime.sendMessage({
         type: 'SYNTHESIZE_TTS',
@@ -248,23 +286,24 @@
         if (!config.isDubbingActive) return;
         if (resp && (resp.audioUrl || resp.audio_base64)) {
           const url = resp.audioUrl || (`data:${resp.audio_mime || 'audio/wav'};base64,` + resp.audio_base64);
-          const display = resp.prompt || text;
-          audioCache.set(cacheKey, { audioUrl: url, displayText: display });
-          showInVideoSubtitle(display, sourceText);
+          audioCache.set(cacheKey, { audioUrl: url });
           playDubbedAudio(url);
         } else {
-          // Fallback to Web Speech API
-          fallbackWebSpeech(text, sourceText);
+          // Instant fallback
+          speakViaWebSpeech(text);
         }
       });
     } else {
-      fallbackWebSpeech(text, sourceText);
+      speakViaWebSpeech(text);
     }
   }
 
-  function fallbackWebSpeech(text, sourceText) {
-    showInVideoSubtitle(text, sourceText);
+  // Instant 0ms Browser Speech Synthesis (Standalone Mode)
+  function speakViaWebSpeech(text) {
     if (typeof window.speechSynthesis === 'undefined') return;
+    const video = findActiveVideo();
+    if (video && video.paused) return;
+
     try {
       window.speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
@@ -277,10 +316,12 @@
         if (viVoice) u.voice = viVoice;
       }
 
-      const video = findActiveVideo();
-      if (video && config.syncSpeed) {
+      if (video && config.syncSpeed && video.playbackRate) {
         u.rate = Math.max(0.8, Math.min(2.0, video.playbackRate));
+      } else {
+        u.rate = 1.05; // Slightly faster for natural dubbing cadence
       }
+
       duckVideoVolume();
       u.onend = () => restoreVideoVolume();
       u.onerror = () => restoreVideoVolume();
@@ -366,37 +407,43 @@
 
   // 1. Observer for Soft Subtitles (YouTube, Netflix, HTML5 textTracks, JWPlayer, Video.js)
   function setupSoftSubtitleObservers() {
-    // A. Native HTML5 TextTracks (AnimeVietsub, AnimeHay, generic HTML5 players)
     const video = findActiveVideo();
-    if (video && video.textTracks) {
-      for (let i = 0; i < video.textTracks.length; i++) {
-        const track = video.textTracks[i];
-        // CRITICAL: Filter out metadata and non-dialogue tracks!
-        if (track.kind !== 'subtitles' && track.kind !== 'captions') {
-          continue;
-        }
+    if (!video) return;
 
-        if (track._livesubAttached) continue;
-        track._livesubAttached = true;
+    function attachTrack(track) {
+      if (!track || track._livesubAttached) return;
+      // Strictly ignore metadata, chapters, descriptions
+      if (track.kind === 'metadata' || track.kind === 'chapters' || track.kind === 'descriptions') {
+        return;
+      }
+      track._livesubAttached = true;
 
-        track.oncuechange = () => {
-          if (track.activeCues && track.activeCues.length > 0) {
-            for (let c = 0; c < track.activeCues.length; c++) {
-              const cue = track.activeCues[c];
-              if (cue && cue.text) {
-                const cleaned = cleanAndValidateSubtitle(cue.text);
-                if (cleaned) {
-                  handleDialogueSubtitle(cleaned);
-                  break;
-                }
+      track.addEventListener('cuechange', () => {
+        if (track.activeCues && track.activeCues.length > 0) {
+          for (let c = 0; c < track.activeCues.length; c++) {
+            const cue = track.activeCues[c];
+            if (cue && cue.text) {
+              const cleaned = cleanAndValidateSubtitle(cue.text);
+              if (cleaned) {
+                handleDialogueSubtitle(cleaned);
+                break;
               }
             }
           }
-        };
-      }
+        }
+      });
     }
 
-    // B. DOM MutationObserver for YouTube, Netflix, JWPlayer
+    if (video.textTracks) {
+      for (let i = 0; i < video.textTracks.length; i++) {
+        attachTrack(video.textTracks[i]);
+      }
+      video.textTracks.addEventListener('addtrack', (e) => {
+        if (e && e.track) attachTrack(e.track);
+      });
+    }
+
+    // DOM MutationObserver for YouTube, Netflix, Anime player overlays
     const observer = new MutationObserver(() => {
       // YouTube
       const ytSegs = document.querySelectorAll('.ytp-caption-segment');
@@ -435,7 +482,7 @@
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
   }
 
-  // 2. Off-screen Canvas Frame Crop for Hard Subtitles (OCR scan)
+  // 2. Off-screen Canvas Frame Crop for Hard Subtitles (OCR scan - only if local engine online)
   function setupVideoOcrScanner() {
     if (ocrScanInterval) clearInterval(ocrScanInterval);
     const canvas = document.createElement('canvas');
@@ -443,11 +490,11 @@
     let lastOcrSample = null;
 
     ocrScanInterval = setInterval(() => {
-      if (!config.isDubbingActive || !config.ocrScan) return;
+      if (!config.isDubbingActive || !config.ocrScan || !isLocalEngineOnline) return;
       const video = findActiveVideo();
       if (!video || video.paused || video.ended || video.readyState < 2) return;
 
-      // Only skip OCR if there is a real, non-empty soft subtitle currently displayed on screen
+      // Skip OCR if soft subtitle is currently present
       const softSubEl = document.querySelector('.ytp-caption-segment, .player-timedtext, .vjs-text-track-cue, .jw-text-track-cue');
       if (softSubEl && cleanAndValidateSubtitle(softSubEl.textContent)) {
         return;
@@ -455,7 +502,6 @@
 
       const vw = video.videoWidth || 640;
       const vh = video.videoHeight || 360;
-      // Crop bottom 22% of video frame (subtitle zone)
       const cropH = Math.round(vh * 0.22);
       const cropY = vh - cropH;
 
@@ -467,14 +513,10 @@
         ctx.drawImage(video, 0, cropY, vw, cropH, 0, 0, canvas.width, canvas.height);
         base64Jpeg = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
       } catch (err) {
-        // Tainted canvas by cross-origin video without CORS headers
-        return;
+        return; // Cross-origin video canvas security restriction
       }
 
-      if (!base64Jpeg) return;
-
-      // Compare with previous sample
-      if (base64Jpeg === lastOcrSample) return;
+      if (!base64Jpeg || base64Jpeg === lastOcrSample) return;
       lastOcrSample = base64Jpeg;
 
       if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
@@ -492,22 +534,26 @@
           }
         });
       }
-    }, 280);
+    }, 350);
   }
 
-  // Create Draggable Quick Widget strictly only in the frame that contains the video
+  // Manage Floating Widget: strictly respect config.showFloatingWidget (Default: false)
   function updateFloatingWidget() {
-    const video = findActiveVideo();
     const existing = document.getElementById('livesub-floating-widget');
 
-    if (!video) {
-      // If there is no video in this frame/window, remove any existing widget (eliminates duplicate widgets)
-      if (existing) {
-        existing.remove();
-      }
+    // If disabled in settings, remove immediately
+    if (!config.showFloatingWidget) {
+      if (existing) existing.remove();
       return;
     }
 
+    const video = findActiveVideo();
+    if (!video) {
+      if (existing) existing.remove();
+      return;
+    }
+
+    // Only inject in top window OR if video is inside this specific iframe
     if (!existing) {
       createFloatingWidget();
     }
@@ -526,6 +572,7 @@
         <button type="button" id="livesub-floating-toggle" class="livesub-toggle-btn ${config.isDubbingActive ? 'active' : ''}">
           ${config.isDubbingActive ? 'BẬT' : 'TẮT'}
         </button>
+        <button type="button" id="livesub-widget-close-btn" class="livesub-widget-close" title="Ẩn hộp nổi này (bật lại trong popup)">✕</button>
       </div>
       <div class="livesub-widget-status" id="livesub-widget-status">
         ${config.isDubbingActive ? 'Sẵn sàng lồng tiếng' : 'Đã tạm dừng'}
@@ -535,18 +582,31 @@
     document.body.appendChild(widget);
 
     const toggleBtn = widget.querySelector('#livesub-floating-toggle');
-    toggleBtn.addEventListener('click', () => {
-      config.isDubbingActive = !config.isDubbingActive;
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-        chrome.storage.local.set({ isDubbingActive: config.isDubbingActive });
-      }
-      applyConfigToUI();
-    });
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => {
+        config.isDubbingActive = !config.isDubbingActive;
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.set({ isDubbingActive: config.isDubbingActive });
+        }
+        applyConfigToUI();
+      });
+    }
+
+    const closeBtn = widget.querySelector('#livesub-widget-close-btn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        config.showFloatingWidget = false;
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.set({ showFloatingWidget: false });
+        }
+        widget.remove();
+      });
+    }
 
     // Shortcut: Alt + D
     window.addEventListener('keydown', (e) => {
       if (e.altKey && (e.key === 'd' || e.key === 'D')) {
-        toggleBtn.click();
+        if (toggleBtn) toggleBtn.click();
       }
     });
   }
@@ -559,23 +619,22 @@
   // Initialize
   function init() {
     loadConfig();
-    updateFloatingWidget();
+    checkLocalEngineStatus();
     setupSoftSubtitleObservers();
     setupVideoOcrScanner();
 
-    // Check periodically for dynamically loaded video players and manage single widget
+    // Check periodically for dynamically loaded video players and engine health
     setInterval(() => {
       const v = findActiveVideo();
-      if (v) {
-        if (!v.dataset.livesubAttached) {
-          attachVideoEvents(v);
-          setupSoftSubtitleObservers();
-        }
-        updateFloatingWidget();
-      } else {
-        updateFloatingWidget();
+      if (v && !v.dataset.livesubAttached) {
+        attachVideoEvents(v);
+        setupSoftSubtitleObservers();
       }
-    }, 1000);
+      updateFloatingWidget();
+    }, 1200);
+
+    // Heartbeat check for local desktop app every 10 seconds
+    setInterval(checkLocalEngineStatus, 10000);
   }
 
   if (document.readyState === 'loading') {

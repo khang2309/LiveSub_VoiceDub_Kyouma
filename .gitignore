@@ -71,6 +71,7 @@ server_runtime.stderr.log
 *.log
 
 LiveSub_Studio_Extension.zip
+LiveSub_Studio_Extension/
 
 livesub.exe
 

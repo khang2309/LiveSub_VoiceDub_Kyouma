@@ -1,8 +1,11 @@
 // LiveSub Studio Extension - Background Service Worker (Manifest V3)
+// Fast heartbeat, zero-stall routing, and native desktop app bridge
 
+let localEngineOnline = false;
+
+// Default settings
 chrome.runtime.onInstalled.addListener(() => {
-  // Set default settings on install
-  chrome.storage.local.get(['isDubbingActive', 'voice', 'subMode', 'duckPercent'], (data) => {
+  chrome.storage.local.get(['isDubbingActive', 'voice', 'subMode', 'duckPercent', 'showFloatingWidget'], (data) => {
     if (data.isDubbingActive === undefined) {
       chrome.storage.local.set({
         isDubbingActive: true,
@@ -10,26 +13,53 @@ chrome.runtime.onInstalled.addListener(() => {
         subMode: 'vi_only',
         duckPercent: 10,
         syncSpeed: true,
-        ocrScan: true,
+        ocrScan: false,
+        showFloatingWidget: false, // Default FALSE: non-intrusive
         fontSize: 26
       });
     }
   });
 });
 
-// Cache audio synthesis requests in background memory
+// Periodic lightweight check if desktop engine (port 3000) is online
+async function checkEngineHeartbeat() {
+  try {
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 500);
+    const res = await fetch('http://localhost:3000/api/health', {
+      method: 'GET',
+      cache: 'no-store',
+      signal: controller.signal
+    });
+    clearTimeout(tid);
+    localEngineOnline = (res && res.ok);
+  } catch (_) {
+    localEngineOnline = false;
+  }
+}
+
+// Initial check & heartbeat every 10s
+checkEngineHeartbeat();
+setInterval(checkEngineHeartbeat, 10000);
+
+// In-memory audio synthesis cache
 const bgAudioCache = new Map();
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'SYNTHESIZE_TTS') {
     handleSynthesizeTTS(request.text, request.voice)
       .then(result => sendResponse(result))
-      .catch(err => sendResponse({ error: String(err) }));
+      .catch(err => sendResponse({ error: String(err), offline: true }));
     return true; // Keep message channel open for async response
   } else if (request.type === 'OCR_FRAME') {
     handleOcrFrame(request.imageData, request.sourceLang)
       .then(result => sendResponse(result))
-      .catch(err => sendResponse({ error: String(err) }));
+      .catch(err => sendResponse({ empty: true, offline: true }));
+    return true;
+  } else if (request.type === 'CHECK_LOCAL_ENGINE') {
+    checkEngineHeartbeat().then(() => {
+      sendResponse({ online: localEngineOnline });
+    });
     return true;
   }
 });
@@ -44,10 +74,16 @@ async function handleSynthesizeTTS(text, voice) {
     return bgAudioCache.get(cacheKey);
   }
 
-  // 1. Try local LiveSub pure Rust native engine at http://localhost:3000
+  // If local engine is offline, immediately return offline in 0ms!
+  // Do NOT stall the browser waiting for timeouts!
+  if (!localEngineOnline) {
+    return { success: false, offline: true };
+  }
+
+  // Local LiveSub pure Rust native engine at http://localhost:3000
   try {
     const controller = new AbortController();
-    const tid = setTimeout(() => controller.abort(), 1800);
+    const tid = setTimeout(() => controller.abort(), 1200);
     const res = await fetch('http://localhost:3000/api/dub-subtitle', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -66,75 +102,19 @@ async function handleSynthesizeTTS(text, voice) {
         return data;
       }
     }
-  } catch (_) {}
+  } catch (_) {
+    localEngineOnline = false; // Mark offline so subsequent calls don't stall
+  }
 
-  // 2. Fallback: try http://localhost:3000/api/tts
-  try {
-    const controller = new AbortController();
-    const tid = setTimeout(() => controller.abort(), 1800);
-    const res = await fetch('http://localhost:3000/api/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: trimmed, voice: v }),
-      signal: controller.signal
-    });
-    clearTimeout(tid);
-    if (res.ok) {
-      const blob = await res.blob();
-      const reader = new FileReader();
-      const base64Data = await new Promise(resolve => {
-        reader.onloadend = () => {
-          const resStr = reader.result;
-          resolve(resStr.split(',')[1] || '');
-        };
-        reader.readAsDataURL(blob);
-      });
-      const data = {
-        success: true,
-        audio_base64: base64Data,
-        audio_mime: 'audio/wav',
-        voice: v
-      };
-      bgAudioCache.set(cacheKey, data);
-      return data;
-    }
-  } catch (_) {}
-
-  // 3. Fallback: Google Translate TTS endpoint (short phrases)
-  try {
-    if (trimmed.length <= 160) {
-      const googleTTSUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(trimmed)}&tl=vi&client=tw-ob`;
-      const controller = new AbortController();
-      const tid = setTimeout(() => controller.abort(), 2500);
-      const res = await fetch(googleTTSUrl, { signal: controller.signal });
-      clearTimeout(tid);
-      if (res.ok) {
-        const blob = await res.blob();
-        const reader = new FileReader();
-        const base64Data = await new Promise(resolve => {
-          reader.onloadend = () => {
-            const resStr = reader.result;
-            resolve(resStr.split(',')[1] || '');
-          };
-          reader.readAsDataURL(blob);
-        });
-        return {
-          success: true,
-          audio_base64: base64Data,
-          audio_mime: 'audio/mpeg',
-          voice: 'google-vi'
-        };
-      }
-    }
-  } catch (_) {}
-
-  return { success: false, error: 'All TTS engines offline' };
+  return { success: false, offline: true };
 }
 
 async function handleOcrFrame(base64Image, sourceLang = 'auto') {
-  if (!base64Image) return { empty: true };
+  if (!base64Image || !localEngineOnline) {
+    return { empty: true, offline: !localEngineOnline };
+  }
+
   try {
-    // Convert base64 data to blob
     const res = await fetch(`data:image/jpeg;base64,${base64Image}`);
     const blob = await res.blob();
     const form = new FormData();
@@ -142,7 +122,7 @@ async function handleOcrFrame(base64Image, sourceLang = 'auto') {
     form.append('source_lang', sourceLang);
 
     const controller = new AbortController();
-    const tid = setTimeout(() => controller.abort(), 2000);
+    const tid = setTimeout(() => controller.abort(), 1500);
     const ocrRes = await fetch('http://localhost:3000/api/ocr-subtitle', {
       method: 'POST',
       body: form,
@@ -154,7 +134,9 @@ async function handleOcrFrame(base64Image, sourceLang = 'auto') {
       return await ocrRes.json();
     }
   } catch (e) {
+    localEngineOnline = false;
     return { empty: true, offline: true };
   }
+
   return { empty: true };
 }

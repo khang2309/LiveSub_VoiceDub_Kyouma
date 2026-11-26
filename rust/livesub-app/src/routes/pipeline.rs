@@ -144,3 +144,32 @@ pub async fn api_pipeline_status(State(state): State<AppState>) -> Json<serde_js
         }
     }))
 }
+
+#[derive(Deserialize)]
+pub struct ExportFilePayload {
+    pub filename: String,
+    pub content: String,
+}
+
+pub async fn api_export_file(
+    Json(payload): Json<ExportFilePayload>,
+) -> Json<serde_json::Value> {
+    let safe_filename = payload.filename.replace(|c: char| !c.is_alphanumeric() && c != '.' && c != '_' && c != '-', "_");
+
+    let download_dir = std::env::var("USERPROFILE")
+        .map(|p| std::path::PathBuf::from(p).join("Downloads"))
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+
+    let target_path = download_dir.join(&safe_filename);
+    match std::fs::write(&target_path, payload.content.as_bytes()) {
+        Ok(_) => Json(serde_json::json!({
+            "success": true,
+            "path": target_path.to_string_lossy(),
+            "filename": safe_filename
+        })),
+        Err(e) => Json(serde_json::json!({
+            "success": false,
+            "error": e.to_string()
+        })),
+    }
+}

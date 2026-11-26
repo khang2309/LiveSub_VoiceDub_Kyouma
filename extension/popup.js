@@ -1,4 +1,5 @@
 // LiveSub Studio Extension - Popup Controller
+// Version 1.2.0 - Standalone UI & Desktop Bridge
 
 (function () {
   'use strict';
@@ -8,25 +9,32 @@
   const selSubMode = document.getElementById('selSubMode');
   const selDucking = document.getElementById('selDucking');
   const chkSyncSpeed = document.getElementById('chkSyncSpeed');
-  const chkOcrScan = document.getElementById('chkOcrScan');
+  const chkShowWidget = document.getElementById('chkShowWidget');
   const rngFontSize = document.getElementById('rngFontSize');
   const lblFontSize = document.getElementById('lblFontSize');
-  const engineStatus = document.getElementById('engineStatus');
   const statusDot = document.getElementById('statusDot');
   const statusLabel = document.getElementById('statusLabel');
+  const statusBanner = document.getElementById('statusBanner');
+  const bannerTitle = document.getElementById('bannerTitle');
+  const bannerDesc = document.getElementById('bannerDesc');
   const btnTestVoice = document.getElementById('btnTestVoice');
   const btnOpenStudio = document.getElementById('btnOpenStudio');
+  const appModal = document.getElementById('appModal');
+  const btnCloseModal = document.getElementById('btnCloseModal');
+  const btnModalUnderstood = document.getElementById('btnModalUnderstood');
+  const btnModalForceOpen = document.getElementById('btnModalForceOpen');
 
   let isLocalEngineOnline = false;
 
   // Default configuration
   const DEFAULT_CONFIG = {
     isDubbingActive: true,
-    voice: 'Trúc Ly',
+    voice: 'vi-VN-Standard',
     subMode: 'vi_only',
     duckPercent: 10,
     syncSpeed: true,
-    ocrScan: true,
+    ocrScan: false,
+    showFloatingWidget: false, // Default FALSE: keeps video clean
     fontSize: 26
   };
 
@@ -34,11 +42,11 @@
   function loadSettings() {
     chrome.storage.local.get(DEFAULT_CONFIG, (items) => {
       chkMasterDub.checked = items.isDubbingActive;
-      selVoice.value = items.voice || 'Trúc Ly';
+      selVoice.value = items.voice || 'vi-VN-Standard';
       selSubMode.value = items.subMode || 'vi_only';
       selDucking.value = String(items.duckPercent !== undefined ? items.duckPercent : 10);
       chkSyncSpeed.checked = Boolean(items.syncSpeed);
-      chkOcrScan.checked = Boolean(items.ocrScan);
+      if (chkShowWidget) chkShowWidget.checked = Boolean(items.showFloatingWidget);
       rngFontSize.value = items.fontSize || 26;
       lblFontSize.textContent = `${rngFontSize.value}px`;
     });
@@ -52,12 +60,11 @@
       subMode: selSubMode.value,
       duckPercent: parseInt(selDucking.value, 10),
       syncSpeed: chkSyncSpeed.checked,
-      ocrScan: chkOcrScan.checked,
+      showFloatingWidget: chkShowWidget ? chkShowWidget.checked : false,
       fontSize: parseInt(rngFontSize.value, 10)
     };
 
     chrome.storage.local.set(config, () => {
-      // Broadcast to current active tab
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs && tabs[0] && tabs[0].id) {
           chrome.tabs.sendMessage(tabs[0].id, {
@@ -73,26 +80,7 @@
   async function checkLocalEngine() {
     try {
       const controller = new AbortController();
-      const tid = setTimeout(() => controller.abort(), 1200);
-      const res = await fetch('http://localhost:3000/api/pipeline-status', {
-        method: 'GET',
-        cache: 'no-store',
-        signal: controller.signal
-      });
-      clearTimeout(tid);
-      if (res && res.ok) {
-        isLocalEngineOnline = true;
-        statusDot.className = 'status-dot online';
-        statusLabel.textContent = 'Native Pure Rust (3000)';
-        statusLabel.style.color = '#86efac';
-        return;
-      }
-    } catch (_) {}
-
-    // Fallback: check /api/health
-    try {
-      const controller = new AbortController();
-      const tid = setTimeout(() => controller.abort(), 1200);
+      const tid = setTimeout(() => controller.abort(), 600);
       const res = await fetch('http://localhost:3000/api/health', {
         method: 'GET',
         cache: 'no-store',
@@ -102,53 +90,57 @@
       if (res && res.ok) {
         isLocalEngineOnline = true;
         statusDot.className = 'status-dot online';
-        statusLabel.textContent = 'LiveSub Đang Chạy';
+        statusLabel.textContent = 'LiveSub Desktop (3000)';
         statusLabel.style.color = '#86efac';
+        bannerTitle.textContent = 'Đã kết nối LiveSub Desktop';
+        bannerDesc.textContent = 'Đang sử dụng trọn bộ động cơ VieNeu-TTS Offline và Quét chữ Video OCR hiệu năng cao.';
+        statusBanner.classList.add('desktop-connected');
         return;
       }
     } catch (_) {}
 
-    // Not reachable -> Cloud Edge-TTS / Web Speech
+    // Standalone mode is fully functional and ready
     isLocalEngineOnline = false;
-    statusDot.className = 'status-dot offline';
-    statusLabel.textContent = 'Đám Mây / Edge-TTS';
-    statusLabel.style.color = '#fde047';
+    statusDot.className = 'status-dot standalone';
+    statusLabel.textContent = 'Chế Độ Độc Lập';
+    statusLabel.style.color = '#38bdf8';
+    bannerTitle.textContent = 'Tiện ích hoạt động Độc Lập';
+    bannerDesc.textContent = 'Tự động nhận diện phụ đề trên YouTube, Netflix, Web phim và lồng tiếng trực tiếp bằng AI.';
+    statusBanner.classList.remove('desktop-connected');
   }
 
   // 4. Test Voice
   function testVoice() {
-    const voice = selVoice.value;
     const testSample = 'Chào bạn! LiveSub Studio đã sẵn sàng lồng tiếng cho mọi video!';
     btnTestVoice.disabled = true;
     btnTestVoice.textContent = '⏳ Đang phát...';
 
-    chrome.runtime.sendMessage({
-      type: 'SYNTHESIZE_TTS',
-      text: testSample,
-      voice
-    }, (resp) => {
-      btnTestVoice.disabled = false;
-      btnTestVoice.textContent = '🔊 Thử Giọng';
-      if (resp && resp.audioUrl) {
-        const audio = new Audio(resp.audioUrl);
-        audio.play().catch(console.warn);
-      } else if (resp && resp.audio_base64) {
-        const audio = new Audio(`data:${resp.audio_mime || 'audio/wav'};base64,` + resp.audio_base64);
-        audio.play().catch(console.warn);
-      } else {
-        // Fallback to browser SpeechSynthesis
-        try {
-          const u = new SpeechSynthesisUtterance(testSample);
-          u.lang = 'vi-VN';
-          const voices = window.speechSynthesis.getVoices();
-          if (voices && voices.length > 0) {
-            const viVoice = voices.find(v => v.lang === 'vi-VN' || v.lang.startsWith('vi'));
-            if (viVoice) u.voice = viVoice;
-          }
-          window.speechSynthesis.speak(u);
-        } catch (_) {}
+    // First try browser SpeechSynthesis (instant 0ms)
+    try {
+      if (typeof window.speechSynthesis !== 'undefined') {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(testSample);
+        u.lang = 'vi-VN';
+        const voices = window.speechSynthesis.getVoices();
+        if (voices && voices.length > 0) {
+          const vi = voices.find(v => v.lang === 'vi-VN' || v.lang.startsWith('vi'));
+          if (vi) u.voice = vi;
+        }
+        u.onend = () => {
+          btnTestVoice.disabled = false;
+          btnTestVoice.textContent = '🔊 Thử Giọng';
+        };
+        u.onerror = () => {
+          btnTestVoice.disabled = false;
+          btnTestVoice.textContent = '🔊 Thử Giọng';
+        };
+        window.speechSynthesis.speak(u);
+        return;
       }
-    });
+    } catch (_) {}
+
+    btnTestVoice.disabled = false;
+    btnTestVoice.textContent = '🔊 Thử Giọng';
   }
 
   // Bind Events
@@ -157,7 +149,7 @@
   selSubMode.addEventListener('change', saveSettings);
   selDucking.addEventListener('change', saveSettings);
   chkSyncSpeed.addEventListener('change', saveSettings);
-  chkOcrScan.addEventListener('change', saveSettings);
+  if (chkShowWidget) chkShowWidget.addEventListener('change', saveSettings);
 
   rngFontSize.addEventListener('input', () => {
     lblFontSize.textContent = `${rngFontSize.value}px`;
@@ -166,32 +158,38 @@
 
   btnTestVoice.addEventListener('click', testVoice);
 
+  // Desktop App Button Handler: Show friendly modal if app is not running
   btnOpenStudio.addEventListener('click', () => {
     if (isLocalEngineOnline) {
       chrome.tabs.create({ url: 'http://localhost:3000' });
     } else {
-      const msg = [
-        '⚠️ Chưa phát hiện LiveSub Studio trên máy tính!',
-        '',
-        'Vui lòng khởi động phần mềm LiveSub Studio (setup.exe / biểu tượng LiveSub trên Desktop) để kích hoạt cổng 3000:',
-        '  • Quét chữ phụ đề dán chết trên video (Native Rust OCR)',
-        '  • Giọng đọc AI VieNeu-TTS Offline tự nhiên',
-        '',
-        '👉 Extension hiện tại vẫn đang tự động dùng chế độ Đám Mây (Edge-TTS / Giọng trình duyệt) để đọc phụ đề có sẵn trên YouTube, Netflix, v.v.',
-        '',
-        'Bạn có muốn thử mở trang http://localhost:3000 không?'
-      ].join('\n');
-
-      if (confirm(msg)) {
-        chrome.tabs.create({ url: 'http://localhost:3000' });
-      }
+      appModal.style.display = 'flex';
     }
   });
+
+  if (btnCloseModal) {
+    btnCloseModal.addEventListener('click', () => {
+      appModal.style.display = 'none';
+    });
+  }
+
+  if (btnModalUnderstood) {
+    btnModalUnderstood.addEventListener('click', () => {
+      appModal.style.display = 'none';
+    });
+  }
+
+  if (btnModalForceOpen) {
+    btnModalForceOpen.addEventListener('click', () => {
+      appModal.style.display = 'none';
+      chrome.tabs.create({ url: 'http://localhost:3000' });
+    });
+  }
 
   // Initialize
   loadSettings();
   checkLocalEngine();
 
-  // Periodic status poll while popup is open
-  setInterval(checkLocalEngine, 3500);
+  // Periodic status poll
+  setInterval(checkLocalEngine, 4000);
 })();

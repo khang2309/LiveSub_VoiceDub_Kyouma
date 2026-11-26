@@ -45,6 +45,11 @@ pub const CONVERSATIONAL_COLLOCATIONS: &[&str] = &[
     "lũ côn trùng", "gây ra", "tai họa", "chẳng sao", "đúng chứ",
     "sau sáu", "sáu ngày", "sáu giây", "sáu phút", "sáu giờ", "sáu người", "sáu cái",
     "sáu trăm", "sáu nghìn", "sáu triệu", "sáu mươi",
+    "có thai", "mang thai", "sẩy thai", "sảy thai", "bào thai", "thai nhi", "phá thai", "dưỡng thai",
+    "thật đấy", "đúng đấy", "thế đấy", "ở đấy", "ai đấy", "sao đấy", "đâu đấy", "vậy đấy",
+    "cố gắng", "cố lên", "cố tình", "cố ý", "buổi tối", "trời tối", "tối nay", "tối qua",
+    "mùi thối", "thối rữa", "bốc mùi", "hết rồi", "hết cách", "tiếp tục", "kết thúc",
+    "bất ngờ", "bất tỉnh", "nhất là", "tất cả",
 ];
 
 pub struct Lexicon {
@@ -443,7 +448,22 @@ fn cand_unigram_score(lex: &Lexicon, cand: &str, core_low: &str, is_strictly_una
 
 fn transition_score(lex: &Lexicon, p: &str, c: &str) -> i32 {
     match (p, c) {
-        ("không", "thể") | ("thể", "mất") | ("mất", "tiếp") | ("mất", "đi") | ("bị", "mất") => 75,
+        ("có", "thai") | ("mang", "thai") | ("sẩy", "thai") | ("sảy", "thai") | ("bào", "thai") | ("thai", "nhi") | ("phá", "thai") | ("dưỡng", "thai") => 90,
+        ("thật", "đấy") | ("đúng", "đấy") | ("thế", "đấy") | ("ai", "đấy") | ("sao", "đấy") | ("đâu", "đấy") | ("vậy", "đấy") => 85,
+        ("tôi", "không") | ("tôi", "sẽ") | ("tôi", "đã") | ("tôi", "có") | ("tôi", "biết") | ("tôi", "thấy") | ("tôi", "muốn") | ("tôi", "nghĩ") => 85,
+        ("ở", "đây") | ("ở", "đó") | ("đứng", "đây") | ("đến", "đây") | ("lại", "đây") => 85,
+        ("cố", "gắng") | ("cố", "lên") | ("cố", "tình") | ("cố", "ý") | ("cố", "sức") | ("cố", "chấp") => 85,
+        ("buổi", "tối") | ("trời", "tối") | ("tối", "nay") | ("tối", "qua") | ("tối", "tăm") | ("đêm", "tối") => 85,
+        ("mùi", "thối") | ("thối", "rữa") | ("bốc", "mùi") => 85,
+        ("lối", "đi") | ("lối", "thoát") | ("lối", "vào") => 80,
+        ("mất", "rồi") | ("biến", "mất") | ("làm", "mất") | ("mất", "hết") | ("mất", "mạng") | ("mất", "tích") | ("đã", "mất") | ("sẽ", "mất") => 85,
+        ("bất", "ngờ") | ("bất", "kể") | ("bất", "cứ") | ("bất", "an") | ("bất", "lực") | ("bất", "động") => 85,
+        ("hết", "rồi") | ("hết", "sức") | ("hết", "tiền") => 85,
+        ("kết", "thúc") | ("kết", "quả") | ("liên", "kết") | ("tổng", "kết") => 85,
+        ("tiếp", "tục") | ("tiếp", "theo") | ("tiếp", "nhận") | ("kế", "tiếp") | ("trực", "tiếp") => 85,
+        ("nhất", "định") | ("duy", "nhất") | ("tốt", "nhất") | ("thứ", "nhất") | ("nhất", "thiết") => 85,
+        ("thể", "mất") | ("mất", "tiếp") | ("mất", "đi") | ("bị", "mất") => 85,
+        ("tất", "nhiên") | ("tất", "yếu") => 85,
         ("làm", "ơn") | ("ơn", "hãy") | ("hãy", "cứu") | ("hãy", "giúp") | ("hãy", "cho") => 75,
         ("sẽ", "có") | ("có", "kết") | ("kết", "cục") => 75,
         ("cha", "ơi") | ("mẹ", "ơi") | ("trời", "ơi") | ("anh", "ơi") | ("em", "ơi") => 75,
@@ -482,7 +502,7 @@ fn transition_score(lex: &Lexicon, p: &str, c: &str) -> i32 {
         ("hồ", "ly") | ("ngôi", "nhà") | ("ngôi", "sao") => 75,
         ("chiếc", "hộp") | ("hộp", "gỗ") | ("hộp", "thuốc") => 70,
         ("rỗng", "ruột") | ("trống", "rỗng") => 75,
-        ("sao", "anh") | ("anh", "ta") | ("ta", "lại") | ("lại", "biết") | ("ai", "biết") | ("đã", "biết") | ("tôi", "biết") | ("biết", "người") | ("biết", "tên") => 75,
+        ("sao", "anh") | ("anh", "ta") | ("ta", "lại") | ("lại", "biết") | ("ai", "biết") | ("đã", "biết") | ("biết", "người") | ("biết", "tên") => 75,
         ("đắt", "tiền") | ("tiền", "ngào") => 80,
         ("tử", "thúy") => 60,
         ("mỗi", "ngày") | ("mỗi", "tháng") | ("mỗi", "người") | ("mỗi", "lần") | ("mỗi", "khi") | ("mỗi", "thứ") => 65,
@@ -517,9 +537,9 @@ fn transition_score(lex: &Lexicon, p: &str, c: &str) -> i32 {
         ("hay", "để") | ("để", "em") | ("để", "cho") => 50,
         ("nếu", "em") | ("nếu", "anh") | ("nếu", "ta") | ("xảy", "ra") | ("ra", "chuyện") | ("chuyện", "gì") => 50,
         ("đại", "nhân") | ("mắt", "ngôi") | ("nổi", "đóa") | ("với", "anh") => 50,
-        ("vấn", "đề") | ("đề", "gì") | ("gì", "chứ") | ("im", "lặng") | ("lặng", "đứng") | ("đứng", "đây") | ("đây", "thôi") => 50,
+        ("vấn", "đề") | ("đề", "gì") | ("gì", "chứ") | ("im", "lặng") | ("lặng", "đứng") | ("đây", "thôi") => 50,
         ("nghe", "lén") | ("lén", "đâu") => 50,
-        ("đã", "ở") | ("ở", "đây") | ("từ", "trước") | ("trước", "cả") | ("cả", "khi") | ("mình", "ra") | ("ra", "đời") => 50,
+        ("đã", "ở") | ("từ", "trước") | ("trước", "cả") | ("cả", "khi") | ("mình", "ra") | ("ra", "đời") => 50,
         ("anh", "ấy") | ("chị", "ấy") | ("em", "ấy") => 50,
         ("hoàn", "thành") | ("thành", "mọi") | ("mọi", "việc") | ("cả", "lão") | ("lão", "bà") | ("bà", "bà") => 50,
         ("cũng", "ngầm") | ("ngầm", "tin") | ("tin", "tưởng") | ("tưởng", "anh") => 50,
@@ -531,7 +551,7 @@ fn transition_score(lex: &Lexicon, p: &str, c: &str) -> i32 {
         ("thế", "còn") | ("thế", "nào") | ("thế", "ạ") => 50,
         ("vừa", "nói") | ("trời", "đất") | ("đất", "ơi") | ("không", "có") | ("vẫn", "ăn") => 50,
         ("ăn", "được") | ("lặng", "mà") | ("ăn", "đi") | ("ăn", "hết") => 50,
-        ("hết", "giúp") | ("giúp", "các") | ("các", "chị") | ("bánh", "trung") | ("trung", "thu") => 50,
+        ("một", "bánh") | ("bánh", "trung") | ("trung", "thu") | ("hết", "giúp") | ("giúp", "các") | ("các", "chị") => 75,
         ("kể", "cả") | ("có", "biết") | ("biết", "thứ") | ("thứ", "này") | ("còn", "lại") | ("lại", "đâu") => 50,
         ("vị", "quan") | ("quan", "võ") | ("đã", "giúp") | ("phục", "kích") | ("kích", "thành") | ("thành", "trì") => 50,
         ("kể", "cho") | ("cho", "ngài") | ("ngài", "ấy") | ("thị", "trấn") => 50,
@@ -576,7 +596,8 @@ fn transition_score(lex: &Lexicon, p: &str, c: &str) -> i32 {
 pub fn is_rare_override_syllable(s: &str) -> bool {
     matches!(
         s,
-        "phái"
+        "thái"
+            | "phái"
             | "cám"
             | "hói"
             | "chí"
@@ -716,6 +737,7 @@ fn unigram_frequency_score(cand: &str) -> i32 {
         | "kích" | "hứa" | "vị" | "giữ" | "số" | "lấy" | "những" | "ngài" | "thị" | "trấn"
         | "thái" | "độ" | "dọa" | "lẫn" | "tương" | "tự" | "thực" | "tế" | "họa" | "ương"
         | "cương" | "nhu" | "trì" | "quan" | "kể" | "ngay" | "nên"
+        | "thai" | "đấy" | "cố" | "tối" | "thối" | "lối" | "mấy" | "mất" | "bất" | "nhất" | "tất" | "kết" | "hết" | "tiếp" | "tiếc" | "tiếng" | "chiếc"
         | "cậu" | "chẳng" | "thèm" | "ngại" | "kia" | "thằng" | "nhóc" | "mày" | "nhãi" | "món"
         | "miệng" | "thật" | "bảo" | "đoán" | "đoạn" | "kém" | "chết" | "sống" | "khiến" | "phần" | "nhớ"
         | "dùng" | "đắt" | "tiền" | "ngào" | "quản" | "cơ" => 15,
@@ -1213,6 +1235,44 @@ pub fn pre_normalize_ocr_substitutions(text: &str) -> String {
         ("ô đầu ra", "ở đâu ra"),
         ("lấy ô đầu", "lấy ở đâu"),
         ("lấy ở đâu ra", "lấy ở đâu ra"),
+        ("có thái", "có thai"),
+        ("Có thái", "Có thai"),
+        ("mang thái", "mang thai"),
+        ("Mang thái", "Mang thai"),
+        ("sẩy thái", "sẩy thai"),
+        ("Sẩy thái", "Sẩy thai"),
+        ("sảy thái", "sẩy thai"),
+        ("Sảy thái", "Sẩy thai"),
+        ("bào thái", "bào thai"),
+        ("thật đây", "thật đấy"),
+        ("Thật đây", "Thật đấy"),
+        ("đúng đây", "đúng đấy"),
+        ("Đúng đây", "Đúng đấy"),
+        ("thế đây", "thế đấy"),
+        ("Thế đây", "Thế đấy"),
+        ("mùi thôi", "mùi thối"),
+        ("Mùi thôi", "Mùi thối"),
+        ("thôi rữa", "thối rữa"),
+        ("Thôi rữa", "Thối rữa"),
+        ("buổi tôi", "buổi tối"),
+        ("Buổi tôi", "Buổi tối"),
+        ("trời tôi", "trời tối"),
+        ("cô gắng", "cố gắng"),
+        ("Cô gắng", "Cố gắng"),
+        ("cô lên", "cố lên"),
+        ("Cô lên", "Cố lên"),
+        ("cô tình", "cố tình"),
+        ("cô ý", "cố ý"),
+        ("kêt cục", "kết cục"),
+        ("Kêt cục", "Kết cục"),
+        ("kêt quả", "kết quả"),
+        ("hêt rồi", "hết rồi"),
+        ("hêt cách", "hết cách"),
+        ("tiêp tục", "tiếp tục"),
+        ("bât ngờ", "bất ngờ"),
+        ("nhât là", "nhất là"),
+        ("nhât định", "nhất định"),
+        ("tât cả", "tất cả"),
     ];
     for (k, v) in subs {
         s = s.replace(k, v);

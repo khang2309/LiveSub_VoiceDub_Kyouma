@@ -5046,9 +5046,9 @@ class LiveDubStudio {
     }
   }
 
-  exportSRT() {
-    if (this.history.length === 0) {
-      alert('Chưa có nội dung dịch để xuất phụ đề.');
+  async exportSRT() {
+    if (!this.history || this.history.length === 0) {
+      alert('⚠️ Chưa có nội dung phụ đề trong lịch sử để xuất. Hãy quét hoặc dịch video trước khi xuất .SRT.');
       return;
     }
     let srtContent = '';
@@ -5062,55 +5062,77 @@ class LiveDubStudio {
       srtContent += `${index + 1}\n`;
       srtContent += `${this.formatSRTTime(startMs)} --> ${this.formatSRTTime(endMs)}\n`;
       if (this.currentSubMode === 'source_only' || this.currentSubMode === 'en_only') {
-        srtContent += `${item.sourceText}\n\n`;
+        srtContent += `${item.sourceText || ''}\n\n`;
       } else if (this.currentSubMode === 'vi_only') {
-        srtContent += `${item.viText}\n\n`;
+        srtContent += `${item.viText || ''}\n\n`;
       } else {
-        srtContent += `${item.sourceText}\n${item.viText}\n\n`;
+        srtContent += `${item.sourceText || ''}\n${item.viText || ''}\n\n`;
       }
     });
 
-    this.downloadFile(srtContent, `LiveSub_${Date.now()}.srt`, 'text/plain;charset=utf-8');
+    await this.downloadFile(srtContent, `LiveSub_${Date.now()}.srt`, 'text/plain;charset=utf-8');
   }
 
-  exportTXT() {
-    if (this.history.length === 0) {
-      alert('Chưa có nội dung dịch để xuất.');
+  async exportTXT() {
+    if (!this.history || this.history.length === 0) {
+      alert('⚠️ Chưa có nội dung kịch bản trong lịch sử để xuất. Hãy quét hoặc dịch video trước khi xuất .TXT.');
       return;
     }
     let txtContent = `=== LỊCH SỬ DỊCH & KỊCH BẢN LIVESUB STUDIO ===\n`;
     txtContent += `Thời gian xuất: ${new Date().toLocaleString('vi-VN')}\n\n`;
 
     this.history.forEach((item, idx) => {
-      txtContent += `[${item.timestamp}] #${idx + 1}\n`;
-      txtContent += `Gốc (${item.lang}): ${item.sourceText}\n`;
-      txtContent += `Dịch (VI): ${item.viText}\n\n`;
+      txtContent += `[${item.timestamp || ''}] #${idx + 1}\n`;
+      txtContent += `Gốc (${item.lang || 'auto'}): ${item.sourceText || ''}\n`;
+      txtContent += `Dịch (VI): ${item.viText || ''}\n\n`;
     });
 
-    this.downloadFile(txtContent, `LiveSub_Script_${Date.now()}.txt`, 'text/plain;charset=utf-8');
+    await this.downloadFile(txtContent, `LiveSub_Script_${Date.now()}.txt`, 'text/plain;charset=utf-8');
   }
 
   formatSRTTime(milliseconds) {
-    const date = new Date(milliseconds);
     const hours = String(Math.floor(milliseconds / 3600000)).padStart(2, '0');
-    const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-    const seconds = String(date.getUTCSeconds()).padStart(2, '0');
-    const millis = String(date.getUTCMilliseconds()).padStart(3, '0');
+    const remaining = milliseconds % 3600000;
+    const minutes = String(Math.floor(remaining / 60000)).padStart(2, '0');
+    const seconds = String(Math.floor((remaining % 60000) / 1000)).padStart(2, '0');
+    const millis = String(remaining % 1000).padStart(3, '0');
     return `${hours}:${minutes}:${seconds},${millis}`;
   }
 
-  downloadFile(content, fileName, mimeType) {
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    }, 100);
+  async downloadFile(content, fileName, mimeType) {
+    // 1. Try Native Backend Export API (Saves directly to user's Downloads folder)
+    try {
+      const res = await fetch('/api/export-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: fileName, content })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.success && data.path) {
+          alert(`✅ Đã xuất file thành công vào thư mục Downloads:\n${data.path}`);
+          return;
+        }
+      }
+    } catch (_) {}
+
+    // 2. Fallback for browser download
+    try {
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      }, 500);
+      alert(`✅ Đã xuất file: ${fileName}`);
+    } catch (err) {
+      alert(`❌ Lỗi khi xuất file: ${err.message}`);
+    }
   }
 
   getRealtimeMetrics() {

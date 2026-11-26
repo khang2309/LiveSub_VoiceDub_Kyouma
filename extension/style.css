@@ -1,4 +1,4 @@
-/* LiveSub Studio Universal Video Dubbing - Extension Styles */
+/* LiveSub Studio Universal Video Dubbing - Extension Styles (v1.2.0) */
 
 /* In-Video Subtitle Overlay */
 .livesub-invideo-container {
@@ -53,18 +53,18 @@
   color: #ffffff;
 }
 
-/* Floating Draggable Quick Control Widget */
+/* Floating Draggable Quick Control Widget (Optional - Off by default) */
 .livesub-floating-widget {
   position: fixed;
   bottom: 80px;
   right: 20px;
-  width: 200px;
+  width: 190px;
   background: rgba(15, 23, 42, 0.92);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(56, 189, 248, 0.35);
   border-radius: 10px;
-  padding: 8px 12px;
+  padding: 7px 11px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
   z-index: 2147483646;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -83,8 +83,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  margin-bottom: 4px;
+  gap: 5px;
+  margin-bottom: 3px;
 }
 
 .livesub-widget-dot {
@@ -93,12 +93,14 @@
   border-radius: 50%;
   background: #22c55e;
   box-shadow: 0 0 6px #22c55e;
+  flex-shrink: 0;
 }
 
 .livesub-widget-title {
   font-weight: 700;
   color: #38bdf8;
   flex: 1;
+  font-size: 11px;
 }
 
 .livesub-toggle-btn {
@@ -106,7 +108,7 @@
   color: #94a3b8;
   border: none;
   border-radius: 4px;
-  padding: 2px 7px;
+  padding: 2px 6px;
   font-size: 10px;
   font-weight: 700;
   cursor: pointer;
@@ -117,6 +119,20 @@
   background: #0284c7;
   color: #ffffff;
   box-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
+}
+
+.livesub-widget-close {
+  background: transparent;
+  color: #94a3b8;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.livesub-widget-close:hover {
+  color: #ffffff;
 }
 
 .livesub-widget-status {

@@ -352,6 +352,30 @@ mod tests {
                 "Con tôi đổ bệnh rồi. 2 Y",
                 "Con tôi đổ bệnh rồi.",
             ),
+            (
+                "Cô ấy có thái rồi sao?",
+                "Cô ấy có thai rồi sao?",
+            ),
+            (
+                "Không, bà ấy mất vì sẩy thái.",
+                "Không, bà ấy mất vì sẩy thai.",
+            ),
+            (
+                "Đúng đây, em đúng là giồng cha thật đây.",
+                "Đúng đấy, em đúng là giống cha thật đấy.",
+            ),
+            (
+                "Cái mùi thôi rữa này..",
+                "Cái mùi thối rữa này..",
+            ),
+            (
+                "Chúng ta phải cô gắng hơn nữa",
+                "Chúng ta phải cố gắng hơn nữa",
+            ),
+            (
+                "Trời tôi rồi, về thôi",
+                "Trời tối rồi, về thôi",
+            ),
         ];
 
         for (input, expected) in samples {

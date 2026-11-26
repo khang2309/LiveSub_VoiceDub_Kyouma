@@ -32,6 +32,7 @@ pub fn build_router(state: AppState, public_dir: &Path) -> Router {
         .route("/api/control/key", post(pipeline::api_control_key))
         .route("/api/control/poll", get(pipeline::api_control_poll))
         .route("/api/overlay/toggle", post(pipeline::api_overlay_toggle))
+        .route("/api/export-file", post(pipeline::api_export_file))
         .route("/api/pipeline-status", get(pipeline::api_pipeline_status))
         .route(
             "/api/settings",
