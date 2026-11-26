@@ -242,10 +242,10 @@ impl GpuOcrEngine {
                         y: (y * scale_y).round().clamp(0.0, height_f),
                     })
                     .collect();
-                // Expand vertically by ~12% so tall stacked Vietnamese diacritics (Ấ, Ể, Ỗ, Ậ) are never clipped
+                // Expand vertically by ~16% so tall stacked Vietnamese diacritics (Ấ, Ể, Ỗ, Ậ) are never clipped
                 let min_y = coords.iter().map(|c| c.y).fold(f64::INFINITY, f64::min);
                 let max_y = coords.iter().map(|c| c.y).fold(f64::NEG_INFINITY, f64::max);
-                let pad_y = ((max_y - min_y) * 0.12).clamp(2.0, 12.0);
+                let pad_y = ((max_y - min_y) * 0.16).clamp(3.0, 14.0);
                 for c in &mut coords {
                     if (c.y - min_y) <= (max_y - min_y) * 0.5 {
                         c.y = (c.y - pad_y).clamp(0.0, height_f);
@@ -257,6 +257,27 @@ impl GpuOcrEngine {
                 Polygon::new(geo_types::LineString::from(coords), vec![])
             })
             .collect();
+
+        // Filter out tiny extreme-corner HUD / watermark boxes without touching centered subtitles
+        let img_w_f = image_dims.0 as f64;
+        if img_w_f > 100.0 && !polygons.is_empty() {
+            let max_box_h = polygons
+                .iter()
+                .map(|p| polygon_to_text_region(p, image_dims).height as f64)
+                .fold(0.0_f64, f64::max);
+            polygons.retain(|p| {
+                let r = polygon_to_text_region(p, image_dims);
+                let w = r.width as f64;
+                let h = r.height as f64;
+                let cx = r.x as f64 + w * 0.5;
+                let is_extreme_corner = cx < img_w_f * 0.12 || cx > img_w_f * 0.88;
+                let is_tiny_corner = is_extreme_corner && w < img_w_f * 0.15 && h <= (max_box_h * 0.85).max(32.0);
+                !is_tiny_corner
+            });
+            if polygons.is_empty() {
+                return Ok(Vec::new());
+            }
+        }
 
         // Sort boxes in natural top-to-bottom, left-to-right reading order
         polygons.sort_by(|a, b| {
@@ -282,7 +303,7 @@ impl GpuOcrEngine {
                     let region = polygon_to_text_region(polygon, image_dims);
                     imageops::crop_imm(&rgb, region.x, region.y, region.width, region.height).to_image()
                 };
-                if crop.height() > 0 && crop.height() < 52 {
+                if crop.height() > 0 && crop.height() < rec_target_h {
                     let new_w = ((crop.width() as f32) * (rec_target_h as f32 / crop.height() as f32))
                         .round()
                         .max(1.0) as u32;

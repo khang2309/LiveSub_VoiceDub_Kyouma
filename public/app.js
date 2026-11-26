@@ -2078,7 +2078,7 @@ class LiveDubStudio {
         if (!response.ok) throw new Error(`OCR HTTP ${response.status}`);
         const data = await response.json();
         if (!data.empty && data.original) {
-          const hadEmptyGap = Boolean(this.ocrConsecutiveEmpty && this.ocrConsecutiveEmpty >= 6);
+          const hadEmptyGap = Boolean(this.ocrConsecutiveEmpty && this.ocrConsecutiveEmpty >= 7);
           this.ocrConsecutiveEmpty = 0;
           this.hasActiveHardSubtitles = true;
           this.hasSeenHardSubtitles = true;
@@ -2114,8 +2114,9 @@ class LiveDubStudio {
           this.handleOCRSubtitle(data);
         } else {
           this.ocrConsecutiveEmpty = (this.ocrConsecutiveEmpty || 0) + 1;
-          if (this.ocrConsecutiveEmpty >= 6) {
-            // Only after ~210ms+ of genuine blank subtitle frames, reset active line tracker
+          if (this.ocrConsecutiveEmpty >= 7) {
+            // Only after ~245ms+ of genuine empty frames (real gap between dialogue cues),
+            // reset active line tracker so legitimate repeated lines like "Miu meo, miu meo" speak again.
             this.lastOCRText = '';
             this.lastCleanText = '';
           }
@@ -2207,27 +2208,35 @@ class LiveDubStudio {
     if (!s1 || !s2) return false;
     if (s1 === s2) return true;
 
-    // Direct Levenshtein similarity on normalized text (catches minor OCR noise suffixes/typos like "10_ E", "rồi/rột")
+    const w1 = s1.split(/\s+/).filter(Boolean);
+    const w2 = s2.split(/\s+/).filter(Boolean);
+
+    // If the new sentence extends the previous one with genuine new words
+    // (e.g. "không phải lỗi của mình" -> "không phải lỗi của mình nhưng..."), it is a NEW cue!
+    if (w1.length > w2.length && s1.length >= s2.length + 3) {
+      return false;
+    }
+
+    // Direct Levenshtein similarity when length difference is within minor OCR jitter
     const sim = this.ocrSimilarity(s1, s2);
+    const lenDiff = Math.abs(s1.length - s2.length);
     const minLen = Math.min(s1.length, s2.length);
     if (minLen <= 15) {
-      if (sim >= 0.88) return true;
-    } else if (sim >= 0.80) {
+      if (lenDiff <= 3 && sim >= 0.88) return true;
+    } else if (lenDiff <= 4 && sim >= 0.82) {
       return true;
     }
 
-    // Token-level overlap / contiguous substring match (catches partial line flickers or trailing OSD noise)
-    const w1 = s1.split(/\s+/).filter(Boolean);
-    const w2 = s2.split(/\s+/).filter(Boolean);
+    // Catch shorter partial flicker while the fuller line is still on screen
     const minWords = Math.min(w1.length, w2.length);
-    if (minWords >= 4) {
-      if (s1.includes(s2) || s2.includes(s1)) return true;
+    if (w1.length <= w2.length && minWords >= 3) {
+      if (s2.includes(s1)) return true;
       const set2 = new Set(w2);
       let shared = 0;
       for (const w of w1) {
         if (set2.has(w)) shared++;
       }
-      if ((shared / minWords) >= 0.75) {
+      if ((shared / w1.length) >= 0.80 && w2.length - w1.length <= 2) {
         return true;
       }
     }
@@ -2238,13 +2247,7 @@ class LiveDubStudio {
   isGarbageOCR(text) {
     if (!text || typeof text !== 'string') return true;
     const trimmed = text.trim();
-    if (!trimmed) return true;
-    if (trimmed.includes('[UNK]')) return true;
-
-    // Reject pirate site watermark banners (Kèo bóng lăn, Rạp chiếu, Cá cược, Nạp đầu, Được Bảo Chứng Bởi, Đã Chơi, Tip...)
-    if (/(?:Rạp chi[eêểế]u|Kèo bóng|Bóng lăn|Cá cược|Khuyến mãi|Nạp đầu|Ăn to|Tập\s*\d+>|Acid Béo|Hoiro|Sunwin|3bet|Nohu|Được Bảo Chứng|Bảo Chứng Bởi|Đã Chơi|uiateuht|wiateukt|viateuht|tateukt|iateubd|iateuht|ateuhti|lateuhh)/i.test(trimmed)) {
-      return true;
-    }
+    if (!trimmed || trimmed.includes('[UNK]')) return true;
 
     // Allow Japanese, Chinese and Korean dialogue text:
     // Bất kỳ câu nào có ký tự CJK (chữ Hán, Hiragana, Katakana, Hangul) đều là thoại hợp lệ!
@@ -2371,82 +2374,34 @@ class LiveDubStudio {
     } catch (_) {}
     const baseLang = String(currentLang).split(/[-_]/)[0].toLowerCase();
     const isVietsubMode = baseLang === 'vi' || baseLang === 'auto' || (this.detectedOCRLanguage === 'vi');
-    // Cleanups specific to Vietsub fansub videos (AnimeHay, web player UI, gambling ads)
+    // Structural cleanup only (no hardcoded words/phrases)
     if (isVietsubMode) {
       if (/[a-zA-Zà-ỹÀ-Ỹ]/.test(raw)) {
         raw = raw.replace(/[\u4e00-\u9fff\u3040-\u30ff]+/g, ' ').replace(/\s+/g, ' ').trim();
       }
-
-      // Strip gambling site watermark banners (Sunwin, Hobet, Kèo bóng lăn, 3bet, Nohu, Tip2>...)
-      raw = raw.replace(/\s*(?:Tip\d*|Tapi\d*|Tip\d+>|Tapi\d+>|Ráp chi[a-z]*|Lenkeobonglan|Hobet|Sunwin|Santuithantai|Nohuthethao|Nohu|3bet|Thuonghieusunwin|Napdau|Nhanngay).*$/i, '').trim();
-
-      // Strip video titles, channel watermark tags and web fansub junk leaking into subtitle
-      const junkTailRegex = /(?:^|\s+)(?:animehay|animevietsub|bit\.ly|citumo|rap\s*citu|hdbet|3bet|ch[oơ]ingay|n[oổ]\s*h[uũ]|b[áa]ckinh|bickinh|backinh|truyengoc).*$/i;
-      raw = raw.replace(junkTailRegex, '').trim().replace(/^[,.\-:;]+|[,.\-:;]+$/g, '').trim();
-
-      // Strip trailing video player UI buttons (e.g. "On O Ép On", "Ổn Áp On", "On Cx Oy", "Cài đặt Ơ On")
-      raw = raw.replace(/(?:\b(?:On|Ổn|Ổn Áp|Cài đặt|Cài đăt|Cd|Oy|Cx|Ép On|Ép|Em|Cào Cào|Cư Pui)\b[\s\wÀ-ỹ]{0,15})+$/i, '').trim();
-      raw = raw.replace(/\b(?:On\s+Cx\s+Oy|On\s+O\s+Ép\s+On|Ổn\s+Áp\s+On|Oy\s+Em|Cài\s+đặt\s+Ơ\s+On)\b/gi, '').trim();
+      raw = raw.trim().replace(/^[,\.\-:;]+|[,\.\-:;]+$/g, '').trim();
       if (!raw) return;
 
-      // Reject corrupted Vietsub hard subtitle OCR reading
-      if (/[åöøß]|ngv[oò]i|thv[oò]ng|nu[aá]c\s*m[aå]t|lung\s*tr[oò]ng|ky\s*vi[eê]n/i.test(raw)) return;
-      if (/\b(?:animehay|animevietsub|bit\.ly|citumo|rap\s*citu|hdbet|3bet|chơingay|nổ\s*hũ|bản lồng tiếng)\b/i.test(raw)) return;
-
-      // Strip isolated single-letter leading OCR boundary noise (e.g. "e kích thành trì" -> "kích thành trì")
-      raw = raw.replace(/^[a-zA-Z]\s+(?=[a-zA-Zà-ỹÀ-Ỹ]{3,})/i, '').trim();
+      // Strip isolated single consonant leading OCR boundary noise before a real word
+      raw = raw.replace(/^[bcdfghjklmnpqrstvwxz]\s+(?=[a-zA-Zà-ỹÀ-Ỹ]{3,})/i, '').trim();
     } else {
-      // For foreign languages (English, Japanese, Chinese, French, German, Spanish, etc.):
-      // Keep natural words like 'on', 'subscribers', 'views', 'six', 'share', 'comment'
       raw = raw.replace(/^[b-hj-zB-HJ-Z]\s+(?=[a-zA-Z]{3,})/i, '').trim();
     }
 
-    // Strip video player OSD timecodes (e.g. "09:15/23:58", "5 09:20 / 23:50", "Dù 0 09:23 / 23:59", "23:56", "3 09:54/ 23:5", "11:24 / 23:59")
-    // IMPORTANT: Preserve valid quantities & numbers like "1.000", "50.000", "1.5"
-    raw = raw.replace(/(?:(?:^|\s+)(?:Dù|Vào|Vao|[a-zA-Z]{1,4})\s*){0,2}(?:\s*\d+\s+)?(?:\b\d{1,2}:\d{2}(?::\d{2})?(?:\s*[\/|\\]\s*\d{1,2}[:.]\d{1,2}(?:[:.]\d{1,2})?)?\s*\d*\b|\b\d{1,2}\.\d{2}\s*[\/|\\]\s*\d{1,2}[:.]\d{1,2}\s*\d*\b)/gi, '').trim();
-
-    // OCR diacritic & spelling fallback corrections
-    raw = raw.replace(/\bMôi năm\b/gi, 'Mỗi năm');
-    raw = raw.replace(/\btôi tra được\b/gi, 'tôi trả được');
-    raw = raw.replace(/\bm[oô]t n[uư][aã] r[oồ]i\b/gi, 'một nửa rồi');
-    raw = raw.replace(/\bmột nữa\b/gi, 'một nửa');
-    raw = raw.replace(/\bMôt\b/g, 'Một').replace(/\bmôt\b/g, 'một');
-    raw = raw.replace(/\bcó có muốn\b/gi, 'cô có muốn');
-    raw = raw.replace(/\bmuôn uông\b/gi, 'muốn uống');
-    raw = raw.replace(/\bmuôn uống\b/gi, 'muốn uống');
-    raw = raw.replace(/\bmuốn uông\b/gi, 'muốn uống');
-    raw = raw.replace(/\bphơi khó\b/gi, 'phơi khô');
-    raw = raw.replace(/\bPhơi khó\b/g, 'Phơi khô');
-    raw = raw.replace(/\btừ rê ở đâu\b/gi, 'từ rễ ô đầu');
-    raw = raw.replace(/\btừ rễ ở đâu\b/gi, 'từ rễ ô đầu');
-    raw = raw.replace(/\brê ở đâu\b/gi, 'rễ ô đầu');
-    raw = raw.replace(/\brễ ở đâu\b/gi, 'rễ ô đầu');
-    raw = raw.replace(/\brê ô đầu\b/gi, 'rễ ô đầu');
-    raw = raw.replace(/\btừ rê\b/gi, 'từ rễ');
-    raw = raw.replace(/\bbiêt\b/g, 'biết');
-    raw = raw.replace(/\bBiêt\b/g, 'Biết');
-    // Strip trailing video player seek buttons / OSD tags (e.g. "? Dù 10", "Dù 10", "Tua 10")
-    raw = raw.replace(/\s+(?:Dù|Vào|Vao|Tua|Lùi)\s*\d+\s*$/i, '').replace(/\s+(?:Dù|Vào|Vao|Tua|Lùi)?\s*(?:10|5|15|30|0)\s*$/i, '').trim();
+    // Strip standalone player OSD timecodes while preserving real dialogue numbers
+    raw = raw.replace(/\b\d{1,2}[:.]\d{2}(?::\d{2})?(?:\s*[\/|\\]\s*\d{1,2}[:.]\d{1,2}(?:[:.]\d{1,2})?)?\b/g, '').trim();
+    if (!raw) return;
 
     // Dialogue subtitles: allow long sentences, monologues and multi-speaker dialogues up to 1000 chars or 200 words
     if (raw.length > 1000 || raw.split(/\s+/).length > 200) return;
 
-    // Single or short word check (eliminate phantom OCR noise on empty screen):
+    // Single or short token structural check (allow any real dialogue word, reject pure single-char punctuation)
     const rawTokens = raw.split(/\s+/).filter(Boolean);
     const isCjkText = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/.test(raw);
-    if (!isCjkText && isVietsubMode && rawTokens.length <= 2) {
-      const validViWords = ['cha', 'ba', 'mẹ', 'bố', 'con', 'anh', 'em', 'ông', 'bà', 'chị', 'cô', 'chú', 'bác', 'cháu', 'hắn', 'nó', 'họ', 'ta', 'mình', 'đúng', 'không', 'phải', 'chào', 'sao', 'dạ', 'vâng', 'ừ', 'thật', 'hả', 'này', 'vậy', 'hở', 'ôi', 'ơ', 'chứ', 'rồi', 'xong', 'đi', 'được', 'nghe', 'tại', 'cứu', 'chạy', 'mau', 'khoan', 'chết', 'nguy', 'bắn', 'tránh', 'cút', 'dừng', 'đứng', 'buông', 'đợi', 'thôi', 'im', 'rõ', 'ai', 'gì', 'đâu', 'nào', 'có', 'biết', 'hiểu', 'nhớ', 'quên', 'xem', 'nói', 'thấy', 'chắc', 'kìa', 'đây', 'đó', 'lại', 'ngay', 'mỗi', 'năm', 'trả', 'nửa', 'một', 'quá', 'hay', 'khó', 'dễ', 'đau', 'sợ', 'buồn', 'vui', 'chuyện', 'gớm', 'nhóc', 'mày', 'nhãi', 'chẳng', 'thèm'];
-      const hasGenuineViWord = rawTokens.some(tok => {
-        const w = tok.toLowerCase().replace(/[.!?…,;:"']+/gu, '');
-        return validViWords.includes(w) || (w.length >= 3 && /[à-ỹÀ-Ỹ]/.test(tok));
-      });
-      if (!hasGenuineViWord) {
-        return;
-      }
-    } else if (!isCjkText && rawTokens.length === 1) {
-      const cleanWord = raw.toLowerCase().replace(/[.!?…,;:"']+/gu, '');
-      const isValidForeignOrDigit = /^\d+$/.test(cleanWord) || /^[a-zA-Z0-9]{2,}$/.test(cleanWord);
-      if (!isValidForeignOrDigit) {
+    if (!isCjkText && rawTokens.length === 1) {
+      const cleanWord = raw.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+      const isValidToken = /^\d+$/.test(cleanWord) || cleanWord.length >= 2 || /[à-ỹÀ-Ỹ]/.test(cleanWord);
+      if (!isValidToken) {
         return;
       }
     }
@@ -2455,8 +2410,16 @@ class LiveDubStudio {
     // Never abruptly interrupt ongoing dialogue or purge the speech queue; let every sentence play smoothly to completion.
 
     const now = performance.now();
-    if (!this.recentOCRHistory) this.recentOCRHistory = [];
-    this.recentOCRHistory = this.recentOCRHistory.filter(item => (now - item.time) < 8000);
+    const hasCleared = Boolean(data.hadEmptyGap);
+    if (hasCleared) {
+      // Genuine empty-screen pause cleared previous subtitle: allow identical repeats in a new cue
+      this.recentOCRHistory = [];
+      this.lastOCRText = '';
+      this.lastCleanText = '';
+    } else {
+      if (!this.recentOCRHistory) this.recentOCRHistory = [];
+      this.recentOCRHistory = this.recentOCRHistory.filter(item => (now - item.time) < 6500);
+    }
 
     const stripAccents = (s) => (s || '').normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
@@ -2466,9 +2429,9 @@ class LiveDubStudio {
     const rawNorm = stripAccents(raw);
     let cleanRaw = defrag(String(data.translated || raw || ''));
     if (isVietsubMode) {
-      cleanRaw = cleanRaw.replace(/^[a-zA-Z]\s+(?=[a-zA-Zà-ỹÀ-Ỹ]{3,})/i, '');
+      cleanRaw = cleanRaw.replace(/^[bcdfghjklmnpqrstvwxz]\s+(?=[a-zA-Zà-ỹÀ-Ỹ]{3,})/i, '');
     }
-    // If raw OCR has a more complete sentence than cleanRaw (e.g. cleanRaw was cut off with trailing letter + dots like "b...")
+    // If raw OCR has a more complete sentence than cleanRaw (e.g. cleanRaw was cut off with trailing letter + dots)
     if (raw && raw.length > cleanRaw.length) {
       const cleanPrefix = cleanRaw.replace(/[\s\wÀ-ỹà-ỹ]*\.{2,}.*$/, '').trim();
       if (cleanPrefix.length >= 10 && raw.startsWith(cleanPrefix)) {
@@ -2477,140 +2440,33 @@ class LiveDubStudio {
     }
     cleanRaw = cleanRaw.replace(/\s+[a-zA-Zà-ỹÀ-Ỹ]\.{2,}\s*$/g, '').trim();
     cleanRaw = cleanRaw.replace(/(\.{2,}|…)\s*\.+/g, '$1').replace(/\s+([.,!?:;…])/g, '$1').trim();
-    cleanRaw = cleanRaw.replace(/\s+(?:Dù|Vào|Vao|Tua|Lùi)\s*\d+\s*$/i, '').replace(/\s+(?:Dù|Vào|Vao|Tua|Lùi)?\s*(?:10|5|15|30|0)\s*$/i, '').trim();
-    cleanRaw = cleanRaw
-      .replace(/\bsẽ khiên\b/gi, 'sẽ khiến')
-      .replace(/\bkhiên người\b/gi, 'khiến người')
-      .replace(/\bkhiên một\b/gi, 'khiến một')
-      .replace(/\bkhiên cho\b/gi, 'khiến cho')
-      .replace(/\bbât tỉnh\b/gi, 'bất tỉnh')
-      .replace(/\bbât ngờ\b/gi, 'bất ngờ')
-      .replace(/\bbât an\b/gi, 'bất an')
-      .replace(/\bbât cứ\b/gi, 'bất cứ')
-      .replace(/\bthường bât\b/gi, 'thường bất')
-      .replace(/\bmôi năm\b/gi, 'mỗi năm')
-      .replace(/\bMôi năm\b/g, 'Mỗi năm')
-      .replace(/\btra được\b/gi, 'trả được')
-      .replace(/\btôi tra được\b/gi, 'tôi trả được')
-      .replace(/\bmôt nữa\b/gi, 'một nửa')
-      .replace(/\bmột nữa\b/gi, 'một nửa')
-      .replace(/\bmôt nửa\b/gi, 'một nửa')
-      .replace(/\bMôt\b/g, 'Một').replace(/\bmôt\b/g, 'một')
-      .replace(/\bnữa rồi\b/gi, 'nửa rồi')
-      .replace(/\bđứa tre\b/gi, 'đứa trẻ')
-      .replace(/\bxấu xí lăm\b/gi, 'xấu xí lắm')
-      .replace(/\bkhống chỉ\b/gi, 'không chỉ')
-      .replace(/\bkhông con sông được lâu\b/gi, 'không còn sống được lâu')
-      .replace(/\bcon sông được lâu\b/gi, 'còn sống được lâu')
-      .replace(/\bMuôn chết\b/gi, 'Muốn chết')
-      .replace(/\bchô khác\b/gi, 'chỗ khác')
-      .replace(/\bthàm làm\b/gi, 'tham lam')
-      .replace(/\bĐung ai ngay\b/gi, 'Đừng đi ngay')
-      .replace(/\btà vạy\b/gi, 'ta vậy')
-      .replace(/\bcon đòi tiền\b/gi, 'còn đòi tiền')
-      .replace(/\bCố vấn đề\b/gi, 'Có vấn đề')
-      .replace(/\bBđược rồi\b/gi, 'Được rồi')
-      .replace(/\bĐôi chút\b/gi, 'Đợi chút')
-      .replace(/\bCha, tuyết quá\b/gi, 'Chà, tuyệt quá')
-      .replace(/\btuyết quá\b/gi, 'tuyệt quá')
-      .replace(/\bĐiên thiết\b/gi, 'Điên thiệt')
-      .replace(/\btôi đông y\b/gi, 'tôi đồng ý')
-      .replace(/\bcần xé\b/gi, 'cắn xé')
-      .replace(/\bchắc chân không\b/gi, 'chắc chắn không')
-      .replace(/\bHộo bị dụ\b/gi, 'Họ bị dụ')
-      .replace(/\bHộo\b/g, 'Họ')
-      .replace(/\bMôi năm\b/gi, 'Mỗi năm')
-      .replace(/\btôi tra được\b/gi, 'tôi trả được')
-      .replace(/\bm[oô]t n[uư][aã] r[oồ]i\b/gi, 'một nửa rồi')
-      .replace(/\bmột nữa\b/gi, 'một nửa')
-      .replace(/\bMôt\b/g, 'Một').replace(/\bmôt\b/g, 'một')
-      .replace(/\bphơi khó\b/gi, 'phơi khô')
-      .replace(/\bPhơi khó\b/g, 'Phơi khô')
-      .replace(/\btừ rê ở đâu\b/gi, 'từ rễ ô đầu')
-      .replace(/\btừ rễ ở đâu\b/gi, 'từ rễ ô đầu')
-      .replace(/\brê ở đâu\b/gi, 'rễ ô đầu')
-      .replace(/\brễ ở đâu\b/gi, 'rễ ô đầu')
-      .replace(/\brê ô đầu\b/gi, 'rễ ô đầu')
-      .replace(/\btừ rê\b/gi, 'từ rễ')
-      .replace(/\bbiêt\b/g, 'biết')
-      .replace(/\bBiêt\b/g, 'Biết')
-      // Vietnamese tone mark disambiguation (sắc vs hỏi OCR font confusion)
-      .replace(/\bcúa\b/gi, 'của')
-      .replace(/\bcúa mình\b/gi, 'của mình')
-      .replace(/\bviệc cúa\b/gi, 'việc của')
-      .replace(/\bchẳng phái\b/gi, 'chẳng phải')
-      .replace(/\bkhông phái\b/gi, 'không phải')
-      .replace(/\bphái không\b/gi, 'phải không')
-      .replace(/\bphái làm\b/gi, 'phải làm')
-      .replace(/\bphái biết\b/gi, 'phải biết')
-      .replace(/\bphái chăng\b/gi, 'phải chăng')
-      .replace(/\bđư[oọ]c\b/gi, 'được')
-      .replace(/\bngư[oò]i\b/gi, 'người')
-      .replace(/\bcám ơn\b/gi, 'cảm ơn')
-      .replace(/\bcám thấy\b/gi, 'cảm thấy')
-      .replace(/\bcám giác\b/gi, 'cảm giác')
-      .replace(/\bcám xúc\b/gi, 'cảm xúc')
-      .replace(/\bcâu hói\b/gi, 'câu hỏi')
-      .replace(/\bhói thăm\b/gi, 'hỏi thăm')
-      .replace(/\bhói han\b/gi, 'hỏi han')
-      .replace(/\bmuốn hói\b/gi, 'muốn hỏi')
-      .replace(/\bđi hói\b/gi, 'đi hỏi')
-      .replace(/\bcó thế\b/gi, 'có thể')
-      .replace(/\bkhông thế\b/gi, 'không thể')
-      .replace(/\bchí là\b/gi, 'chỉ là')
-      .replace(/\bchí có\b/gi, 'chỉ có')
-      .replace(/\bchí cần\b/gi, 'chỉ cần')
-      .replace(/\bchí muốn\b/gi, 'chỉ muốn')
-      .replace(/\btất cá\b/gi, 'tất cả')
-      .replace(/\bcá hai\b/gi, 'cả hai')
-      .replace(/\bcá nhà\b/gi, 'cả nhà')
-      .replace(/\bhiếu rồi\b/gi, 'hiểu rồi')
-      .replace(/\bhiếu không\b/gi, 'hiểu không')
-      .replace(/\bhiếu được\b/gi, 'hiểu được')
-      .replace(/\bkhông hiếu\b/gi, 'không hiểu')
-      .replace(/\bthay đối\b/gi, 'thay đổi')
-      .replace(/\bđối lại\b/gi, 'đổi lại')
-      .replace(/\bbáo vệ\b/gi, 'bảo vệ')
-      .replace(/\bnghe báo\b/gi, 'nghe bảo')
-      .replace(/\btôi báo\b/gi, 'tôi bảo')
-      .replace(/\bmớ cửa\b/gi, 'mở cửa')
-      .replace(/\bmớ ra\b/gi, 'mở ra')
-      .replace(/\btrớ về\b/gi, 'trở về')
-      .replace(/\btrớ lại\b/gi, 'trở lại')
-      .replace(/\btrớ thành\b/gi, 'trở thành')
-      .replace(/\bchúẩn\b/gi, 'chuẩn')
-      .replace(/\bchúẩn bị\b/gi, 'chuẩn bị')
-      .replace(/\bthứ xem\b/gi, 'thử xem')
-      .replace(/\bđú rồi\b/gi, 'đủ rồi')
-      .replace(/\bchưa đú\b/gi, 'chưa đủ')
-      .replace(/\bkhông đú\b/gi, 'không đủ')
-      .replace(/\bbới vì\b/gi, 'bởi vì')
-      .replace(/\bnhó bé\b/gi, 'nhỏ bé')
-      .replace(/\bcòn nhó\b/gi, 'còn nhỏ');
+    if (!cleanRaw) return;
     const cleanNorm = stripAccents(cleanRaw);
 
-    // Discard partial flickers / sub-fragments of any subtitle shown within the last 8 seconds
-    const isSubFragment = this.recentOCRHistory.some(item => {
-      const histNorm = stripAccents(item.text);
-      const histCleanNorm = stripAccents(item.cleanText || item.text);
-      if (histNorm.length >= rawNorm.length && rawNorm.length >= 8 && (histNorm.includes(rawNorm) || histNorm.endsWith(rawNorm))) {
-        return true;
+    // While subtitle stays continuously on screen (!hasCleared), suppress shorter partial flickers
+    // while allowing progressive extensions (rawNorm > histNorm) to pass or update queued items.
+    if (!hasCleared) {
+      const isSubFragment = this.recentOCRHistory.some(item => {
+        const histNorm = stripAccents(item.text);
+        const histCleanNorm = stripAccents(item.cleanText || item.text);
+        if (histNorm.length >= rawNorm.length && rawNorm.length >= 8 && (histNorm.includes(rawNorm) || histNorm.endsWith(rawNorm))) {
+          return true;
+        }
+        const rawTailNorm = (rawTokens.length > 2 && rawTokens[0].length === 1) ? stripAccents(rawTokens.slice(1).join(' ')) : '';
+        if (rawTailNorm && rawTailNorm.length >= 8 && histNorm.includes(rawTailNorm)) {
+          return true;
+        }
+        if (cleanNorm && histCleanNorm.length >= cleanNorm.length && cleanNorm.length >= 8 && (histCleanNorm.includes(cleanNorm) || histCleanNorm.endsWith(cleanNorm))) {
+          return true;
+        }
+        return false;
+      });
+      if (rawTokens.length > 1 && isSubFragment) {
+        return;
       }
-      const rawTailNorm = (rawTokens.length > 2 && rawTokens[0].length === 1) ? stripAccents(rawTokens.slice(1).join(' ')) : '';
-      if (rawTailNorm && rawTailNorm.length >= 8 && histNorm.includes(rawTailNorm)) {
-        return true;
-      }
-      if (cleanNorm && histCleanNorm.length >= cleanNorm.length && cleanNorm.length >= 8 && (histCleanNorm.includes(cleanNorm) || histCleanNorm.endsWith(cleanNorm))) {
-        return true;
-      }
-      return false;
-    });
-    if (rawTokens.length > 1 && isSubFragment) {
-      return;
     }
 
-    // Merge progressive subtitle expansions (e.g. "Thdi ké" -> "Thôi kệ cả Lão bà bà có biết")
-    // If the new line expands a recently queued item that hasn't played yet, update it in place!
+    // Merge progressive subtitle expansions in place if the unplayed item is still sitting in liveDubbingQueue
     if (this.isDubbingEnabled && this.liveDubbingQueue && this.liveDubbingQueue.length > 0) {
       const lastQueued = this.liveDubbingQueue[this.liveDubbingQueue.length - 1];
       if (lastQueued) {
@@ -2630,23 +2486,16 @@ class LiveDubStudio {
       }
     }
 
-
-    // Suppress duplicates: always check recent history across 6.5s for multi-word lines so
-    // transient blinks, watermarks, or partial flickers never cause the same line to speak twice.
-    const hasCleared = Boolean(data.hadEmptyGap);
+    // Suppress duplicates only while the same subtitle remains continuously on screen (!hasCleared)
     if (
-      this.recentOCRHistory.some(item => {
-        const ageMs = now - item.time;
-        const maxDupWindow = (rawNorm.length >= 16 || !hasCleared) ? 6500 : 1200;
-        return ageMs < maxDupWindow && (
+      !hasCleared && (
+        this.recentOCRHistory.some(item => (
           this.isDuplicateOCR(raw, item.text) ||
           (item.cleanText && this.isDuplicateOCR(cleanRaw, item.cleanText))
-        );
-      }) ||
-      (!hasCleared && (
+        )) ||
         (this.lastOCRText && this.isDuplicateOCR(raw, this.lastOCRText)) ||
         (this.lastCleanText && this.isDuplicateOCR(cleanRaw, this.lastCleanText))
-      ))
+      )
     ) {
       return;
     }

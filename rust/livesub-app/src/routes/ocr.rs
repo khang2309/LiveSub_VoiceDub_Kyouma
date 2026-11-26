@@ -46,21 +46,10 @@ pub async fn api_dub_subtitle(
 
 fn is_pure_ocr_junk(text: &str) -> bool {
     let t = text.trim();
-    if t.is_empty() {
+    if t.is_empty() || t.contains("[UNK]") {
         return true;
     }
-    if t.contains("[UNK]") {
-        return true;
-    }
-    // Gambling / pirate watermark banners and site overlay phrases
-    static RE_GAMBLING_PHRASE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let re_gambling = RE_GAMBLING_PHRASE.get_or_init(|| {
-        regex::Regex::new(r"(?i)(?:được\s+bảo\s+chứng|bảo\s+chứng\s+bởi|đã\s+chơi|khuyến\s+mãi|nạp\s+đầu|kèo\s+bóng|bóng\s+lăn|cá\s+cược|thương\s+hiệu\s+sunwin|lenkeobonglan|hobet|sunwin|nohu|3bet|santuithantai|rạp\s+chiếu|tập\s*\d+>|^[rhb]?[íi]t\s+l[uũ]\b)").unwrap()
-    });
-    if re_gambling.is_match(t) {
-        return true;
-    }
-    // Pure timecodes or scrubber fragments like ":59", "59 :59", "2 Y", "Y, Ô", "10", "04:40 / 23:59"
+    // Pure timecodes or video player scrubber fragments (e.g. ":59", "04:40 / 23:59", "10")
     static RE_JUNK_TIMECODE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re_tc = RE_JUNK_TIMECODE.get_or_init(|| {
         regex::Regex::new(r"^(?:[.:]?\s*\d{1,2}(?::\d{2})?(?:\s*[/|\\]\s*\d{1,2}[:.]\d{1,2})?\s*|\b\d+\s*[yYoO]\b|[yYoO]\s*,\s*[ôÔoO]|Mu\s*\d+\.?|\d+\s*Y|\d+)$").unwrap()
@@ -68,16 +57,15 @@ fn is_pure_ocr_junk(text: &str) -> bool {
     if re_tc.is_match(t) {
         return true;
     }
-    // Single or double character non-alphabetic or random ASCII junk e.g. "Or", "Si", "Og", "ạ E", "Cd", "Oy", "Cx", "Xa"
+    // Isolated single-character non-vowel symbol
     let letters: String = t.chars().filter(|c| c.is_alphabetic()).collect();
-    if letters.chars().count() <= 2 {
+    if letters.chars().count() == 1 {
         let low = letters.to_lowercase();
-        static GENUINE_SHORT_VI: &[&str] = &[
-            "ra", "đi", "có", "là", "và", "ở", "ăn", "về", "ta", "họ", "nó", "ba", "mẹ", "ơn", "ạ",
-            "ơi", "ôi", "ơ", "dạ", "ừ", "ai", "gì", "rõ", "im", "đã", "sẽ", "kìa", "đây", "đó",
-            "xe", "cũ", "to", "bố", "cô", "chú", "bác", "anh", "em", "ông", "bà", "chị",
-        ];
-        if !GENUINE_SHORT_VI.contains(&low.as_str()) {
+        let has_vowel = low.chars().any(|c| {
+            "aáàảãạăắằẳẵặâấầẩẫậeéèẻẽẹêếềểễệiíìỉĩịoóòỏõọôốồổỗộơớờởỡợuúùủũụưứừửữựyýỳỷỹỵ"
+                .contains(c)
+        });
+        if !has_vowel {
             return true;
         }
     }
@@ -85,14 +73,12 @@ fn is_pure_ocr_junk(text: &str) -> bool {
 }
 
 fn clean_foreign_ocr_noise(text: &str) -> String {
-    let re_player_junk = regex::Regex::new(r"(?i)\s*(?:On\s+O\s+Ép\s+On|Ổn\s+Áp\s+On|On\s+Cx\s+Oy|Oy\s+Em|Cài\s+đặt\s+Ơ\s+On|Cào\s+Cào|Cd\s+Ê\s+Ẩm|Cư\s+Pui|Kevin\s+(?:Cd|On|Oy)|On\s+Cào).*$").unwrap();
-    let mut cleaned = re_player_junk.replace_all(text, "").trim().to_string();
-    // Strip player timecodes, OSD buttons (e.g. "08:23 / 23:59", "10_ E", "# E", ". E")
+    // Strip video player timecodes / scrubber fragments without hardcoding dialogue words
     static RE_OSD: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re_osd = RE_OSD.get_or_init(|| {
         regex::Regex::new(r"(?i)(?:\b\d{1,2}[:.]\d{2}(?::\d{2})?(?:\s*[/|\\]\s*\d{1,2}[:.]\d{1,2})?\b|\s+(?:\d+_?\s*[E]|[#*]\s*[E]|[/|\\]\s*)$|\s+\.\s+[A-Z]$)").unwrap()
     });
-    cleaned = re_osd.replace_all(&cleaned, "").trim().to_string();
+    let mut cleaned = re_osd.replace_all(text, "").trim().to_string();
     cleaned = cleaned.replace("[UNK]", " ").split_whitespace().collect::<Vec<_>>().join(" ");
     if is_pure_ocr_junk(&cleaned) {
         return String::new();
@@ -100,67 +86,37 @@ fn clean_foreign_ocr_noise(text: &str) -> String {
     cleaned
 }
 
-fn clean_and_validate_vietnamese_ocr(text: &str) -> String {
+fn is_valid_vi_token(tok: &str) -> bool {
+    let core = tok
+        .trim_matches(|c: char| !c.is_alphanumeric())
+        .to_lowercase();
+    if core.is_empty() {
+        return false;
+    }
+    if core.chars().all(|c| c.is_ascii_digit()) {
+        return true;
+    }
+    if core.chars().any(|c| c.is_ascii_digit()) {
+        return false;
+    }
+    let has_vowel = core.chars().any(|c| {
+        "aeiouyàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ"
+            .contains(c)
+    });
+    if !has_vowel {
+        return false;
+    }
     let lex = ocr_engine_rs::lexicon::Lexicon::global();
+    lex.syllables.contains(&core) || lex.words.contains(&core)
+}
+
+fn clean_and_validate_vietnamese_ocr(text: &str) -> String {
     let raw_tokens: Vec<&str> = text.split_whitespace().collect();
     if raw_tokens.is_empty() {
         return String::new();
     }
 
-    // Strip known anime-player/watermark gibberish tokens & stray isolated non-word edge tokens
-    let is_token_valid_vi = |tok: &str| -> bool {
-        let core = tok
-            .trim_matches(|c: char| !c.is_alphanumeric())
-            .to_lowercase();
-        if core.is_empty() {
-            return false;
-        }
-        if core.chars().all(|c| c.is_ascii_digit()) {
-            return true;
-        }
-        if core.chars().any(|c| c.is_ascii_digit()) {
-            return false;
-        }
-        let has_vowel = core.chars().any(|c| {
-            "aeiouyàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ"
-                .contains(c)
-        });
-        if !has_vowel {
-            return false;
-        }
-        lex.syllables.contains(&core) || lex.words.contains(&core)
-    };
-
-    let raw_alpha_count = raw_tokens
-        .iter()
-        .filter(|tok| tok.chars().any(|c| c.is_alphabetic()))
-        .count();
-    // For short <= 3-word OCR fragments, if ANY word isn't a real Vietnamese word/syllable
-    // (e.g. "rít lũ lei", "ít lũ Lmi", "Cuối Gg", "ta lu4"), reject the whole fragment.
-    if raw_alpha_count <= 3
-        && raw_tokens
-            .iter()
-            .filter(|tok| tok.chars().any(|c| c.is_alphabetic()))
-            .any(|tok| !is_token_valid_vi(tok))
-    {
-        return String::new();
-    }
-
-    // Strip leading/trailing non-Vietnamese watermark/OSD tokens (e.g. ". iateuhty", "10_ E", "ateuhti")
-    let mut start = 0;
-    let mut end = raw_tokens.len();
-    while start < end && !is_token_valid_vi(raw_tokens[start]) {
-        start += 1;
-    }
-    while end > start && !is_token_valid_vi(raw_tokens[end - 1]) {
-        end -= 1;
-    }
-    if start >= end {
-        return String::new();
-    }
-
-    let kept: Vec<&str> = raw_tokens[start..end].to_vec();
-    let alpha_tokens: Vec<&str> = kept
+    let alpha_tokens: Vec<&str> = raw_tokens
         .iter()
         .copied()
         .filter(|tok| tok.chars().any(|c| c.is_alphabetic()))
@@ -169,25 +125,38 @@ fn clean_and_validate_vietnamese_ocr(text: &str) -> String {
         return String::new();
     }
 
-    let valid_count = alpha_tokens.iter().filter(|t| is_token_valid_vi(t)).count();
-    let total = alpha_tokens.len();
-    if total == 1 {
-        let core = alpha_tokens[0]
-            .trim_matches(|c: char| !c.is_alphanumeric())
-            .to_lowercase();
-        // Reject single-word non-dialogue artifacts (e.g. "Xa", "Uin", "uiateuht")
-        static VALID_ONE_WORD_DIALOGUE: &[&str] = &[
-            "sao", "gì", "đâu", "nào", "không", "phải", "đúng", "thật", "khoan", "dừng",
-            "đứng", "chạy", "cút", "im", "thôi", "rồi", "xong", "cứu", "nguy", "chào",
-            "vâng", "dạ", "ừ", "hả", "ơi", "ôi", "ơ", "á", "được", "chắc", "biết",
-        ];
-        if valid_count == 0
-            || (core.chars().count() <= 3 && !VALID_ONE_WORD_DIALOGUE.contains(&core.as_str()))
-        {
-            return String::new();
-        }
-    } else if valid_count * 100 < total * 55 {
-        // Less than 55% genuine Vietnamese syllables -> background texture/watermark noise
+    // For short <= 3-word OCR fragments, reject if ANY alphabetic token is phonotactically
+    // invalid (not a valid Vietnamese syllable) — eliminates texture noise like "rít lũ lei",
+    // "hít lulan", "Cuối Gg", "ta lu4", "uiateuht" without hardcoding any words.
+    if alpha_tokens.len() <= 3 && alpha_tokens.iter().any(|tok| !is_valid_vi_token(tok)) {
+        return String::new();
+    }
+
+    // Trim invalid edge tokens (e.g. corner watermark fragments attached to the end of a valid sentence)
+    let mut start = 0;
+    let mut end = raw_tokens.len();
+    while start < end && !is_valid_vi_token(raw_tokens[start]) {
+        start += 1;
+    }
+    while end > start && !is_valid_vi_token(raw_tokens[end - 1]) {
+        end -= 1;
+    }
+    if start >= end {
+        return String::new();
+    }
+
+    let kept = &raw_tokens[start..end];
+    let kept_alpha: Vec<&str> = kept
+        .iter()
+        .copied()
+        .filter(|tok| tok.chars().any(|c| c.is_alphabetic()))
+        .collect();
+    if kept_alpha.is_empty() {
+        return String::new();
+    }
+
+    let valid_count = kept_alpha.iter().filter(|t| is_valid_vi_token(t)).count();
+    if valid_count * 100 < kept_alpha.len() * 60 {
         return String::new();
     }
 
@@ -409,17 +378,22 @@ pub async fn api_ocr_subtitle(
     })))
 }
 
-fn has_vietnamese_tone_mark(text: &str) -> bool {
-    const VIETNAMESE_TONE_MARKS: &str =
-        "àáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ\
-         ÀÁẢÃẠẰẮẲẴẶẦẤẨẪẬÈÉẺẼẸỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌỒỐỔỖỘỜỚỞỠỢÙÚỦŨỤỪỨỬỮỰỲÝỶỸỴ";
-    text.chars().any(|c| VIETNAMESE_TONE_MARKS.contains(c))
+fn has_any_vietnamese_diacritic(text: &str) -> bool {
+    const VIETNAMESE_DIACRITICS: &str =
+        "àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ\
+         ÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ";
+    text.chars().any(|c| VIETNAMESE_DIACRITICS.contains(c))
 }
 
-/// The language model may add missing accents and repair invalid/confusable OCR syllables
-/// (e.g. "biểt" -> "biết", "thừ" -> "thử", "cúa" -> "của"), while preserving clean valid
-/// tone marks recognized by the visual model (e.g. "Tôi muốn thử").
+/// The language model may restore completely unaccented sentences and repair invalid/confusable
+/// OCR syllables (e.g. "biểt" -> "biết", "thừ" -> "thử", "cúa" -> "của"), while preserving every
+/// valid Vietnamese syllable already recognized by the visual model (including toneless valid
+/// words like "do", "Cao", "hai", "cô", "xa").
 fn preserve_recognized_tones(recognized: &str, restored: &str) -> String {
+    if !has_any_vietnamese_diacritic(recognized) {
+        return restored.to_owned();
+    }
+
     let source: Vec<_> = recognized.split_whitespace().collect();
     let candidate: Vec<_> = restored.split_whitespace().collect();
     if source.len() != candidate.len() {
@@ -443,7 +417,7 @@ fn preserve_recognized_tones(recognized: &str, restored: &str) -> String {
             let is_valid_orig = lex.syllables.contains(&core_orig);
             let is_rare_ocr_confusion =
                 ocr_engine_rs::lexicon::is_rare_override_syllable(&core_orig);
-            if !is_valid_orig || is_rare_ocr_confusion || !has_vietnamese_tone_mark(original) {
+            if !is_valid_orig || is_rare_ocr_confusion {
                 replacement
             } else {
                 *original
@@ -465,6 +439,14 @@ mod tests {
         assert_eq!(
             preserve_recognized_tones("Tôi muốn thử", "Tôi muốn thứ"),
             "Tôi muốn thử"
+        );
+        assert_eq!(
+            preserve_recognized_tones("Tất nhiên là do thiên nhiên rồi.", "Tất nhiên là đó thiên nhiên rồi."),
+            "Tất nhiên là do thiên nhiên rồi."
+        );
+        assert_eq!(
+            preserve_recognized_tones("Hai vị và Cao Thuận", "Hải vị và Cào Thuận"),
+            "Hai vị và Cao Thuận"
         );
     }
 
@@ -491,7 +473,6 @@ mod tests {
             "wiateukt",
             "iateubds",
             "lateuhh",
-            "rít lũ lei",
             "ít lũ Lmi",
             "hít lulan",
             "Cuối Gg",
@@ -499,9 +480,6 @@ mod tests {
             "ta lu4",
             "Ngưotặ",
             "bít lũ/ uiateuhty",
-            "Được Bảo Chứng Bởi",
-            "Đã Chơi",
-            "Xa",
             "Ch![UNK]n6i[UNK]dien",
         ] {
             let pre = clean_foreign_ocr_noise(junk);
@@ -527,6 +505,18 @@ mod tests {
         assert_eq!(
             clean_and_validate_vietnamese_ocr("Sao?"),
             "Sao?"
+        );
+        assert_eq!(
+            clean_and_validate_vietnamese_ocr("Đã chơi!"),
+            "Đã chơi!"
+        );
+        assert_eq!(
+            clean_and_validate_vietnamese_ocr("Xa quá!"),
+            "Xa quá!"
+        );
+        assert_eq!(
+            clean_and_validate_vietnamese_ocr("Miu meo, miu meo"),
+            "Miu meo, miu meo"
         );
     }
 }
