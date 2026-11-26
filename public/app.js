@@ -2033,11 +2033,12 @@ class LiveDubStudio {
 
       this.ocrRequestActive = true;
       try {
-        // High quality JPEG 0.90 ensures fine Vietnamese tone hooks & accents are sharply preserved
-        const blob = await new Promise(resolve => this.ocrCanvas.toBlob(resolve, 'image/jpeg', 0.90));
+        // Vietnamese tone marks are only a few pixels high. PNG keeps those pixels
+        // lossless; JPEG ringing can turn hỏi/ngã/sắc into a different glyph.
+        const blob = await new Promise(resolve => this.ocrCanvas.toBlob(resolve, 'image/png'));
         if (!blob) return;
         const form = new FormData();
-        form.append('image', blob, 'subtitle-frame.jpg');
+        form.append('image', blob, 'subtitle-frame.png');
         form.append('source_lang', this.resolveOCRLanguage());
         form.append('previous_context', this.lastTranscriptContext || '');
         const response = await fetch('/api/ocr-subtitle', { method: 'POST', body: form });
@@ -3695,16 +3696,39 @@ class LiveDubStudio {
     const raw = String(text || '').trim();
     if (!raw) return [];
 
-    // Subtitle dialogue: Treat each dialogue line as a single coherent sentence!
-    // DO NOT artificially chop a sentence into 3-4 tiny pieces with conjunctions or arbitrary word counts.
-    // That causes disjointed stuttering, unnatural pauses, and compounded network latency.
+    // Keep normal subtitle sentences intact, but bound pathological long lines.
+    // VieNeu is autoregressive and the current API returns a complete WAV, so an
+    // unbounded line makes time-to-first-audio grow with the whole sentence.
+    const splitLongSentence = (sentence, preferredMax = 72, hardMax = 92) => {
+      const chunks = [];
+      let remaining = sentence.trim();
+      while (remaining.length > hardMax) {
+        const windowText = remaining.slice(0, hardMax + 1);
+        let cut = -1;
+        const boundary = /[,;:…–—]\s+/gu;
+        for (const match of windowText.matchAll(boundary)) {
+          const candidate = match.index + match[0].length;
+          if (candidate >= 36 && candidate <= hardMax) cut = candidate;
+        }
+        if (cut < 0) {
+          const preferredSpace = windowText.lastIndexOf(' ', preferredMax);
+          const hardSpace = windowText.lastIndexOf(' ', hardMax);
+          cut = preferredSpace >= 48 ? preferredSpace : hardSpace;
+        }
+        if (cut < 36) cut = hardMax;
+        chunks.push(remaining.slice(0, cut).trim());
+        remaining = remaining.slice(cut).trim();
+      }
+      if (remaining) chunks.push(remaining);
+      return chunks;
+    };
+
     const rawLines = raw.split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
     const result = [];
     for (const line of rawLines) {
-      // Split only on distinct multi-sentence boundaries: ". ", "! ", "? "
       const sents = line.split(/(?<=[.!?…])\s+/).map(s => s.trim()).filter(Boolean);
       for (const sent of sents) {
-        if (sent) result.push(sent);
+        result.push(...splitLongSentence(sent));
       }
     }
     return result.length > 0 ? result : [raw];
@@ -3787,7 +3811,7 @@ class LiveDubStudio {
   }
 
   prefetchLiveTts(text, voice) {
-    if (!text || !voice || !voice.startsWith('vieneu')) return;
+    if (!text || !voice || !(voice.startsWith('vieneu') || voice.startsWith('edge') || voice.startsWith('ms:'))) return;
     if (!this.liveTtsPrefetch) this.liveTtsPrefetch = new Map();
     const key = `${voice}:::${text}`;
     if (this.liveTtsPrefetch.has(key)) return;
@@ -3874,10 +3898,8 @@ class LiveDubStudio {
               this.realtimeMetrics.samples.push(endToVoiceMs);
               if (this.realtimeMetrics.samples.length > 100) this.realtimeMetrics.samples.shift();
             }
-            const showText = item.fullText || item.text;
-            this.displaySubtitle(item.sourceText, showText);
-            if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = showText;
-            if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = item.sourceText;
+            // Subtitle UI is updated on OCR/ASR completion, not on TTS start.
+            // Repainting here would let an old queued voice overwrite the newest cue.
             // Pipeline prefetch: start synthesizing next queued item in background the exact moment this one plays!
             if (this.liveDubbingQueue.length > 0) {
               const nextItem = this.liveDubbingQueue[0];
@@ -3909,7 +3931,6 @@ class LiveDubStudio {
             body: JSON.stringify({ text: item.text, voice: item.voice })
           });
           if (!response.ok) {
-            this.displaySubtitle(item.sourceText, item.text);
             continue;
           }
           if (isStale()) continue;
@@ -3918,8 +3939,8 @@ class LiveDubStudio {
           await this.playAudioBuffer(audio, true, revealSubtitle, originalDuration, item.text ? item.text.length : 0, currentQueueDepth, queueLagMs, item.isChained);
         } catch (error) {
           console.warn('Live dubbing error:', error);
-          // A voice failure must not hide the translated content.
-          this.displaySubtitle(item.sourceText, item.text);
+          // Subtitle was already published by OCR/ASR and remains independent
+          // from synthesis or playback failures.
         }
       }
     } finally {

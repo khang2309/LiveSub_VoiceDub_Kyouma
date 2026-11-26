@@ -1,5 +1,7 @@
 use crate::{
-    services::{ocr::is_blank_subtitle, translate::fetch_online_translation, tts::synthesize_tts_bytes},
+    services::{
+        ocr::is_blank_subtitle, translate::fetch_online_translation, tts::synthesize_tts_bytes,
+    },
     state::AppState,
 };
 use axum::{
@@ -134,7 +136,7 @@ pub async fn api_ocr_subtitle(
     }
 
     let (selected_engine, engine_name) = state.ocr_pool.select_engine(&source_lang);
-    let recognized = if let Some(engine) = selected_engine {
+    let (recognized, ocr_confidence) = if let Some(engine) = selected_engine {
         let mut dyn_img = decoded;
         let (w, h) = (dyn_img.width(), dyn_img.height());
         // Scale up low-resolution subtitles with Lanczos3 filter to preserve Vietnamese circumflex (ô, ê, â) and diacritic marks
@@ -145,26 +147,31 @@ pub async fn api_ocr_subtitle(
             dyn_img = dyn_img.resize(new_w, new_h, image::imageops::FilterType::Lanczos3);
         }
 
-        tokio::task::spawn_blocking(move || -> Result<String, String> {
+        tokio::task::spawn_blocking(move || -> Result<(String, f32), String> {
             let res = engine.run_from_image(&dyn_img).map_err(|e| e.to_string())?;
-            let texts: Vec<String> = res
+            let accepted: Vec<(String, f32)> = res
                 .into_iter()
                 .filter(|r| r.confidence >= 0.58)
-                .map(|r| r.text)
-                .filter(|t| !t.trim().is_empty())
+                .filter_map(|r| {
+                    let text = r.text.trim().to_owned();
+                    (!text.is_empty()).then_some((text, r.confidence))
+                })
                 .collect();
             let mut joined = String::new();
-            for (idx, line) in texts.iter().enumerate() {
-                let trimmed = line.trim();
-                if trimmed.is_empty() {
-                    continue;
-                }
+            let mut confidence_sum = 0.0_f32;
+            for (idx, (line, confidence)) in accepted.iter().enumerate() {
                 if idx > 0 && !joined.is_empty() {
                     joined.push(' ');
                 }
-                joined.push_str(trimmed);
+                joined.push_str(line);
+                confidence_sum += confidence;
             }
-            Ok(joined)
+            let confidence = if accepted.is_empty() {
+                0.0
+            } else {
+                confidence_sum / accepted.len() as f32
+            };
+            Ok((joined, confidence))
         })
         .await
         .map_err(|e| {
@@ -180,7 +187,7 @@ pub async fn api_ocr_subtitle(
             )
         })?
     } else {
-        String::new()
+        (String::new(), 0.0)
     };
 
     let ocr_ms = start_ocr.elapsed().as_secs_f64() * 1000.0;
@@ -227,6 +234,7 @@ pub async fn api_ocr_subtitle(
     } else if is_vietnamese_source {
         // Nguồn phụ đề tiếng Việt (Vietsub):
         let restored = state.ocr.restore_vietnamese(&rec_trimmed);
+        let restored = preserve_recognized_tones(&rec_trimmed, &restored);
         (restored.clone(), restored)
     } else {
         // Tự động nhận diện (Auto):
@@ -240,6 +248,7 @@ pub async fn api_ocr_subtitle(
 
         if is_genuine_vi {
             let restored = state.ocr.restore_vietnamese(&rec_trimmed);
+            let restored = preserve_recognized_tones(&rec_trimmed, &restored);
             (restored.clone(), restored)
         } else {
             let trans = fetch_online_translation(&state, &rec_trimmed, "auto").await;
@@ -261,7 +270,58 @@ pub async fn api_ocr_subtitle(
             "ocr_ms": ocr_ms,
             "translation_ms": trans_ms,
         },
-        "confidence": 0.98,
+        "confidence": ocr_confidence,
         "ocr_engine": engine_name
     })))
+}
+
+fn has_vietnamese_tone_mark(text: &str) -> bool {
+    const VIETNAMESE_TONE_MARKS: &str =
+        "àáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộờớởỡợùúủũụừứửữựỳýỷỹỵ\
+         ÀÁẢÃẠẰẮẲẴẶẦẤẨẪẬÈÉẺẼẸỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌỒỐỔỖỘỜỚỞỠỢÙÚỦŨỤỪỨỬỮỰỲÝỶỸỴ";
+    text.chars().any(|c| VIETNAMESE_TONE_MARKS.contains(c))
+}
+
+/// The language model may add missing accents, but it must not replace a tone
+/// mark the visual recognizer actually saw (for example sắc -> hỏi).
+fn preserve_recognized_tones(recognized: &str, restored: &str) -> String {
+    let source: Vec<_> = recognized.split_whitespace().collect();
+    let candidate: Vec<_> = restored.split_whitespace().collect();
+    if source.len() != candidate.len() {
+        return recognized.to_owned();
+    }
+
+    source
+        .iter()
+        .zip(candidate)
+        .map(|(original, replacement)| {
+            if has_vietnamese_tone_mark(original) {
+                *original
+            } else {
+                replacement
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::preserve_recognized_tones;
+
+    #[test]
+    fn preserves_tones_seen_by_the_visual_model() {
+        assert_eq!(
+            preserve_recognized_tones("Tôi muốn thử", "Tôi muốn thứ"),
+            "Tôi muốn thử"
+        );
+    }
+
+    #[test]
+    fn permits_restoring_a_missing_tone() {
+        assert_eq!(
+            preserve_recognized_tones("Toi muon thu", "Tôi muốn thử"),
+            "Tôi muốn thử"
+        );
+    }
 }

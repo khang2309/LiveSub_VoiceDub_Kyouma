@@ -115,10 +115,10 @@ async function handleOcrFrame(base64Image, sourceLang = 'auto') {
   }
 
   try {
-    const res = await fetch(`data:image/jpeg;base64,${base64Image}`);
+    const res = await fetch(`data:image/png;base64,${base64Image}`);
     const blob = await res.blob();
     const form = new FormData();
-    form.append('image', blob, 'frame.jpg');
+    form.append('image', blob, 'frame.png');
     form.append('source_lang', sourceLang);
 
     const controller = new AbortController();

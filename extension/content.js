@@ -506,24 +506,26 @@
       const cropH = Math.round(vh * 0.22);
       const cropY = vh - cropH;
 
-      canvas.width = 480;
-      canvas.height = 100;
+      const targetWidth = Math.min(1280, Math.max(640, vw));
+      const captureScale = targetWidth / vw;
+      canvas.width = targetWidth;
+      canvas.height = Math.max(96, Math.round(cropH * captureScale));
 
-      let base64Jpeg = null;
+      let base64Png = null;
       try {
         ctx.drawImage(video, 0, cropY, vw, cropH, 0, 0, canvas.width, canvas.height);
-        base64Jpeg = canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+        base64Png = canvas.toDataURL('image/png').split(',')[1];
       } catch (err) {
         return; // Cross-origin video canvas security restriction
       }
 
-      if (!base64Jpeg || base64Jpeg === lastOcrSample) return;
-      lastOcrSample = base64Jpeg;
+      if (!base64Png || base64Png === lastOcrSample) return;
+      lastOcrSample = base64Png;
 
       if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
         chrome.runtime.sendMessage({
           type: 'OCR_FRAME',
-          imageData: base64Jpeg,
+          imageData: base64Png,
           sourceLang: 'vi'
         }, (res) => {
           if (res && !res.empty && res.original) {
