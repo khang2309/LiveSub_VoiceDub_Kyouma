@@ -403,6 +403,25 @@ fn is_hat_or_acute_confusion(cand: &str, core_low: &str) -> bool {
     cand_has_hat != core_has_hat
 }
 
+fn is_missing_acute_over_hat(cand: &str, core_low: &str) -> bool {
+    let unacc_cand = strip_accents(cand);
+    let unacc_core = strip_accents(core_low);
+    if unacc_cand != unacc_core {
+        return false;
+    }
+    has_tone_sac(cand)
+        && has_circumflex_or_hat(cand)
+        && has_circumflex_or_hat(core_low)
+        && !has_tone_sac(core_low)
+        && !has_tone_hoi(core_low)
+        && !has_distinctive_tone(core_low)
+}
+
+fn ends_with_stop_coda(s: &str) -> bool {
+    let unacc = strip_accents(s);
+    unacc.ends_with('c') || unacc.ends_with("ch") || unacc.ends_with('p') || unacc.ends_with('t')
+}
+
 fn cand_unigram_score(lex: &Lexicon, cand: &str, core_low: &str, is_strictly_unacc: bool) -> i32 {
     let mut score = unigram_frequency_score(cand);
     if cand == core_low {
@@ -437,6 +456,19 @@ fn cand_unigram_score(lex: &Lexicon, cand: &str, core_low: &str, is_strictly_una
             let core_freq = unigram_frequency_score(core_low);
             if cand_freq > core_freq {
                 score += 5;
+            }
+        }
+        // Syllable with hat (ô, ê, â) that lost acute tone mark during OCR (e.g. non-words "kêt", "hêt", "tiêp", "mât", "bât", "nhât", "tât")
+        if is_missing_acute_over_hat(cand, core_low) && !lex.syllables.contains(core_low) {
+            let cand_freq = unigram_frequency_score(cand);
+            if cand_freq >= 15 {
+                score += 24;
+            }
+        }
+        // Vietnamese stop codas (-p, -t, -c, -ch) CANNOT be toneless! Syllables like "kêt", "hêt", "tiêp", "mât" must have tone
+        if ends_with_stop_coda(core_low) && !has_tone_sac(core_low) && !has_distinctive_tone(core_low) && !lex.syllables.contains(core_low) {
+            if has_tone_sac(cand) || has_distinctive_tone(cand) {
+                score += 24;
             }
         }
     }
