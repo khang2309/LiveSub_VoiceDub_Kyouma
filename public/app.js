@@ -2416,6 +2416,14 @@ class LiveDubStudio {
     if (isVietsubMode) {
       cleanRaw = cleanRaw.replace(/^[a-zA-Z]\s+(?=[a-zA-Zà-ỹÀ-Ỹ]{3,})/i, '');
     }
+    // If raw OCR has a more complete sentence than cleanRaw (e.g. cleanRaw was cut off with trailing letter + dots like "b...")
+    if (raw && raw.length > cleanRaw.length) {
+      const cleanPrefix = cleanRaw.replace(/[\s\wÀ-ỹà-ỹ]*\.{2,}.*$/, '').trim();
+      if (cleanPrefix.length >= 10 && raw.startsWith(cleanPrefix)) {
+        cleanRaw = raw;
+      }
+    }
+    cleanRaw = cleanRaw.replace(/\s+[a-zA-Zà-ỹÀ-Ỹ]\.{2,}\s*$/g, '').trim();
     cleanRaw = cleanRaw.replace(/(\.{2,}|…)\s*\.+/g, '$1').replace(/\s+([.,!?:;…])/g, '$1').trim();
     cleanRaw = cleanRaw.replace(/\s+(?:Dù|Vào|Vao|Tua|Lùi)\s*\d+\s*$/i, '').replace(/\s+(?:Dù|Vào|Vao|Tua|Lùi)?\s*(?:10|5|15|30|0)\s*$/i, '').trim();
     cleanRaw = cleanRaw
