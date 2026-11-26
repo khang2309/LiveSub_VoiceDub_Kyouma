@@ -71,3 +71,9 @@ server_runtime.stderr.log
 *.log
 
 LiveSub_Studio_Extension.zip
+
+livesub.exe
+
+*.crx
+*.pem
+*.zip
