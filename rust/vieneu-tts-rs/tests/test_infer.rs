@@ -40,14 +40,28 @@ fn test_engine_infer() {
         return;
     }
 
+    let t0 = std::time::Instant::now();
     println!("Initializing VieneuEngine...");
     let engine = VieneuEngine::new(config).expect("Failed to initialize VieneuEngine");
+    println!("Model load & CUDA init time: {:.2}s", t0.elapsed().as_secs_f64());
 
-    println!("Inferring test audio with Trúc Ly...");
-    let wav_bytes = engine.infer("Xin chào, tôi là Trúc Ly.", "Trúc Ly").expect("Inference failed");
-    println!("Generated WAV audio: {} bytes", wav_bytes.len());
-    assert!(wav_bytes.len() > 1000);
+    let sentences = [
+        "Xin chào, tôi là Trúc Ly.",
+        "Mỗi năm một nghìn lượng bạc, năm nay tôi trả được một nửa rồi.",
+        "Tôi không thể mất tiếp một thành viên nữa trong nhà đâu!",
+        "Chúng ta phải cố gắng hơn nữa."
+    ];
 
-    // Save test output for inspection
-    std::fs::write("target/test_truc_ly.wav", &wav_bytes).ok();
+    for (i, sent) in sentences.iter().enumerate() {
+        let t_start = std::time::Instant::now();
+        let wav_bytes = engine.infer(sent, "Trúc Ly").expect("Inference failed");
+        let elapsed_ms = t_start.elapsed().as_secs_f64() * 1000.0;
+        let audio_sec = (wav_bytes.len().saturating_sub(44)) as f64 / (48000.0 * 2.0); // 48kHz, 16-bit mono
+        let rtf = (elapsed_ms / 1000.0) / audio_sec.max(0.01);
+        println!(
+            "[{}] Text: '{}' -> Sinh ra {:.2}s audio trong {:.0}ms (RTF: {:.2}x)",
+            i + 1, sent, audio_sec, elapsed_ms, rtf
+        );
+        assert!(wav_bytes.len() > 1000);
+    }
 }
