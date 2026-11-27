@@ -35,6 +35,7 @@ graphify-out/
 *.old
 LiveSub-Desktop.exe
 LiveSub-Desktop-New.exe
+setup.exe
 
 # Python
 __pycache__/
