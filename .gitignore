@@ -15,11 +15,15 @@ src-tauri/target/
 *.pdb
 bin/
 
-# Downloaded native build tools and neural model weights
+# Downloaded native build tools and neural model weights (>100MB weights & CUDA DLLs are auto-fetched by rust/setup-models.ps1)
 tools/
 models/**/*.bin
 models/**/*.rten
 models/**/*.onnx
+!models/ocr/vietocr_viesvtr_v7.onnx
+!models/ocr/en_PP-OCRv4_rec_infer.onnx
+!models/ocr/japan_PP-OCRv3_rec_infer.onnx
+!models/ocr/korean_PP-OCRv3_rec_infer.onnx
 models/**/*.dll
 models/whisper/cuda/
 models/vieneu/
@@ -41,6 +45,8 @@ __pycache__/
 
 # Node
 node_modules/
+frontend/node_modules/
+frontend/.vite/
 npm-debug.log*
 
 # Models & Media

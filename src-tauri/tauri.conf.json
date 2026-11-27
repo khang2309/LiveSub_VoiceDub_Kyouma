@@ -29,6 +29,20 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "resources": {
+      "../public/*.*": "public/",
+      "../public/assets/*": "public/assets/",
+      "../public/vendor/ort/*": "public/vendor/ort/",
+      "../public/vendor/vad/*": "public/vendor/vad/",
+      "../models/ocr/*": "models/ocr/",
+      "../rust/setup-models.ps1": "rust/setup-models.ps1",
+      "../scripts/edge_tts_server.js": "scripts/edge_tts_server.js",
+      "../DirectML.dll": "DirectML.dll",
+      "../onnxruntime_providers_shared.dll": "onnxruntime_providers_shared.dll",
+      "../onnxruntime_providers_cuda.dll": "onnxruntime_providers_cuda.dll",
+      "../onnxruntime_providers_tensorrt.dll": "onnxruntime_providers_tensorrt.dll",
+      "../onnxruntime_providers_nv_tensorrt_rtx.dll": "onnxruntime_providers_nv_tensorrt_rtx.dll"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

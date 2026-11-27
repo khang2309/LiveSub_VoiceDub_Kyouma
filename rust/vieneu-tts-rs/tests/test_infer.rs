@@ -18,13 +18,13 @@ fn test_voice_registry() {
 
 #[test]
 fn test_phonemizer() {
-    let dict_path = "C:\\dich\\tools\\sea-g2p\\python\\sea_g2p\\sea_g2p.bin";
-    if !std::path::Path::new(dict_path).exists() {
-        eprintln!("Dict path does not exist, skipping phonemizer test");
+    let config = VieneuEngineConfig::default();
+    if !config.dict_path.exists() {
+        eprintln!("Dict path {:?} does not exist, skipping phonemizer test", config.dict_path);
         return;
     }
 
-    let phonemizer = vieneu_tts_rs::phonemizer::VieneuPhonemizer::new(dict_path)
+    let phonemizer = vieneu_tts_rs::phonemizer::VieneuPhonemizer::new(&config.dict_path)
         .expect("Should initialize phonemizer");
     let text = "Xin chào Việt Nam, đây là hệ thống VieNeu TTS thuần Rust!";
     let phones = phonemizer.phonemize(text);

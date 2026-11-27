@@ -3,18 +3,83 @@ use axum::{
     http::{header, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
 };
+use regex::Regex;
+use std::sync::OnceLock;
 
-pub async fn synthesize_tts_bytes(state: &AppState, text: &str, voice: Option<&str>) -> Option<Vec<u8>> {
-    let cleaned = get_re_ws().replace_all(text.trim(), " ").to_string();
+pub fn sanitize_dubbing_text(text: &str) -> String {
+    static NON_SPEECH_CUE_RE: OnceLock<Regex> = OnceLock::new();
+    let re = NON_SPEECH_CUE_RE.get_or_init(|| {
+        Regex::new(
+            r"(?ix)\s*[\[(]\s*(?:
+            âm\s*nhạc|nhạc(?:\s*nền)?|music|applause|tiếng\s*vỗ\s*tay|vỗ\s*tay|
+            cheering|reo\s*hò|laughter|tiếng\s*cười|cười|sound\s*track|soundtrack|
+            ost|bgm|instrumental
+        )\s*[\])]\s*",
+        )
+        .expect("valid non-speech cue regex")
+    });
+
+    if text
+        .chars()
+        .any(|c| matches!(c, '♪' | '♫' | '♬' | '♩' | '🎵' | '🎶'))
+    {
+        return String::new();
+    }
+    get_re_ws()
+        .replace_all(re.replace_all(text, " ").trim(), " ")
+        .trim_matches(|c| matches!(c, '~' | '～' | ' '))
+        .trim()
+        .to_string()
+}
+
+pub fn is_edge_voice(voice: &str) -> bool {
+    let voice_lower = voice.to_lowercase();
+    voice_lower.starts_with("edge:")
+        || voice_lower.starts_with("ms:")
+        || voice_lower.contains("hoaimy")
+        || voice_lower.contains("namminh")
+        || voice_lower == "edge"
+        || voice_lower == "auto-fast"
+}
+
+pub fn prepare_tts_text(state: &AppState, text: &str) -> Option<String> {
+    let cleaned = sanitize_dubbing_text(text);
     if cleaned.is_empty() {
         return None;
     }
-
-    let target_text = if crate::state::get_re_vi().is_match(&cleaned) {
+    Some(if crate::state::get_re_vi().is_match(&cleaned) {
         cleaned
     } else {
         state.ocr.restore_vietnamese(&cleaned)
-    };
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_dubbing_text;
+
+    #[test]
+    fn removes_non_speech_only_captions() {
+        assert_eq!(sanitize_dubbing_text("[âm nhạc]"), "");
+        assert_eq!(sanitize_dubbing_text("[MUSIC]"), "");
+        assert_eq!(sanitize_dubbing_text("♪ lời bài hát ♪"), "");
+    }
+
+    #[test]
+    fn keeps_dialogue_around_embedded_cues() {
+        assert_eq!(
+            sanitize_dubbing_text("ra nhiều [âm nhạc] giả thuyết có thể xảy ra"),
+            "ra nhiều giả thuyết có thể xảy ra"
+        );
+    }
+}
+
+pub async fn synthesize_tts_bytes(
+    state: &AppState,
+    text: &str,
+    voice: Option<&str>,
+) -> Option<Vec<u8>> {
+    let target_text = prepare_tts_text(state, text)?;
 
     let selected_voice = voice.unwrap_or("edge:Hoài My");
     let cache_key = format!("tts:{}:{}", selected_voice, target_text);
@@ -25,6 +90,11 @@ pub async fn synthesize_tts_bytes(state: &AppState, text: &str, voice: Option<&s
             return Some(audio_bytes.clone());
         }
     }
+
+    // Bound all providers to the best measured realtime concurrency. This
+    // pipelines VieNeu's separately locked ONNX stages without allowing a
+    // request stampede to destroy p95/p99 freshness.
+    let _tts_permit = state.tts_sem.acquire().await.ok()?;
 
     // 2. High-speed Realtime Edge-TTS (~200ms) integration
     let voice_lower = selected_voice.to_lowercase();
@@ -38,7 +108,11 @@ pub async fn synthesize_tts_bytes(state: &AppState, text: &str, voice: Option<&s
         || voice_lower == "auto-fast";
 
     if is_edge {
-        let edge_voice_param = if voice_lower.contains("nam") { "namminh" } else { "hoaimy" };
+        let edge_voice_param = if voice_lower.contains("nam") {
+            "namminh"
+        } else {
+            "hoaimy"
+        };
         let edge_url = "http://127.0.0.1:3005/api/tts";
         let payload = serde_json::json!({
             "text": target_text,
@@ -71,10 +145,8 @@ pub async fn synthesize_tts_bytes(state: &AppState, text: &str, voice: Option<&s
     let text_clone = target_text.clone();
     let clean_voice = selected_voice.replace("vieneu:", "");
 
-    let wav_res = tokio::task::spawn_blocking(move || {
-        vieneu.infer(&text_clone, &clean_voice)
-    })
-    .await;
+    let wav_res =
+        tokio::task::spawn_blocking(move || vieneu.infer(&text_clone, &clean_voice)).await;
 
     if let Ok(Ok(wav_bytes)) = wav_res {
         if !wav_bytes.is_empty() {
@@ -113,10 +185,6 @@ pub async fn synthesize_tts(state: &AppState, text: &str, voice: Option<&str>) -
         );
         res
     } else {
-        (
-            StatusCode::BAD_GATEWAY,
-            "TTS engine did not produce audio",
-        )
-            .into_response()
+        (StatusCode::BAD_GATEWAY, "TTS engine did not produce audio").into_response()
     }
 }

@@ -49,7 +49,10 @@ fn test_load_vietocr_model() {
                     Err(e) => panic!("❌ Inference error: {:?}", e),
                 }
             } else {
-                println!("ℹ️ Test image {:?} not found, skipping inference test.", img_path);
+                println!(
+                    "ℹ️ Test image {:?} not found, skipping inference test.",
+                    img_path
+                );
             }
         }
         Err(e) => panic!("❌ Load error: {:?}", e),
@@ -77,13 +80,19 @@ fn test_gpu_vietocr_inference() {
         return;
     }
 
-    let backend = livesub_app::services::ocr::load_ppocr_vietnamese(&det_path, &rec_path, &dict_path)
-        .expect("Should load VietOCR backend");
+    let backend =
+        livesub_app::services::ocr::load_ppocr_vietnamese(&det_path, &rec_path, &dict_path)
+            .expect("Should load VietOCR backend");
     println!("Loaded VietOCR backend on: {}", backend.device_label());
-    assert!(backend.is_gpu(), "Expected GPU execution provider for VietOCR");
+    assert!(
+        backend.is_gpu(),
+        "Expected GPU execution provider for VietOCR"
+    );
 
     // Verify inference runs without error on GPU
     let img = image::DynamicImage::new_rgb8(640, 128);
-    let res = backend.run_from_image(&img).expect("GPU inference should succeed");
+    let res = backend
+        .run_from_image(&img)
+        .expect("GPU inference should succeed");
     assert!(res.is_empty());
 }

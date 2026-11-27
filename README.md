@@ -7,12 +7,21 @@
 
 ## 🚀 Tải Về & Cài Đặt (Zero-Setup)
 
-Bạn không cần cài đặt Python, Node.js hay Rust/Cargo để sử dụng ứng dụng. Toàn bộ hệ thống đã được đóng gói thành một file cài đặt Windows duy nhất sẵn sàng sử dụng:
+Bạn không cần cài đặt Python, Node.js hay Rust/Cargo để sử dụng ứng dụng. Toàn bộ hệ thống hỗ trợ trọng tâm **6 ngôn ngữ** (**Tiếng Việt, Tiếng Nhật, Tiếng Anh, Tiếng Trung, Tiếng Hàn, Tiếng Thái**):
 
 ### 📦 1. Ứng Dụng Windows Desktop (NSIS Installer)
 1. Tải trực tiếp file cài đặt duy nhất: **[Tải setup.exe (Direct Download)](https://github.com/khang2309/LiveSub_VoiceDub_Kyouma/raw/main/setup.exe)** *(~21 MB)*.
 2. Nhấp đúp vào `setup.exe` để cài đặt. Trình cài đặt sẽ tự động tạo lối tắt **LiveSub Studio** ngoài màn hình Desktop.
 3. Mở ứng dụng từ Desktop và bắt đầu xem phim, anime hoặc video YouTube.
+
+### 🛠️ 2. Dành Cho Developer (`git clone` về code & build)
+Do GitHub giới hạn file >100 MB (trong khi bộ trọng số Whisper CUDA + VieNeu-TTS + MOSS Codec nặng ~2.5 GB), mã nguồn trên Git giữ đầy đủ source Rust/UI/OCR chính và tự động tải các file trọng số lớn qua script:
+```powershell
+git clone https://github.com/khang2309/LiveSub_VoiceDub_Kyouma.git
+cd LiveSub_VoiceDub_Kyouma
+.\scripts\setup.bat
+```
+Script `scripts\setup.bat` (và `rust\setup-models.ps1`) sẽ tự động tải về và giải nén `Whisper Large-v3-Turbo (Q5_0) CUDA`, `VieNeu-TTS v3 Turbo ONNX`, `MOSS Codec`, `sea_g2p.bin`, và `PP-OCR` cho đủ 6 ngôn ngữ (`VI, JA, EN, ZH, KO, TH`), sau đó build sẵn `livesub.exe`.
 
 ---
 
@@ -102,3 +111,7 @@ LiveSub_VoiceDub_Kyouma/
 
 Dự án phát triển bởi **khang2309**.  
 Mọi đóng góp (Pull Request), phản hồi lỗi (Issue) đều được hoan nghênh!
+
+## Kiểm tra hồi quy module
+
+Quan hệ phụ thuộc và lệnh kiểm tra bắt buộc cho từng engine component được ghi tại [REGRESSION.md](REGRESSION.md).

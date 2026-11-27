@@ -44,9 +44,13 @@ pub fn build_router(state: AppState, public_dir: &Path) -> Router {
         .route("/api/dub-subtitle", post(ocr::api_dub_subtitle))
         .route("/api/tts", post(tts::api_tts))
         .route("/api/tts-stream", post(tts::api_tts_stream))
+        .route("/api/tts-cancel", post(tts::api_tts_cancel))
         .route("/api/tts-batch", post(tts::api_tts_batch))
         .route("/api/transcribe", post(transcribe::api_transcribe))
-        .route("/api/youtube-subtitles", post(youtube::api_youtube_subtitles))
+        .route(
+            "/api/youtube-subtitles",
+            post(youtube::api_youtube_subtitles),
+        )
         .route(
             "/api/youtube-subtitles-sync",
             get(youtube::api_youtube_subtitles_sync),

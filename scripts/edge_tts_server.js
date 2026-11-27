@@ -55,6 +55,15 @@ const MAX_CACHE_SIZE = 2048;
 // Tránh gửi cùng một câu nhiều lần cùng một lúc tới server Microsoft
 const inFlightRequests = new Map();
 
+function cacheAudio(cacheKey, audioBuffer) {
+  if (!audioBuffer || audioBuffer.length <= 100) return;
+  if (memoryCache.size >= MAX_CACHE_SIZE) {
+    const firstKey = memoryCache.keys().next().value;
+    memoryCache.delete(firstKey);
+  }
+  memoryCache.set(cacheKey, audioBuffer);
+}
+
 async function synthesizeWithRetry(text, cfg, maxRetries = 2) {
   const cacheKey = `${cfg.voice}:${cfg.pitch}:${cfg.rate}:${text}`;
   if (memoryCache.has(cacheKey)) {
@@ -88,11 +97,7 @@ async function synthesizeWithRetry(text, cfg, maxRetries = 2) {
         }
         const merged = Buffer.concat(chunks);
         if (merged.length > 100) {
-          if (memoryCache.size >= MAX_CACHE_SIZE) {
-            const firstKey = memoryCache.keys().next().value;
-            memoryCache.delete(firstKey);
-          }
-          memoryCache.set(cacheKey, merged);
+          cacheAudio(cacheKey, merged);
           return merged;
         }
       } catch (err) {
@@ -111,8 +116,106 @@ async function synthesizeWithRetry(text, cfg, maxRetries = 2) {
   }
 }
 
+async function streamEdgeAudio(text, cfg, res, maxRetries = 2) {
+  const cacheKey = `${cfg.voice}:${cfg.pitch}:${cfg.rate}:${text}`;
+  const cached = memoryCache.get(cacheKey);
+  if (cached) {
+    res.writeHead(200, {
+      'Content-Type': 'audio/mpeg',
+      'Content-Length': cached.length,
+      'Cache-Control': 'public, max-age=86400',
+      'Access-Control-Allow-Origin': '*',
+      'X-Audio-Format': 'mp3',
+      'X-TTS-Streaming': '0',
+      'X-TTS-Cache': 'hit'
+    });
+    res.end(cached);
+    return;
+  }
+
+  // A duplicate request already being synthesized can safely reuse the final
+  // buffer. New requests take the true chunked path below.
+  if (inFlightRequests.has(cacheKey)) {
+    const audioBuffer = await inFlightRequests.get(cacheKey);
+    res.writeHead(200, {
+      'Content-Type': 'audio/mpeg',
+      'Content-Length': audioBuffer.length,
+      'Access-Control-Allow-Origin': '*',
+      'X-Audio-Format': 'mp3',
+      'X-TTS-Streaming': '0',
+      'X-TTS-Cache': 'shared'
+    });
+    res.end(audioBuffer);
+    return;
+  }
+
+  let resolveFlight;
+  let rejectFlight;
+  const flight = new Promise((resolve, reject) => {
+    resolveFlight = resolve;
+    rejectFlight = reject;
+  });
+  // Avoid an unhandled rejection when no duplicate request is awaiting it.
+  flight.catch(() => {});
+  inFlightRequests.set(cacheKey, flight);
+
+  let lastErr = null;
+  try {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const chunks = [];
+      try {
+        if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 120 * attempt));
+        const tts = new EdgeTTS({
+          voice: cfg.voice,
+          pitch: cfg.pitch,
+          rate: cfg.rate,
+          // 96 kbps measured the same TTFA as 48 kbps on this machine while
+          // preserving consonants and Vietnamese tone contours more clearly.
+          outputFormat: 'audio-24khz-96kbitrate-mono-mp3',
+          timeout: 4000
+        });
+
+        for await (const chunk of tts.streamAudio(text)) {
+          if (!Buffer.isBuffer(chunk) || chunk.length === 0) continue;
+          if (!res.headersSent) {
+            res.writeHead(200, {
+              'Content-Type': 'audio/mpeg',
+              'Cache-Control': 'no-store',
+              'Access-Control-Allow-Origin': '*',
+              'X-Audio-Format': 'mp3',
+              'X-Audio-Sample-Rate': '24000',
+              'X-Audio-Channels': '1',
+              'X-TTS-Streaming': '1',
+              'X-TTS-Cache': 'miss'
+            });
+          }
+          chunks.push(chunk);
+          if (!res.destroyed) res.write(chunk);
+        }
+
+        const merged = Buffer.concat(chunks);
+        if (merged.length <= 100) throw new Error('Edge returned no usable audio');
+        cacheAudio(cacheKey, merged);
+        resolveFlight(merged);
+        if (!res.destroyed) res.end();
+        return;
+      } catch (err) {
+        lastErr = err;
+        // HTTP status and MP3 bytes cannot be restarted after the first chunk.
+        if (res.headersSent) throw err;
+      }
+    }
+    throw lastErr || new Error('TTS streaming failed after retries');
+  } catch (err) {
+    rejectFlight(err);
+    throw err;
+  } finally {
+    inFlightRequests.delete(cacheKey);
+  }
+}
+
 const server = http.createServer(async (req, res) => {
-  if (req.method === 'POST' && (req.url === '/tts' || req.url === '/api/tts')) {
+  if (req.method === 'POST' && (req.url === '/tts' || req.url === '/api/tts' || req.url === '/api/tts-stream')) {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', async () => {
@@ -124,6 +227,10 @@ const server = http.createServer(async (req, res) => {
           return res.end('Empty text');
         }
         const cfg = getVoiceConfig(payload.voice);
+        if (req.url === '/api/tts-stream') {
+          await streamEdgeAudio(text, cfg, res, 2);
+          return;
+        }
         const audioBuffer = await synthesizeWithRetry(text, cfg, 2);
 
         res.writeHead(200, {

@@ -3,14 +3,14 @@ title Cai dat LiveSub & VoiceDub AI Studio (100%% Pure Rust)
 color 0A
 echo ========================================================
 echo       CAI DAT LIVESUB & VOICEDUB AI STUDIO
-echo   He Thong Thuyet Minh & Long Tieng Realtime Da Nguon
+echo   6 Ngon Ngu: Viet, Nhat, Anh, Trung, Han, Thai
 echo   Kien Truc: 100%% Pure Rust Standalone Engine (Zero Python)
 echo ========================================================
 echo.
 
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
-echo [1/3] Kiem tra Rust & Cargo...
+echo [1/4] Kiem tra Rust & Cargo...
 cargo --version >nul 2>&1
 if errorlevel 1 (
     echo [LOI] Khong tim thay Rust/Cargo tren he thong!
@@ -19,7 +19,29 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [2/3] Build binary Rust LiveSub Engine Release...
+echo [2/4] Tai va kiem tra day du model AI (Whisper Large-v3-Turbo CUDA, VieNeu-TTS, OCR 6 ngon ngu)...
+powershell -NoProfile -ExecutionPolicy Bypass -File "rust\setup-models.ps1"
+if errorlevel 1 (
+    echo [LOI] Tai model AI that bai! Vui long kiem tra mang va chay lai.
+    pause
+    exit /b 1
+)
+
+echo [3/4] Cai dat dependencies Node.js va build giao dien React (frontend)...
+where npm >nul 2>&1
+if not errorlevel 1 (
+    if not exist "node_modules" (
+        call npm install
+    )
+    if exist "frontend\package.json" (
+        if not exist "frontend\node_modules" (
+            call npm --prefix frontend install
+        )
+        call npm --prefix frontend run build
+    )
+)
+
+echo [4/4] Build binary Rust LiveSub Engine Release...
 cargo build --release --manifest-path rust/livesub-app/Cargo.toml
 if errorlevel 1 (
     echo [LOI] Build Rust that bai!
@@ -30,24 +52,11 @@ if errorlevel 1 (
 if not exist "bin" mkdir "bin" >nul 2>&1
 copy /y "rust\target\release\livesub.exe" "livesub.exe" >nul 2>&1
 copy /y "rust\target\release\livesub.exe" "bin\livesub.exe" >nul 2>&1
-
-echo [3/3] Kiem tra mo hinh Whisper CUDA va VietOCR...
-if not exist "models\whisper\ggml-tiny.bin" (
-    echo [CANH BAO] Chua tim thay models\whisper\ggml-tiny.bin
-)
-if not exist "models\ocr\ch_PP-OCRv4_det_infer.onnx" (
-    echo [CANH BAO] Chua tim thay models\ocr\ch_PP-OCRv4_det_infer.onnx
-)
-if not exist "models\ocr\vietocr_viesvtr_v7.onnx" (
-    echo [CANH BAO] Chua tim thay models\ocr\vietocr_viesvtr_v7.onnx
-)
-if not exist "models\ocr\vietocr_keys.txt" (
-    echo [CANH BAO] Chua tim thay models\ocr\vietocr_keys.txt
-)
+copy /y "rust\target\release\*.dll" "." >nul 2>&1
 
 echo.
 echo ========================================================
 echo   CAI DAT HOAN TAT THANH CONG!
-echo   Ban co the chay start.bat de khoi dong LiveSub Studio.
+echo   Chay livesub.exe hoac cargo run --release --manifest-path rust/livesub-app/Cargo.toml
 echo ========================================================
 pause

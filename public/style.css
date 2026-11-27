@@ -360,17 +360,25 @@ body {
   color: var(--color-muted);
 }
 
-/* Main Grid Layout */
+/* Main layout: controls on top, video left, subtitles/history right. */
 .main-content {
-  display: grid;
-  grid-template-columns: 430px minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: var(--space-md);
   flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
-@media (max-width: 1080px) {
+.unified-source-workspace {
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 960px) {
   .main-content {
-    grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
   }
 }
 
@@ -1071,6 +1079,25 @@ select:focus-visible {
   z-index: 20;
 }
 
+/* Keep LiveSub's own translated overlay outside the active OCR band. */
+.invideo-subtitle-overlay.ocr-safe-top,
+.web-video-wrapper:fullscreen .invideo-subtitle-overlay.ocr-safe-top,
+.web-video-wrapper:-webkit-full-screen .invideo-subtitle-overlay.ocr-safe-top {
+  top: 6% !important;
+  bottom: auto !important;
+}
+
+.invideo-subtitle-overlay.ocr-safe-bottom,
+.web-video-wrapper:fullscreen .invideo-subtitle-overlay.ocr-safe-bottom,
+.web-video-wrapper:-webkit-full-screen .invideo-subtitle-overlay.ocr-safe-bottom {
+  top: auto !important;
+  bottom: 6% !important;
+}
+
+.invideo-subtitle-overlay.ocr-feedback-hidden {
+  display: none !important;
+}
+
 .invideo-sub-source {
   font-family: var(--font-subtitle);
   font-size: 14px;
@@ -1105,6 +1132,21 @@ select:focus-visible {
   display: inline-block;
   max-width: 90%;
   margin: 0 auto;
+}
+
+.invideo-subtitle-overlay.subtitle-bg-transparent .invideo-sub-vi {
+  background: transparent;
+  box-shadow: none;
+}
+
+.invideo-subtitle-overlay.subtitle-bg-glass .invideo-sub-vi {
+  background: rgba(15, 23, 42, 0.50);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.invideo-subtitle-overlay.subtitle-bg-dark .invideo-sub-vi {
+  background: rgba(15, 23, 42, 0.92);
 }
 
 .invideo-sub-vi:empty,
@@ -2111,6 +2153,31 @@ html, body {
   width: 100%;
 }
 
+.subtitle-appearance-controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.btn-subtitle-appearance {
+  min-width: 48px;
+  padding: 3px 9px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-card-hover, #241a17);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-subtitle-appearance.active {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+  border-color: var(--color-accent);
+}
+
 @media (max-width: 480px) {
   .sub-mode-btn-group {
     flex-wrap: wrap;
@@ -2290,7 +2357,7 @@ html, body {
 /* Main Content Workspace */
 .main-content-streamlined {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(520px, 1.25fr) minmax(380px, 0.9fr);
   grid-template-rows: minmax(0, 1fr);
   gap: 10px;
   flex: 1;
@@ -2299,11 +2366,17 @@ html, body {
   overflow: hidden;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1100px) {
   .main-content-streamlined {
     grid-template-columns: 1fr;
     grid-template-rows: auto auto;
     overflow-y: auto;
+  }
+
+  .video-workspace-column,
+  .subtitles-workspace-column {
+    height: auto;
+    min-height: 520px;
   }
 }
 

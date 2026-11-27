@@ -18,7 +18,10 @@ async fn test_youtube_subtitles_extraction() {
     let resp = client
         .post("https://www.youtube.com/youtubei/v1/player?prettyPrint=false")
         .header("Content-Type", "application/json")
-        .header("User-Agent", "com.google.android.youtube/20.10.38 (Linux; U; Android 14)")
+        .header(
+            "User-Agent",
+            "com.google.android.youtube/20.10.38 (Linux; U; Android 14)",
+        )
         .json(&innertube_payload)
         .send()
         .await
@@ -36,10 +39,13 @@ async fn test_youtube_subtitles_extraction() {
     assert!(!tracks.is_empty(), "captionTracks should not be empty");
     println!("Found {} caption tracks for 6Zy5VLcEbZc", tracks.len());
 
-    let en_or_vi = tracks.iter().find(|t| {
-        let code = t.get("languageCode").and_then(|c| c.as_str()).unwrap_or("");
-        code == "vi" || code == "en"
-    }).expect("Should find either vi or en track");
+    let en_or_vi = tracks
+        .iter()
+        .find(|t| {
+            let code = t.get("languageCode").and_then(|c| c.as_str()).unwrap_or("");
+            code == "vi" || code == "en"
+        })
+        .expect("Should find either vi or en track");
 
     let base_url = en_or_vi.get("baseUrl").and_then(|u| u.as_str()).unwrap();
     let xml_resp = client
@@ -52,5 +58,8 @@ async fn test_youtube_subtitles_extraction() {
     assert!(xml_resp.status().is_success());
     let xml = xml_resp.text().await.unwrap();
     assert!(xml.contains("<timedtext") || xml.contains("<transcript"));
-    println!("Successfully downloaded transcript XML ({} bytes)", xml.len());
+    println!(
+        "Successfully downloaded transcript XML ({} bytes)",
+        xml.len()
+    );
 }

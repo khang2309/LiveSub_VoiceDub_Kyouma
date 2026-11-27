@@ -39,7 +39,10 @@ pub fn load_ppocr_model_with_det(
     if let Ok(det) = det_handle {
         match GpuOcrEngine::load(det, rec_path, dict_path, target_height) {
             Ok(gpu_engine) => {
-                println!("🚀 OCR Model: {name} loaded on {} (Zero CPU bottleneck)", gpu_engine.ep_name);
+                println!(
+                    "🚀 OCR Model: {name} loaded on {} (Zero CPU bottleneck)",
+                    gpu_engine.ep_name
+                );
                 return Some(Arc::new(OcrEngineBackend::Gpu(Arc::new(gpu_engine))));
             }
             Err(e) => {
@@ -77,7 +80,9 @@ pub fn load_all_ocr_models(config: &AppConfig) -> OcrEnginePool {
 
     // Share ONE DBNet detection session in GPU VRAM across all 5 languages
     let shared_det = if config.det_model_path.is_file() {
-        SharedDetSession::load(&config.det_model_path).ok().map(Arc::new)
+        SharedDetSession::load(&config.det_model_path)
+            .ok()
+            .map(Arc::new)
     } else {
         None
     };
@@ -137,12 +142,25 @@ pub fn load_all_ocr_models(config: &AppConfig) -> OcrEnginePool {
         48,
     );
 
+    // 6. Model chuyên dụng Tiếng Thái (PP-OCRv5 Thai, chiều cao 32px)
+    let th_yaml = "PreProcess:\n  transform_ops:\n  - RecResizeImg:\n      image_shape:\n      - 3\n      - 32\n      - 320\nPostProcess:\n  name: CTCLabelDecode\n";
+    let thai = load_ppocr_model_with_det(
+        shared_det.as_ref(),
+        &config.det_model_path,
+        &config.th_rec_model_path,
+        &config.th_dict_path,
+        Some(th_yaml),
+        "PP-OCRv5 Thai Dedicated Model",
+        32,
+    );
+
     OcrEnginePool {
         vietnamese,
         english,
         chinese,
         japanese,
         korean,
+        thai,
     }
 }
 

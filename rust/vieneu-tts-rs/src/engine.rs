@@ -57,12 +57,50 @@ pub struct VieneuEngineConfig {
     pub dict_path: PathBuf,
 }
 
+fn resolve_vieneu_path(candidates: &[&str]) -> PathBuf {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            roots.push(dir.to_path_buf());
+            if let Some(p1) = dir.parent() {
+                roots.push(p1.to_path_buf());
+                if let Some(p2) = p1.parent() {
+                    roots.push(p2.to_path_buf());
+                }
+            }
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        roots.push(cwd.clone());
+        if let Some(parent) = cwd.parent() {
+            roots.push(parent.to_path_buf());
+        }
+    }
+    if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+        roots.push(PathBuf::from(local_app_data).join("LiveSub Studio"));
+    }
+    roots.push(PathBuf::from(r"C:\dich"));
+
+    for rel in candidates {
+        for root in &roots {
+            let p = root.join(rel);
+            if p.exists() {
+                return p;
+            }
+        }
+    }
+    PathBuf::from(candidates[0])
+}
+
 impl Default for VieneuEngineConfig {
     fn default() -> Self {
-        let onnx_dir = PathBuf::from("C:\\dich\\models\\vieneu");
-        let codec_path = PathBuf::from("C:\\dich\\models\\moss_codec\\moss_audio_tokenizer_decode_full.onnx");
-        let heads_dir = PathBuf::from("C:\\dich\\models\\vieneu_heads");
-        let dict_path = PathBuf::from("C:\\dich\\tools\\sea-g2p\\python\\sea_g2p\\sea_g2p.bin");
+        let onnx_dir = resolve_vieneu_path(&["models/vieneu"]);
+        let codec_path = resolve_vieneu_path(&["models/moss_codec/moss_audio_tokenizer_decode_full.onnx"]);
+        let heads_dir = resolve_vieneu_path(&["models/vieneu_heads"]);
+        let dict_path = resolve_vieneu_path(&[
+            "models/vieneu/sea_g2p.bin",
+            "tools/sea-g2p/python/sea_g2p/sea_g2p.bin",
+        ]);
 
         Self {
             tokenizer_path: onnx_dir.join("tokenizer.json"),

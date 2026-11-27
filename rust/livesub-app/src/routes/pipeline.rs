@@ -16,9 +16,7 @@ pub async fn api_control_key(
     Json(serde_json::json!({ "status": "ok" }))
 }
 
-pub async fn api_control_poll(
-    State(state): State<AppState>,
-) -> Json<serde_json::Value> {
+pub async fn api_control_poll(State(state): State<AppState>) -> Json<serde_json::Value> {
     let mut rx = state.key_tx.subscribe();
     match tokio::time::timeout(std::time::Duration::from_secs(20), rx.recv()).await {
         Ok(Ok(key)) => Json(serde_json::json!({ "status": "event", "key": key })),
@@ -77,29 +75,45 @@ pub async fn api_pipeline_status(State(state): State<AppState>) -> Json<serde_js
     let ocr_zh_ready = state.ocr_pool.chinese.is_some();
     let ocr_ja_ready = state.ocr_pool.japanese.is_some();
     let ocr_ko_ready = state.ocr_pool.korean.is_some();
-    let asr_multi_ready = std::net::TcpStream::connect("127.0.0.1:8089").is_ok();
-    let asr_en_ready = std::net::TcpStream::connect("127.0.0.1:8090").is_ok();
+    let ocr_th_ready = state.ocr_pool.thai.is_some();
+    let use_en_port = state.whisper_en_server_url.contains(":8090");
+    let (asr_multi_ready, asr_en_ready) = tokio::task::spawn_blocking(move || {
+        let timeout = std::time::Duration::from_millis(80);
+        let m = "127.0.0.1:8089".parse().ok().map_or(false, |a| {
+            std::net::TcpStream::connect_timeout(&a, timeout).is_ok()
+        });
+        let e = if use_en_port {
+            "127.0.0.1:8090".parse().ok().map_or(false, |a| {
+                std::net::TcpStream::connect_timeout(&a, timeout).is_ok()
+            })
+        } else {
+            false
+        };
+        (m, e)
+    })
+    .await
+    .unwrap_or((false, false));
 
     Json(serde_json::json!({
         "status": "ready",
         "engine": "LiveSub 100% Pure Rust Dedicated Multi-Model Engine",
         "device": "cuda:0 (NVIDIA GeForce RTX 3050 Laptop GPU, 4096 MiB)",
-        "active_language": "multi-model",
-        "supported_languages": ["vi", "th", "en", "zh", "ja", "ko", "fr", "de", "es", "ru", "id", "ms", "lo", "km", "hi", "pt", "it", "ar", "auto"],
+        "active_language": "6-languages-focused",
+        "supported_languages": ["vi", "ja", "en", "zh", "ko", "th", "auto"],
         "sample_rate": 48000,
         "asr": {
             "status": if asr_multi_ready || asr_en_ready { "ready" } else { "starting" },
             "device": "cuda:0 (NVIDIA GeForce RTX 3050 Laptop GPU)",
             "models": {
                 "multilingual": {
-                    "model": "ggml-base.bin (99+ languages: vi, th, ja, zh, ko, ...)",
+                    "model": format!("{} (VI, JA, EN, ZH, KO, TH)", state.whisper_model_name),
                     "port": 8089,
                     "active": asr_multi_ready
                 },
                 "english": {
-                    "model": "ggml-base.en.bin (Dedicated English ASR)",
-                    "port": 8090,
-                    "active": asr_en_ready
+                    "model": if asr_en_ready { "ggml-base.en.bin (Dedicated English ASR)" } else { "Unified CUDA Primary Model" },
+                    "port": if asr_en_ready { 8090 } else { 8089 },
+                    "active": asr_en_ready || asr_multi_ready
                 }
             },
             "latency_ms": 120.0
@@ -152,6 +166,12 @@ pub async fn api_pipeline_status(State(state): State<AppState>) -> Json<serde_js
                     "file": "korean_PP-OCRv3_rec_infer.onnx",
                     "dictionary": "korean_dict.txt (Hangul chuyên dụng)",
                     "loaded": ocr_ko_ready
+                },
+                "thai": {
+                    "engine": "PP-OCRv5 Thai Dedicated",
+                    "file": "th_PP-OCRv5_rec_infer.onnx",
+                    "dictionary": "th_dict.txt (Chữ Thái + Latinh)",
+                    "loaded": ocr_th_ready
                 }
             },
             "primary": "VietOCR VieSVTR v7 (229 Tiếng Việt)",
@@ -166,10 +186,11 @@ pub struct ExportFilePayload {
     pub content: String,
 }
 
-pub async fn api_export_file(
-    Json(payload): Json<ExportFilePayload>,
-) -> Json<serde_json::Value> {
-    let safe_filename = payload.filename.replace(|c: char| !c.is_alphanumeric() && c != '.' && c != '_' && c != '-', "_");
+pub async fn api_export_file(Json(payload): Json<ExportFilePayload>) -> Json<serde_json::Value> {
+    let safe_filename = payload.filename.replace(
+        |c: char| !c.is_alphanumeric() && c != '.' && c != '_' && c != '-',
+        "_",
+    );
 
     let download_dir = std::env::var("USERPROFILE")
         .map(|p| std::path::PathBuf::from(p).join("Downloads"))

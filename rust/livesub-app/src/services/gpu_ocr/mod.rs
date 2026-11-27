@@ -1,8 +1,9 @@
+pub mod geometry;
+
 use geo_types::Polygon;
+use geometry::{aspect_ratio, build_gpu_session, polygon_to_text_region};
 use image::{imageops, DynamicImage, GenericImageView, RgbImage};
 use ndarray::{Array2, Array3, Ix4};
-use ort::ep::{CUDA, DirectML};
-use ort::session::builder::GraphOptimizationLevel;
 use ort::session::Session;
 use ort::value::Tensor;
 use pure_onnx_ocr::crop::{crop_quad, min_area_quad};
@@ -12,7 +13,7 @@ use pure_onnx_ocr::postprocessing::{
     DetPolygonUnclipper, DetPolygonUnclipperConfig, DetPostProcessor, DetPostProcessorConfig,
 };
 use pure_onnx_ocr::preprocessing::{
-    DetPreProcessor, DetPreProcessorConfig, RecPreProcessor, RecPreProcessorConfig, RecTextRegion,
+    DetPreProcessor, DetPreProcessorConfig, RecPreProcessor, RecPreProcessorConfig,
 };
 use pure_onnx_ocr::recognition::{RecInferenceOutput, RecPostProcessor, RecPostProcessorConfig};
 use std::path::Path;
@@ -28,7 +29,9 @@ impl OcrEngineBackend {
     pub fn run_from_image(&self, image: &DynamicImage) -> Result<Vec<OcrResult>, String> {
         match self {
             OcrEngineBackend::Gpu(engine) => engine.run_from_image(image),
-            OcrEngineBackend::Cpu(engine) => engine.run_from_image(image).map_err(|e| e.to_string()),
+            OcrEngineBackend::Cpu(engine) => {
+                engine.run_from_image(image).map_err(|e| e.to_string())
+            }
         }
     }
 
@@ -51,8 +54,7 @@ pub struct SharedDetSession {
     pub ep_name: &'static str,
 }
 
-/// GPU-accelerated OCR Engine running DBNet detection and SVTR/VieSVTR recognition via `ort`
-/// (CUDA / DirectML) while reusing `pure-onnx-ocr` preprocessing, geometry unclip, and CTC decode.
+/// GPU-accelerated OCR Engine running DBNet detection and SVTR/VieSVTR recognition via `ort`.
 pub struct GpuOcrEngine {
     det: Arc<SharedDetSession>,
     rec_session: Mutex<Session>,
@@ -64,44 +66,6 @@ pub struct GpuOcrEngine {
     rec_post: RecPostProcessor,
     rec_batch_size: usize,
     pub ep_name: &'static str,
-}
-
-fn build_gpu_session(model_path: &Path) -> Result<(Session, &'static str), String> {
-    let env = vieneu_tts_rs::shared_ort_env().map_err(|e| e.to_string())?;
-
-    // 1. Try real CUDA EP with error_on_failure (never silently fake CUDA -> 1-thread CPU)
-    if let Ok(builder) = Session::builder(&env) {
-        let b = builder
-            .with_optimization_level(GraphOptimizationLevel::Level3)
-            .unwrap_or_else(|e| e.recover())
-            .with_intra_threads(1)
-            .unwrap_or_else(|e| e.recover());
-        if let Ok(mut b_cuda) = b.with_execution_providers([CUDA::default().build().error_on_failure()]) {
-            if let Ok(sess) = b_cuda.commit_from_file(model_path) {
-                return Ok((sess, "NVIDIA CUDA GPU"));
-            }
-        }
-    }
-
-    // 2. Try Windows DirectML GPU (DirectX 12 hardware acceleration on RTX 3050, zero CUDA DLL dependency)
-    if let Ok(builder) = Session::builder(&env) {
-        let b = builder
-            .with_optimization_level(GraphOptimizationLevel::Level3)
-            .unwrap_or_else(|e| e.recover())
-            .with_intra_threads(1)
-            .unwrap_or_else(|e| e.recover())
-            .with_memory_pattern(false)
-            .unwrap_or_else(|e| e.recover())
-            .with_parallel_execution(false)
-            .unwrap_or_else(|e| e.recover());
-        if let Ok(mut b_dml) = b.with_execution_providers([DirectML::default().build().error_on_failure()]) {
-            if let Ok(sess) = b_dml.commit_from_file(model_path) {
-                return Ok((sess, "DirectML GPU (RTX 3050 DirectX 12)"));
-            }
-        }
-    }
-
-    Err(format!("Neither CUDA nor DirectML GPU EP could initialize for {:?}", model_path))
 }
 
 impl SharedDetSession {
@@ -188,7 +152,6 @@ impl GpuOcrEngine {
             return Ok(Vec::new());
         }
 
-        // 1. DBNet Detection Preprocess + GPU Forward
         let preprocessed_det = self.det_pre.process(image).map_err(|e| e.to_string())?;
         let det_view = preprocessed_det
             .tensor
@@ -220,7 +183,6 @@ impl GpuOcrEngine {
                 .map_err(|e| e.to_string())?
         };
 
-        // 2. DBNet Postprocess + Unclip + Scale Polygons
         let boxes = self
             .det_post
             .db_boxes(&probability_map, &self.det_unclipper)
@@ -242,7 +204,6 @@ impl GpuOcrEngine {
                         y: (y * scale_y).round().clamp(0.0, height_f),
                     })
                     .collect();
-                // Expand vertically by ~16% so tall stacked Vietnamese diacritics (Ấ, Ể, Ỗ, Ậ) are never clipped
                 let min_y = coords.iter().map(|c| c.y).fold(f64::INFINITY, f64::min);
                 let max_y = coords.iter().map(|c| c.y).fold(f64::NEG_INFINITY, f64::max);
                 let pad_y = ((max_y - min_y) * 0.16).clamp(3.0, 14.0);
@@ -258,7 +219,6 @@ impl GpuOcrEngine {
             })
             .collect();
 
-        // Filter out tiny extreme-corner HUD / watermark boxes without touching centered subtitles
         let img_w_f = image_dims.0 as f64;
         if img_w_f > 100.0 && !polygons.is_empty() {
             let max_box_h = polygons
@@ -271,7 +231,8 @@ impl GpuOcrEngine {
                 let h = r.height as f64;
                 let cx = r.x as f64 + w * 0.5;
                 let is_extreme_corner = cx < img_w_f * 0.12 || cx > img_w_f * 0.88;
-                let is_tiny_corner = is_extreme_corner && w < img_w_f * 0.15 && h <= (max_box_h * 0.85).max(32.0);
+                let is_tiny_corner =
+                    is_extreme_corner && w < img_w_f * 0.15 && h <= (max_box_h * 0.85).max(32.0);
                 !is_tiny_corner
             });
             if polygons.is_empty() {
@@ -279,7 +240,6 @@ impl GpuOcrEngine {
             }
         }
 
-        // Sort boxes in natural top-to-bottom, left-to-right reading order
         polygons.sort_by(|a, b| {
             let ra = polygon_to_text_region(a, image_dims);
             let rb = polygon_to_text_region(b, image_dims);
@@ -291,20 +251,23 @@ impl GpuOcrEngine {
             }
         });
 
-        // 3. Crop text regions (Rotated quad preferred for clean perspective) and upscale small lines
         let rec_target_h = self.rec_pre.config().target_height;
         let rgb = image.to_rgb8();
         let crops: Vec<RgbImage> = polygons
             .iter()
             .map(|polygon| {
-                let crop = if let Some(c) = min_area_quad(polygon).and_then(|quad| crop_quad(&rgb, &quad)) {
+                let crop = if let Some(c) =
+                    min_area_quad(polygon).and_then(|quad| crop_quad(&rgb, &quad))
+                {
                     c
                 } else {
                     let region = polygon_to_text_region(polygon, image_dims);
-                    imageops::crop_imm(&rgb, region.x, region.y, region.width, region.height).to_image()
+                    imageops::crop_imm(&rgb, region.x, region.y, region.width, region.height)
+                        .to_image()
                 };
                 if crop.height() > 0 && crop.height() < rec_target_h {
-                    let new_w = ((crop.width() as f32) * (rec_target_h as f32 / crop.height() as f32))
+                    let new_w = ((crop.width() as f32)
+                        * (rec_target_h as f32 / crop.height() as f32))
                         .round()
                         .max(1.0) as u32;
                     imageops::resize(&crop, new_w, rec_target_h, imageops::FilterType::Lanczos3)
@@ -318,7 +281,6 @@ impl GpuOcrEngine {
             return Ok(Vec::new());
         }
 
-        // 4. Sort crops by aspect ratio for minimal padding, batch through GPU recognition
         let mut order: Vec<usize> = (0..crops.len()).collect();
         order.sort_by(|&a, &b| aspect_ratio(&crops[a]).total_cmp(&aspect_ratio(&crops[b])));
         let chunks: Vec<&[usize]> = order.chunks(self.rec_batch_size.max(1)).collect();
@@ -407,61 +369,5 @@ impl GpuOcrEngine {
             }
         }
         Ok(results)
-    }
-}
-
-fn aspect_ratio(image: &RgbImage) -> f32 {
-    let height = image.height().max(1) as f32;
-    image.width() as f32 / height
-}
-
-fn polygon_to_text_region(polygon: &Polygon<f64>, image_dims: (u32, u32)) -> RecTextRegion {
-    let mut min_x = f64::INFINITY;
-    let mut min_y = f64::INFINITY;
-    let mut max_x = f64::NEG_INFINITY;
-    let mut max_y = f64::NEG_INFINITY;
-
-    for point in polygon.exterior().points() {
-        min_x = min_x.min(point.x());
-        max_x = max_x.max(point.x());
-        min_y = min_y.min(point.y());
-        max_y = max_y.max(point.y());
-    }
-
-    let image_width = image_dims.0.max(1);
-    let image_height = image_dims.1.max(1);
-    let width_limit = image_width as f64;
-    let height_limit = image_height as f64;
-
-    let mut x1 = min_x.floor().max(0.0);
-    let mut y1 = min_y.floor().max(0.0);
-    let mut x2 = max_x.ceil().min(width_limit);
-    let mut y2 = max_y.ceil().min(height_limit);
-
-    if x2 <= x1 {
-        x2 = (x1 + 1.0).min(width_limit);
-    }
-    if y2 <= y1 {
-        y2 = (y1 + 1.0).min(height_limit);
-    }
-    if x2 <= x1 {
-        x1 = (width_limit - 1.0).max(0.0);
-        x2 = width_limit;
-    }
-    if y2 <= y1 {
-        y1 = (height_limit - 1.0).max(0.0);
-        y2 = height_limit;
-    }
-
-    let x = (x1.floor() as u32).min(image_width - 1);
-    let y = (y1.floor() as u32).min(image_height - 1);
-    let width = ((x2 - x1).ceil().max(1.0) as u32).min(image_width - x).max(1);
-    let height = ((y2 - y1).ceil().max(1.0) as u32).min(image_height - y).max(1);
-
-    RecTextRegion {
-        x,
-        y,
-        width,
-        height,
     }
 }

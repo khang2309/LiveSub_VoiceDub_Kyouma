@@ -4,7 +4,7 @@ use regex::Regex;
 use std::{
     collections::HashMap,
     process::Child,
-    sync::{Arc, Mutex, OnceLock, RwLock},
+    sync::{atomic::AtomicU64, Arc, Mutex, OnceLock, RwLock},
 };
 use translation_router_rs::TranslationRouter;
 use vieneu_tts_rs::VieneuEngine;
@@ -29,11 +29,16 @@ pub struct OcrEnginePool {
     pub chinese: Option<Arc<OcrEngineBackend>>,
     pub japanese: Option<Arc<OcrEngineBackend>>,
     pub korean: Option<Arc<OcrEngineBackend>>,
+    pub thai: Option<Arc<OcrEngineBackend>>,
 }
 
 impl OcrEnginePool {
     pub fn select_engine(&self, lang: &str) -> (Option<Arc<OcrEngineBackend>>, &'static str) {
-        let norm = lang.split(['-', '_']).next().unwrap_or("auto").to_lowercase();
+        let norm = lang
+            .split(['-', '_'])
+            .next()
+            .unwrap_or("auto")
+            .to_lowercase();
         match norm.as_str() {
             "vi" => (
                 self.vietnamese.clone(),
@@ -55,6 +60,10 @@ impl OcrEnginePool {
                 self.korean.clone(),
                 "PP-OCRv3 Korean Dedicated Model (Hangul Chuyên dụng)",
             ),
+            "th" => (
+                self.thai.clone().or_else(|| self.english.clone()),
+                "PP-OCRv5 Thai Dedicated Model (Chữ Thái + Latinh)",
+            ),
             _ => (
                 self.vietnamese.clone().or_else(|| self.english.clone()),
                 "LiveSub Dynamic Model Auto Route (VieSVTR Vietnamese/Latin Primary)",
@@ -71,12 +80,17 @@ pub struct AppState {
     pub vieneu: Arc<VieneuEngine>,
     pub whisper_server_url: String,
     pub whisper_en_server_url: String,
+    pub whisper_model_name: String,
     pub router: Arc<TranslationRouter>,
     pub http_client: reqwest::Client,
+    pub gemini_api_key: Option<String>,
+    pub gemini_model: String,
+    pub translation_mode: String,
     pub audio_cache: Arc<RwLock<HashMap<String, Vec<u8>>>>,
     pub trans_cache: Arc<RwLock<HashMap<String, String>>>,
     pub key_tx: tokio::sync::broadcast::Sender<String>,
     pub _whisper_child: Arc<Mutex<Option<Child>>>,
     pub _whisper_en_child: Arc<Mutex<Option<Child>>>,
     pub tts_sem: Arc<tokio::sync::Semaphore>,
+    pub tts_generation: Arc<AtomicU64>,
 }

@@ -120,20 +120,49 @@
       <span class="status-dot"></span>
       <span id="statusLabel">Đang kết nối hệ thống...</span>
     </div>
-    <button id="btnRetry" class="btn-retry" onclick="checkBackend()">Thử kết nối lại</button>
+    <p id="subHint" class="subtitle" style="margin-top: 14px; display: none;">
+      Lần đầu khởi động: ứng dụng tự tải bộ model AI (~2.7 GB, chỉ 1 lần duy nhất). Vui lòng giữ kết nối mạng.
+    </p>
+    <button id="btnRetry" class="btn-retry" onclick="retryLoad()">Thử lại</button>
   </div>
 
   <script>
     let attempts = 0;
-    const maxAttempts = 150; // 15 giây
+    const maxAttempts = 150; // 15 giây chờ backend khởi tạo
+    let isDownloadingModels = false;
+
+    async function retryLoad() {
+      document.getElementById('btnRetry').style.display = 'none';
+      attempts = 0;
+      if (isDownloadingModels) {
+        try {
+          await fetch('http://127.0.0.1:3000/api/bootstrap-retry', { method: 'POST' });
+        } catch (_) {}
+      }
+      checkBackend();
+    }
 
     async function checkBackend() {
-      attempts++;
       try {
         const res = await fetch('http://127.0.0.1:3000/api/pipeline-status', {
           cache: 'no-store'
         });
         if (res.ok) {
+          const data = await res.json().catch(() => ({}));
+          if (data.status === 'downloading') {
+            isDownloadingModels = true;
+            document.getElementById('statusLabel').innerText = data.message || 'Đang tải bộ model AI lần đầu...';
+            document.getElementById('subHint').style.display = 'block';
+            setTimeout(checkBackend, 600);
+            return;
+          }
+          if (data.status === 'download_error') {
+            isDownloadingModels = true;
+            document.getElementById('statusLabel').innerText = data.message || 'Tải model AI thất bại. Vui lòng kiểm tra Internet.';
+            document.getElementById('subHint').style.display = 'block';
+            document.getElementById('btnRetry').style.display = 'inline-block';
+            return;
+          }
           document.getElementById('statusLabel').innerText = 'Kết nối thành công! Đang tải Studio...';
           window.location.replace('http://localhost:3000');
           return;
@@ -142,8 +171,9 @@
         // Server chưa sẵn sàng, tiếp tục chờ
       }
 
+      attempts++;
       if (attempts < maxAttempts) {
-        setTimeout(checkBackend, 100);
+        setTimeout(checkBackend, 150);
       } else {
         document.getElementById('statusLabel').innerText = 'Không thể kết nối LiveSub Engine (port 3000)';
         document.getElementById('btnRetry').style.display = 'inline-block';

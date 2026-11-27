@@ -1,7 +1,7 @@
+use crate::state::AppState;
 use axum::{extract::State, Json};
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
-use crate::state::AppState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserSettings {
@@ -25,7 +25,7 @@ fn default_voice() -> String {
     "vieneu:Trúc Ly".to_string()
 }
 fn default_source_lang() -> String {
-    "vi-VN".to_string()
+    "auto".to_string()
 }
 fn default_sub_mode() -> String {
     "vi_only".to_string()

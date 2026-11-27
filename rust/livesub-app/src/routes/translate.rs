@@ -1,5 +1,5 @@
 use crate::{
-    services::translate::fetch_online_translation,
+    services::translate::fetch_online_translation_with_context,
     state::{get_re_vi, AppState},
 };
 use axum::{extract::State, Json};
@@ -10,6 +10,8 @@ pub struct TranslateRequest {
     pub text: String,
     #[serde(alias = "from_lang")]
     pub source_lang: Option<String>,
+    #[serde(default)]
+    pub previous_context: Option<String>,
 }
 
 pub async fn api_translate(
@@ -27,7 +29,11 @@ pub async fn api_translate(
     }
 
     let source_lang_str = req.source_lang.unwrap_or_else(|| "auto".to_string());
-    let norm = source_lang_str.split(['-', '_']).next().unwrap_or("auto").to_lowercase();
+    let norm = source_lang_str
+        .split(['-', '_'])
+        .next()
+        .unwrap_or("auto")
+        .to_lowercase();
 
     // Nếu nguồn chỉ định rõ là tiếng Việt:
     if norm == "vi" {
@@ -41,12 +47,19 @@ pub async fn api_translate(
     }
 
     // Nếu nguồn là Auto: chỉ coi là tiếng Việt nếu đã có dấu tiếng Việt rõ ràng
-    let is_already_vi = norm == "auto" && get_re_vi().is_match(raw) && raw.split_whitespace().count() > 1;
+    let is_already_vi =
+        norm == "auto" && get_re_vi().is_match(raw) && raw.split_whitespace().count() > 1;
     let translated = if is_already_vi {
         state.ocr.restore_vietnamese(raw)
     } else {
         // Nguồn là ngôn ngữ nước ngoài: Dịch trực tiếp sang tiếng Việt đầy đủ dấu
-        fetch_online_translation(&state, raw, &source_lang_str).await
+        fetch_online_translation_with_context(
+            &state,
+            raw,
+            &source_lang_str,
+            req.previous_context.as_deref(),
+        )
+        .await
     };
 
     Json(serde_json::json!({

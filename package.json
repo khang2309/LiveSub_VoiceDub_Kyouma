@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "node --test --test-force-exit tests/test_frontend.js && cd rust && cargo test --no-default-features"
+    "test": "npm --prefix frontend test && cargo test --manifest-path rust/livesub-app/Cargo.toml --lib"
   },
   "keywords": [],
   "author": "",

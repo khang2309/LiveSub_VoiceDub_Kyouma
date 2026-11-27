@@ -46,21 +46,35 @@ pub fn run() {
                 )?;
             }
 
-            // Khởi động background VieNeu/Edge Neural TTS Server nếu chưa chạy
+            // Khởi động background Edge Neural TTS Server nếu chưa chạy
             let node_path = if std::path::Path::new(r"C:\Program Files\nodejs\node.exe").exists() {
                 r"C:\Program Files\nodejs\node.exe"
             } else {
                 "node"
             };
-            let script_path = std::path::Path::new(r"C:\dich\scripts\edge_tts_server.js");
+            let mut app_root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(r"C:\dich"));
+            if let Ok(exe) = std::env::current_exe() {
+                if let Some(dir) = exe.parent() {
+                    if dir.join("scripts").join("edge_tts_server.js").exists() {
+                        app_root = dir.to_path_buf();
+                    }
+                }
+            }
+            if !app_root.join("scripts").join("edge_tts_server.js").exists() {
+                let fallback = std::path::PathBuf::from(r"C:\dich");
+                if fallback.join("scripts").join("edge_tts_server.js").exists() {
+                    app_root = fallback;
+                }
+            }
+            let script_path = app_root.join("scripts").join("edge_tts_server.js");
             if script_path.exists() && std::net::TcpStream::connect("127.0.0.1:3005").is_err() {
                 #[cfg(windows)]
                 {
                     use std::os::windows::process::CommandExt;
                     const CREATE_NO_WINDOW: u32 = 0x08000000;
                     let _ = std::process::Command::new(node_path)
-                        .arg(script_path)
-                        .current_dir(r"C:\dich")
+                        .arg(&script_path)
+                        .current_dir(&app_root)
                         .creation_flags(CREATE_NO_WINDOW)
                         .spawn();
                 }
