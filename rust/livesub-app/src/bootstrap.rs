@@ -70,6 +70,10 @@ pub fn are_required_models_present() -> bool {
             100_000,
         )
         && has_valid_file(
+            "models/moss_codec/moss_audio_tokenizer_decode_step.onnx",
+            100_000,
+        )
+        && has_valid_file(
             "models/moss_codec/moss_audio_tokenizer_decode_shared.data",
             1_000_000,
         )

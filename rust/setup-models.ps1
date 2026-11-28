@@ -134,6 +134,7 @@ Get-FileIfMissing `
 Write-Host "=== [3/4] MOSS Audio Tokenizer Codec ==="
 $mossBase = 'https://huggingface.co/OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX/resolve/main'
 Get-FileIfMissing -Uri "$mossBase/moss_audio_tokenizer_decode_full.onnx" -Destination 'models/moss_codec/moss_audio_tokenizer_decode_full.onnx' -MinBytes 500000
+Get-FileIfMissing -Uri "$mossBase/moss_audio_tokenizer_decode_step.onnx" -Destination 'models/moss_codec/moss_audio_tokenizer_decode_step.onnx' -MinBytes 300000
 Get-FileIfMissing -Uri "$mossBase/moss_audio_tokenizer_decode_shared.data" -Destination 'models/moss_codec/moss_audio_tokenizer_decode_shared.data' -MinBytes 30000000
 
 Write-Host "=== [4/4] OCR ONNX Models (VI, JA, EN, ZH, KO, TH) ==="

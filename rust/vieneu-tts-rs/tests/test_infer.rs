@@ -11,7 +11,9 @@ fn test_voice_registry() {
     assert_eq!(name, "Trúc Ly");
     assert_eq!(truc_ly.speaker_emb.len(), 192);
 
-    let (name, hai_dang) = registry.get_voice("vi-VN-NamMinhNeural").expect("Should map legacy NamMinh to Hải Đăng");
+    let (name, hai_dang) = registry
+        .get_voice("vi-VN-NamMinhNeural")
+        .expect("Should map legacy NamMinh to Hải Đăng");
     assert_eq!(name, "Hải Đăng");
     assert_eq!(hai_dang.speaker_emb.len(), 192);
 }
@@ -20,7 +22,10 @@ fn test_voice_registry() {
 fn test_phonemizer() {
     let config = VieneuEngineConfig::default();
     if !config.dict_path.exists() {
-        eprintln!("Dict path {:?} does not exist, skipping phonemizer test", config.dict_path);
+        eprintln!(
+            "Dict path {:?} does not exist, skipping phonemizer test",
+            config.dict_path
+        );
         return;
     }
 
@@ -43,13 +48,16 @@ fn test_engine_infer() {
     let t0 = std::time::Instant::now();
     println!("Initializing VieneuEngine...");
     let engine = VieneuEngine::new(config).expect("Failed to initialize VieneuEngine");
-    println!("Model load & CUDA init time: {:.2}s", t0.elapsed().as_secs_f64());
+    println!(
+        "Model load & CUDA init time: {:.2}s",
+        t0.elapsed().as_secs_f64()
+    );
 
     let sentences = [
         "Xin chào, tôi là Trúc Ly.",
         "Mỗi năm một nghìn lượng bạc, năm nay tôi trả được một nửa rồi.",
         "Tôi không thể mất tiếp một thành viên nữa trong nhà đâu!",
-        "Chúng ta phải cố gắng hơn nữa."
+        "Chúng ta phải cố gắng hơn nữa.",
     ];
 
     for (i, sent) in sentences.iter().enumerate() {
@@ -60,8 +68,38 @@ fn test_engine_infer() {
         let rtf = (elapsed_ms / 1000.0) / audio_sec.max(0.01);
         println!(
             "[{}] Text: '{}' -> Sinh ra {:.2}s audio trong {:.0}ms (RTF: {:.2}x)",
-            i + 1, sent, audio_sec, elapsed_ms, rtf
+            i + 1,
+            sent,
+            audio_sec,
+            elapsed_ms,
+            rtf
         );
         assert!(wav_bytes.len() > 1000);
     }
+
+    let stream_started = std::time::Instant::now();
+    let mut chunks = Vec::new();
+    engine
+        .infer_stream(
+            "Đây là phép thử phát giọng nói trực tiếp và liền mạch.",
+            "Trúc Ly",
+            |pcm| {
+                chunks.push((stream_started.elapsed(), pcm.len()));
+                Ok(())
+            },
+        )
+        .expect("Streaming inference failed");
+    assert!(
+        !chunks.is_empty(),
+        "stream must emit at least one PCM chunk"
+    );
+    assert!(
+        chunks.iter().map(|(_, samples)| samples).sum::<usize>() > 4_800,
+        "stream must emit audible PCM"
+    );
+    println!(
+        "Streaming TTFA: {:.0}ms, chunks: {}",
+        chunks[0].0.as_secs_f64() * 1000.0,
+        chunks.len()
+    );
 }

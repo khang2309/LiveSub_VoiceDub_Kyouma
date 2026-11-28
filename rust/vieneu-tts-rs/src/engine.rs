@@ -1,12 +1,13 @@
-use std::io::Cursor;
-use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
 use ndarray::{Array1, Array2, Array3, Array4, ArrayView1, Axis};
 use ort::ep::CUDA;
 use ort::session::builder::GraphOptimizationLevel;
 use ort::session::Session;
 use ort::value::Tensor;
 use rand::thread_rng;
+use std::io::Cursor;
+use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
 use tokenizers::Tokenizer;
 
 static SHARED_ORT_ENV: OnceLock<ort::environment::Environment> = OnceLock::new();
@@ -17,9 +18,7 @@ pub fn shared_ort_env() -> Result<ort::environment::Environment, VieneuError> {
     if let Some(env) = SHARED_ORT_ENV.get() {
         return Ok(env.clone());
     }
-    let env = ort::init()
-        .with_name("livesub-gpu")
-        .build()?;
+    let env = ort::init().with_name("livesub-gpu").build()?;
     let _ = SHARED_ORT_ENV.set(env.clone());
     Ok(SHARED_ORT_ENV.get().cloned().unwrap_or(env))
 }
@@ -41,13 +40,74 @@ pub const DEFAULT_STYLE_ID: i64 = 16;
 pub const NUM_LAYERS: usize = 12;
 
 const PAST_K_NAMES: [&str; 12] = [
-    "past_k_0", "past_k_1", "past_k_2", "past_k_3", "past_k_4", "past_k_5",
-    "past_k_6", "past_k_7", "past_k_8", "past_k_9", "past_k_10", "past_k_11",
+    "past_k_0",
+    "past_k_1",
+    "past_k_2",
+    "past_k_3",
+    "past_k_4",
+    "past_k_5",
+    "past_k_6",
+    "past_k_7",
+    "past_k_8",
+    "past_k_9",
+    "past_k_10",
+    "past_k_11",
 ];
 const PAST_V_NAMES: [&str; 12] = [
-    "past_v_0", "past_v_1", "past_v_2", "past_v_3", "past_v_4", "past_v_5",
-    "past_v_6", "past_v_7", "past_v_8", "past_v_9", "past_v_10", "past_v_11",
+    "past_v_0",
+    "past_v_1",
+    "past_v_2",
+    "past_v_3",
+    "past_v_4",
+    "past_v_5",
+    "past_v_6",
+    "past_v_7",
+    "past_v_8",
+    "past_v_9",
+    "past_v_10",
+    "past_v_11",
 ];
+
+const CODEC_TRANSFORMER_INPUTS: [&str; 4] = [
+    "transformer_offset_0",
+    "transformer_offset_1",
+    "transformer_offset_2",
+    "transformer_offset_3",
+];
+const CODEC_ATTN_CONTEXTS: [usize; 12] = [
+    500, 500, 500, 500, 800, 800, 1200, 1200, 1600, 1600, 1600, 1600,
+];
+const STREAM_LEAD_IN_FRAMES: usize = 4;
+const STREAM_MAX_CHUNK_FRAMES: usize = 25;
+
+struct CodecAttentionState {
+    offset: Array1<i32>,
+    keys: Array4<f32>,
+    values: Array4<f32>,
+    positions: Array2<i32>,
+}
+
+struct CodecStreamState {
+    transformer_offsets: Vec<Array1<i32>>,
+    attention: Vec<CodecAttentionState>,
+}
+
+impl CodecStreamState {
+    fn new() -> Self {
+        Self {
+            transformer_offsets: (0..4).map(|_| Array1::zeros(1)).collect(),
+            attention: CODEC_ATTN_CONTEXTS
+                .iter()
+                .map(|&context| CodecAttentionState {
+                    offset: Array1::zeros(1),
+                    keys: Array4::zeros((1, 4, context, 64)),
+                    values: Array4::zeros((1, 4, context, 64)),
+                    positions: Array2::from_elem((1, context), -1),
+                })
+                .collect(),
+        }
+    }
+}
 
 pub struct VieneuEngineConfig {
     pub onnx_dir: PathBuf,
@@ -95,7 +155,8 @@ fn resolve_vieneu_path(candidates: &[&str]) -> PathBuf {
 impl Default for VieneuEngineConfig {
     fn default() -> Self {
         let onnx_dir = resolve_vieneu_path(&["models/vieneu"]);
-        let codec_path = resolve_vieneu_path(&["models/moss_codec/moss_audio_tokenizer_decode_full.onnx"]);
+        let codec_path =
+            resolve_vieneu_path(&["models/moss_codec/moss_audio_tokenizer_decode_full.onnx"]);
         let heads_dir = resolve_vieneu_path(&["models/vieneu_heads"]);
         let dict_path = resolve_vieneu_path(&[
             "models/vieneu/sea_g2p.bin",
@@ -118,6 +179,7 @@ pub struct VieneuEngine {
     sess_dec: Mutex<Session>,
     sess_ac: Mutex<Session>,
     sess_codec: Mutex<Session>,
+    sess_codec_step: Option<Mutex<Session>>,
     tokenizer: Tokenizer,
     heads: VieneuHeads,
     voices: VoiceRegistry,
@@ -168,18 +230,36 @@ impl VieneuEngine {
             Err(cuda_err) => {
                 // Note: DirectML has high per-call dispatch overhead on autoregressive 1-token loops
                 // (~1,500 calls/sentence -> 5x slower than multi-core CPU). Only use CUDA or multi-core CPU here.
-                tracing::warn!("VieNeu CUDA EP unavailable ({}), using Multi-Core CPU...", cuda_err);
+                tracing::warn!(
+                    "VieNeu CUDA EP unavailable ({}), using Multi-Core CPU...",
+                    cuda_err
+                );
                 let s = create_session(&prefill_path, EpMode::Cpu)?;
                 (EpMode::Cpu, "CPU Multi-Core P-cores (CUDA DLLs absent)", s)
             }
         };
 
-        println!("🚀 VieNeu-TTS: Đang kích hoạt tăng tốc phần cứng -> {}", ep_name);
-        tracing::info!("Loading VieNeu-TTS models from {:?} ({})", config.onnx_dir, ep_name);
+        println!(
+            "🚀 VieNeu-TTS: Đang kích hoạt tăng tốc phần cứng -> {}",
+            ep_name
+        );
+        tracing::info!(
+            "Loading VieNeu-TTS models from {:?} ({})",
+            config.onnx_dir,
+            ep_name
+        );
 
         let sess_dec = create_session(&decode_path, ep_mode)?;
         let sess_ac = create_session(&acoustic_path, ep_mode)?;
         let sess_codec = create_session(&config.codec_onnx_path, ep_mode)?;
+        let codec_step_path = config
+            .codec_onnx_path
+            .parent()
+            .map(|dir| dir.join("moss_audio_tokenizer_decode_step.onnx"));
+        let sess_codec_step = codec_step_path
+            .filter(|path| path.exists())
+            .map(|path| create_session(&path, ep_mode).map(Mutex::new))
+            .transpose()?;
 
         let tokenizer = Tokenizer::from_file(&config.tokenizer_path)
             .map_err(|e| VieneuError::Tokenizer(e.to_string()))?;
@@ -194,6 +274,7 @@ impl VieneuEngine {
             sess_dec: Mutex::new(sess_dec),
             sess_ac: Mutex::new(sess_ac),
             sess_codec: Mutex::new(sess_codec),
+            sess_codec_step,
             tokenizer,
             heads,
             voices,
@@ -210,20 +291,111 @@ impl VieneuEngine {
     }
 
     pub fn infer(&self, text: &str, voice_query: &str) -> Result<Vec<u8>, VieneuError> {
-        let text = text.trim();
-        if text.is_empty() {
-            return Ok(Vec::new());
+        let mut frames = Vec::new();
+        self.generate_frames(text, voice_query, |frame, _eos| {
+            frames.push(frame);
+            Ok(())
+        })?;
+        self.decode_full_wav(&frames)
+    }
+
+    /// Streams one uninterrupted VieNeu utterance as 48 kHz mono PCM.
+    ///
+    /// Text is prefetched exactly once and every batch continues the same
+    /// autoregressive/KV-cache and codec state. Chunk boundaries are transport
+    /// boundaries only: they never reset speaker tone, rhythm, or prosody.
+    pub fn infer_stream<F>(
+        &self,
+        text: &str,
+        voice_query: &str,
+        mut emit: F,
+    ) -> Result<(), VieneuError>
+    where
+        F: FnMut(&[i16]) -> Result<(), VieneuError>,
+    {
+        if self.sess_codec_step.is_none() {
+            let wav = self.infer(text, voice_query)?;
+            let pcm = wav_pcm_s16le(&wav).ok_or_else(|| {
+                VieneuError::InvalidTensor("VieNeu fallback did not return PCM WAV".to_string())
+            })?;
+            return emit(&pcm);
         }
 
-        let (voice_name, preset) = self.voices.get_voice(voice_query).ok_or_else(|| {
-            VieneuError::VoiceNotFound(voice_query.to_string())
+        let mut codec_state = CodecStreamState::new();
+        let mut pending = Vec::<[i32; 16]>::with_capacity(STREAM_MAX_CHUNK_FRAMES);
+        let mut emitted_samples = 0usize;
+        let mut first_emit_at: Option<Instant> = None;
+
+        self.generate_frames(text, voice_query, |frame, eos| {
+            pending.push(frame);
+            let target = match first_emit_at {
+                None => STREAM_LEAD_IN_FRAMES,
+                Some(started) => {
+                    let lead = emitted_samples as f64 / SAMPLE_RATE as f64
+                        - started.elapsed().as_secs_f64();
+                    if lead < 0.20 {
+                        STREAM_LEAD_IN_FRAMES
+                    } else if lead < 0.55 {
+                        6
+                    } else if lead < 1.10 {
+                        8
+                    } else {
+                        STREAM_MAX_CHUNK_FRAMES
+                    }
+                }
+            };
+
+            if pending.len() >= target || eos {
+                let pcm = self.decode_stream_chunk(&pending, &mut codec_state)?;
+                pending.clear();
+                if !pcm.is_empty() {
+                    if first_emit_at.is_none() {
+                        first_emit_at = Some(Instant::now());
+                    }
+                    emitted_samples += pcm.len();
+                    emit(&pcm)?;
+                }
+            }
+            Ok(())
         })?;
 
-        tracing::info!("Synthesizing with VieNeu-TTS voice '{}' for: {}", voice_name, text);
+        if !pending.is_empty() {
+            let pcm = self.decode_stream_chunk(&pending, &mut codec_state)?;
+            if !pcm.is_empty() {
+                emit(&pcm)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn generate_frames<F>(
+        &self,
+        text: &str,
+        voice_query: &str,
+        mut on_frame: F,
+    ) -> Result<(), VieneuError>
+    where
+        F: FnMut([i32; 16], bool) -> Result<(), VieneuError>,
+    {
+        let text = text.trim();
+        if text.is_empty() {
+            return Ok(());
+        }
+
+        let (voice_name, preset) = self
+            .voices
+            .get_voice(voice_query)
+            .ok_or_else(|| VieneuError::VoiceNotFound(voice_query.to_string()))?;
+
+        tracing::info!(
+            "Synthesizing with VieNeu-TTS voice '{}' for: {}",
+            voice_name,
+            text
+        );
 
         let phonemes = self.phonemizer.phonemize(text);
         if phonemes.trim().is_empty() {
-            return Ok(Vec::new());
+            return Ok(());
         }
 
         let encoding = self
@@ -284,7 +456,12 @@ impl VieneuEngine {
                 let (shape, data) = outputs[1 + i].try_extract_tensor::<f32>()?;
                 let dims = shape.as_ref();
                 let arr = Array4::from_shape_vec(
-                    (dims[0] as usize, dims[1] as usize, dims[2] as usize, dims[3] as usize),
+                    (
+                        dims[0] as usize,
+                        dims[1] as usize,
+                        dims[2] as usize,
+                        dims[3] as usize,
+                    ),
                     data.to_vec(),
                 )
                 .map_err(|e| VieneuError::InvalidTensor(format!("past_k_{}: {}", i, e)))?;
@@ -294,7 +471,12 @@ impl VieneuEngine {
                 let (shape, data) = outputs[1 + NUM_LAYERS + i].try_extract_tensor::<f32>()?;
                 let dims = shape.as_ref();
                 let arr = Array4::from_shape_vec(
-                    (dims[0] as usize, dims[1] as usize, dims[2] as usize, dims[3] as usize),
+                    (
+                        dims[0] as usize,
+                        dims[1] as usize,
+                        dims[2] as usize,
+                        dims[3] as usize,
+                    ),
                     data.to_vec(),
                 )
                 .map_err(|e| VieneuError::InvalidTensor(format!("past_v_{}: {}", i, e)))?;
@@ -303,7 +485,9 @@ impl VieneuEngine {
             (last_h, pk, pv)
         };
 
-        let max_expected = (3.0 + (1.15 * phone_ids.len() as f32).ceil()).max(6.0).min(180.0) as usize;
+        let max_expected = (3.0 + (1.15 * phone_ids.len() as f32).ceil())
+            .max(6.0)
+            .min(180.0) as usize;
         let max_frames = max_expected;
 
         let temperature = 0.8f32;
@@ -313,7 +497,7 @@ impl VieneuEngine {
 
         let mut rng = thread_rng();
         let mut history = RepetitionHistory::new(16, DEFAULT_REP_WINDOW);
-        let mut frames: Vec<[i32; 16]> = Vec::with_capacity(max_frames);
+        let mut generated_frames = 0usize;
 
         let mut ac_sess = self.sess_ac.lock().unwrap();
         let mut dec_sess = self.sess_dec.lock().unwrap();
@@ -356,7 +540,12 @@ impl VieneuEngine {
                 let (s1, d1) = ac_out[1].try_extract_tensor::<f32>()?;
                 let dims1 = s1.as_ref();
                 let pk = Array4::from_shape_vec(
-                    (dims1[0] as usize, dims1[1] as usize, dims1[2] as usize, dims1[3] as usize),
+                    (
+                        dims1[0] as usize,
+                        dims1[1] as usize,
+                        dims1[2] as usize,
+                        dims1[3] as usize,
+                    ),
                     d1.to_vec(),
                 )
                 .map_err(|e| VieneuError::InvalidTensor(e.to_string()))?;
@@ -364,7 +553,12 @@ impl VieneuEngine {
                 let (s2, d2) = ac_out[2].try_extract_tensor::<f32>()?;
                 let dims2 = s2.as_ref();
                 let pv = Array4::from_shape_vec(
-                    (dims2[0] as usize, dims2[1] as usize, dims2[2] as usize, dims2[3] as usize),
+                    (
+                        dims2[0] as usize,
+                        dims2[1] as usize,
+                        dims2[2] as usize,
+                        dims2[3] as usize,
+                    ),
                     d2.to_vec(),
                 )
                 .map_err(|e| VieneuError::InvalidTensor(e.to_string()))?;
@@ -416,7 +610,12 @@ impl VieneuEngine {
                     let (s1, d1) = out_ch[1].try_extract_tensor::<f32>()?;
                     let dims1 = s1.as_ref();
                     let pk = Array4::from_shape_vec(
-                        (dims1[0] as usize, dims1[1] as usize, dims1[2] as usize, dims1[3] as usize),
+                        (
+                            dims1[0] as usize,
+                            dims1[1] as usize,
+                            dims1[2] as usize,
+                            dims1[3] as usize,
+                        ),
                         d1.to_vec(),
                     )
                     .map_err(|e| VieneuError::InvalidTensor(e.to_string()))?;
@@ -424,7 +623,12 @@ impl VieneuEngine {
                     let (s2, d2) = out_ch[2].try_extract_tensor::<f32>()?;
                     let dims2 = s2.as_ref();
                     let pv = Array4::from_shape_vec(
-                        (dims2[0] as usize, dims2[1] as usize, dims2[2] as usize, dims2[3] as usize),
+                        (
+                            dims2[0] as usize,
+                            dims2[1] as usize,
+                            dims2[2] as usize,
+                            dims2[3] as usize,
+                        ),
                         d2.to_vec(),
                     )
                     .map_err(|e| VieneuError::InvalidTensor(e.to_string()))?;
@@ -469,13 +673,15 @@ impl VieneuEngine {
             }
 
             let eos = best_text_idx as i64 == EOS_SPEECH
-                || (t >= min_speech_frames && text_logits[EOS_SPEECH as usize] >= best_text_val - 1.35);
+                || (t >= min_speech_frames
+                    && text_logits[EOS_SPEECH as usize] >= best_text_val - 1.35);
 
             let mut frame_i32 = [0i32; 16];
             for k in 0..16 {
                 frame_i32[k] = current_codes[k] as i32;
             }
-            frames.push(frame_i32);
+            generated_frames += 1;
+            on_frame(frame_i32, eos)?;
 
             if eos {
                 break;
@@ -515,7 +721,12 @@ impl VieneuEngine {
                 let (s, d) = dec_out[1 + i].try_extract_tensor::<f32>()?;
                 let dims = s.as_ref();
                 past_k[i] = Array4::from_shape_vec(
-                    (dims[0] as usize, dims[1] as usize, dims[2] as usize, dims[3] as usize),
+                    (
+                        dims[0] as usize,
+                        dims[1] as usize,
+                        dims[2] as usize,
+                        dims[3] as usize,
+                    ),
                     d.to_vec(),
                 )
                 .map_err(|e| VieneuError::InvalidTensor(e.to_string()))?;
@@ -524,19 +735,32 @@ impl VieneuEngine {
                 let (s, d) = dec_out[1 + NUM_LAYERS + i].try_extract_tensor::<f32>()?;
                 let dims = s.as_ref();
                 past_v[i] = Array4::from_shape_vec(
-                    (dims[0] as usize, dims[1] as usize, dims[2] as usize, dims[3] as usize),
+                    (
+                        dims[0] as usize,
+                        dims[1] as usize,
+                        dims[2] as usize,
+                        dims[3] as usize,
+                    ),
                     d.to_vec(),
                 )
                 .map_err(|e| VieneuError::InvalidTensor(e.to_string()))?;
             }
         }
 
-        if frames.is_empty() {
+        if generated_frames == 0 {
             return Err(VieneuError::EmptyAudio);
         }
 
         drop(ac_sess);
         drop(dec_sess);
+
+        Ok(())
+    }
+
+    fn decode_full_wav(&self, frames: &[[i32; 16]]) -> Result<Vec<u8>, VieneuError> {
+        if frames.is_empty() {
+            return Err(VieneuError::EmptyAudio);
+        }
 
         // MOSS Codec Decode
         let n_frames = frames.len();
@@ -573,13 +797,15 @@ impl VieneuEngine {
         if mono_waveform.len() > 64 {
             let fade_in_samples = (SAMPLE_RATE as usize * 10 / 1000).min(mono_waveform.len() / 4);
             for i in 0..fade_in_samples {
-                let factor = 0.5 * (1.0 - (std::f32::consts::PI * i as f32 / fade_in_samples as f32).cos());
+                let factor =
+                    0.5 * (1.0 - (std::f32::consts::PI * i as f32 / fade_in_samples as f32).cos());
                 mono_waveform[i] *= factor;
             }
             let fade_out_samples = (SAMPLE_RATE as usize * 15 / 1000).min(mono_waveform.len() / 4);
             let len = mono_waveform.len();
             for i in 0..fade_out_samples {
-                let factor = 0.5 * (1.0 - (std::f32::consts::PI * i as f32 / fade_out_samples as f32).cos());
+                let factor =
+                    0.5 * (1.0 - (std::f32::consts::PI * i as f32 / fade_out_samples as f32).cos());
                 mono_waveform[len - 1 - i] *= factor;
             }
         }
@@ -600,4 +826,155 @@ impl VieneuEngine {
 
         Ok(cursor.into_inner())
     }
+
+    fn decode_stream_chunk(
+        &self,
+        frames: &[[i32; 16]],
+        state: &mut CodecStreamState,
+    ) -> Result<Vec<i16>, VieneuError> {
+        if frames.is_empty() {
+            return Ok(Vec::new());
+        }
+        let Some(codec_mutex) = &self.sess_codec_step else {
+            return Err(VieneuError::InvalidTensor(
+                "MOSS streaming codec session is unavailable".to_string(),
+            ));
+        };
+
+        let mut codes = Array3::<i32>::zeros((1, frames.len(), 16));
+        for (frame_idx, frame) in frames.iter().enumerate() {
+            for channel in 0..16 {
+                codes[[0, frame_idx, channel]] = frame[channel];
+            }
+        }
+        let lengths = Array1::from_vec(vec![frames.len() as i32]);
+        let mut inputs = ort::inputs![
+            "audio_codes" => Tensor::from_array(codes)?,
+            "audio_code_lengths" => Tensor::from_array(lengths)?,
+        ];
+        for (index, name) in CODEC_TRANSFORMER_INPUTS.iter().enumerate() {
+            inputs.push((
+                (*name).into(),
+                Tensor::from_array(state.transformer_offsets[index].clone())?.into(),
+            ));
+        }
+        for (index, cache) in state.attention.iter().enumerate() {
+            inputs.push((
+                format!("attn_offset_{index}").into(),
+                Tensor::from_array(cache.offset.clone())?.into(),
+            ));
+            inputs.push((
+                format!("attn_cached_keys_{index}").into(),
+                Tensor::from_array(cache.keys.clone())?.into(),
+            ));
+            inputs.push((
+                format!("attn_cached_values_{index}").into(),
+                Tensor::from_array(cache.values.clone())?.into(),
+            ));
+            inputs.push((
+                format!("attn_cached_positions_{index}").into(),
+                Tensor::from_array(cache.positions.clone())?.into(),
+            ));
+        }
+
+        let mut codec = codec_mutex
+            .lock()
+            .map_err(|_| VieneuError::Ort("streaming codec mutex poisoned".to_string()))?;
+        let outputs = codec.run(inputs)?;
+
+        let (audio_shape, audio) = outputs[0].try_extract_tensor::<f32>()?;
+        let (_, audio_lengths) = outputs[1].try_extract_tensor::<i32>()?;
+        let dims = audio_shape.as_ref();
+        if dims.len() != 3 || dims[1] < 1 || audio_lengths.is_empty() {
+            return Err(VieneuError::InvalidTensor(format!(
+                "unexpected streaming codec audio shape: {dims:?}"
+            )));
+        }
+        let available = dims[2] as usize;
+        let sample_count = (audio_lengths[0].max(0) as usize).min(available);
+        let channel_count = dims[1] as usize;
+        let mut pcm = Vec::with_capacity(sample_count);
+        for sample in 0..sample_count {
+            let mut mixed = 0.0f32;
+            for channel in 0..channel_count {
+                mixed += audio[channel * available + sample];
+            }
+            mixed /= channel_count as f32;
+            pcm.push((mixed.clamp(-1.0, 1.0) * 32767.0) as i16);
+        }
+
+        let mut output_index = 2usize;
+        for transformer in &mut state.transformer_offsets {
+            let (_, data) = outputs[output_index].try_extract_tensor::<i32>()?;
+            *transformer = Array1::from_vec(data.to_vec());
+            output_index += 1;
+        }
+        for cache in &mut state.attention {
+            let (_, offset) = outputs[output_index].try_extract_tensor::<i32>()?;
+            cache.offset = Array1::from_vec(offset.to_vec());
+            output_index += 1;
+
+            let (shape, data) = outputs[output_index].try_extract_tensor::<f32>()?;
+            let dims = shape.as_ref();
+            cache.keys = Array4::from_shape_vec(
+                (
+                    dims[0] as usize,
+                    dims[1] as usize,
+                    dims[2] as usize,
+                    dims[3] as usize,
+                ),
+                data.to_vec(),
+            )
+            .map_err(|e| VieneuError::InvalidTensor(e.to_string()))?;
+            output_index += 1;
+
+            let (shape, data) = outputs[output_index].try_extract_tensor::<f32>()?;
+            let dims = shape.as_ref();
+            cache.values = Array4::from_shape_vec(
+                (
+                    dims[0] as usize,
+                    dims[1] as usize,
+                    dims[2] as usize,
+                    dims[3] as usize,
+                ),
+                data.to_vec(),
+            )
+            .map_err(|e| VieneuError::InvalidTensor(e.to_string()))?;
+            output_index += 1;
+
+            let (shape, data) = outputs[output_index].try_extract_tensor::<i32>()?;
+            let dims = shape.as_ref();
+            cache.positions =
+                Array2::from_shape_vec((dims[0] as usize, dims[1] as usize), data.to_vec())
+                    .map_err(|e| VieneuError::InvalidTensor(e.to_string()))?;
+            output_index += 1;
+        }
+
+        Ok(pcm)
+    }
+}
+
+fn wav_pcm_s16le(wav: &[u8]) -> Option<Vec<i16>> {
+    if wav.len() < 12 || &wav[0..4] != b"RIFF" || &wav[8..12] != b"WAVE" {
+        return None;
+    }
+    let mut offset = 12usize;
+    while offset.checked_add(8)? <= wav.len() {
+        let size = u32::from_le_bytes(wav[offset + 4..offset + 8].try_into().ok()?) as usize;
+        let data_start = offset + 8;
+        let data_end = data_start.checked_add(size)?;
+        if data_end > wav.len() {
+            return None;
+        }
+        if &wav[offset..offset + 4] == b"data" {
+            return Some(
+                wav[data_start..data_end]
+                    .chunks_exact(2)
+                    .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]))
+                    .collect(),
+            );
+        }
+        offset = data_end + (size & 1);
+    }
+    None
 }

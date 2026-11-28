@@ -145,6 +145,8 @@ pub async fn run_server(mut config: AppConfig) {
         // four-line throughput ~34%; three/four only worsen tail latency.
         tts_sem: Arc::new(tokio::sync::Semaphore::new(2)),
         tts_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        tts_stream_requests: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        tts_last_first_chunk_us: Arc::new(std::sync::atomic::AtomicU64::new(0)),
     };
 
     let ocr_warmup = state.ocr_pool.vietnamese.clone();

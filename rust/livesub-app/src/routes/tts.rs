@@ -3,7 +3,7 @@ use crate::{
     state::AppState,
 };
 use axum::{
-    body::Body,
+    body::{Body, Bytes},
     extract::State,
     http::{header, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
@@ -11,7 +11,11 @@ use axum::{
 };
 use base64::Engine;
 use serde::Deserialize;
+use std::convert::Infallible;
+use std::io::{Error as IoError, ErrorKind};
 use std::sync::atomic::Ordering;
+use tokio_stream::wrappers::ReceiverStream;
+use vieneu_tts_rs::VieneuError;
 
 #[derive(Deserialize)]
 pub struct TtsRequest {
@@ -79,11 +83,72 @@ pub async fn api_tts_stream(
         return synthesize_tts(&state, &target_text, Some(selected_voice)).await;
     }
 
-    let Some(wav) = synthesize_tts_bytes(&state, &target_text, Some(selected_voice)).await else {
-        return (StatusCode::BAD_GATEWAY, "TTS engine did not produce audio").into_response();
+    let cache_key = format!("tts:{}:{}", selected_voice, target_text);
+    if let Ok(cache) = state.audio_cache.read() {
+        if let Some(wav) = cache.get(&cache_key) {
+            let pcm = extract_wav_pcm_s16le(wav).unwrap_or_else(|| wav.clone());
+            return pcm_stream_response(Body::from(pcm), "hit");
+        }
+    }
+
+    let Ok(permit) = state.tts_sem.clone().acquire_owned().await else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "TTS engine is shutting down",
+        )
+            .into_response();
     };
-    let pcm = extract_wav_pcm_s16le(&wav).unwrap_or(wav);
-    let mut response = pcm.into_response();
+    let engine = state.vieneu.clone();
+    let audio_cache = state.audio_cache.clone();
+    let stream_requests = state.tts_stream_requests.clone();
+    let last_first_chunk_us = state.tts_last_first_chunk_us.clone();
+    let text = target_text;
+    let voice = selected_voice.replace("vieneu:", "");
+    let (sender, receiver) = tokio::sync::mpsc::channel::<Result<Bytes, Infallible>>(4);
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        stream_requests.fetch_add(1, Ordering::Relaxed);
+        let started_at = std::time::Instant::now();
+        let mut first_chunk = true;
+        let mut full_pcm = Vec::new();
+        let result = engine.infer_stream(&text, &voice, |samples| {
+            if first_chunk {
+                last_first_chunk_us.store(
+                    started_at.elapsed().as_micros().min(u64::MAX as u128) as u64,
+                    Ordering::Relaxed,
+                );
+                first_chunk = false;
+            }
+            let mut bytes = Vec::with_capacity(samples.len() * 2);
+            for sample in samples {
+                bytes.extend_from_slice(&sample.to_le_bytes());
+            }
+            full_pcm.extend_from_slice(&bytes);
+            sender.blocking_send(Ok(Bytes::from(bytes))).map_err(|_| {
+                VieneuError::Io(IoError::new(ErrorKind::BrokenPipe, "TTS stream closed"))
+            })
+        });
+        if let Err(error) = result {
+            if !matches!(&error, VieneuError::Io(io) if io.kind() == ErrorKind::BrokenPipe) {
+                eprintln!("VieNeu streaming synthesis failed: {error}");
+            }
+        } else if !full_pcm.is_empty() {
+            if let Ok(mut cache) = audio_cache.write() {
+                if cache.len() >= 512 {
+                    if let Some(oldest_key) = cache.keys().next().cloned() {
+                        cache.remove(&oldest_key);
+                    }
+                }
+                cache.insert(cache_key, pcm_s16le_to_wav(&full_pcm));
+            }
+        }
+    });
+
+    pcm_stream_response(Body::from_stream(ReceiverStream::new(receiver)), "miss")
+}
+
+fn pcm_stream_response(body: Body, cache: &'static str) -> Response {
+    let mut response = body.into_response();
     let headers = response.headers_mut();
     headers.insert(
         header::CONTENT_TYPE,
@@ -93,6 +158,8 @@ pub async fn api_tts_stream(
     headers.insert("x-audio-sample-rate", HeaderValue::from_static("48000"));
     headers.insert("x-audio-channels", HeaderValue::from_static("1"));
     headers.insert("x-safe-playback-rate", HeaderValue::from_static("2.0"));
+    headers.insert("x-tts-streaming", HeaderValue::from_static("1"));
+    headers.insert("x-tts-cache", HeaderValue::from_static(cache));
     response
 }
 
@@ -136,9 +203,28 @@ fn extract_wav_pcm_s16le(wav: &[u8]) -> Option<Vec<u8>> {
     None
 }
 
+fn pcm_s16le_to_wav(pcm: &[u8]) -> Vec<u8> {
+    let data_len = pcm.len().min(u32::MAX as usize - 36) as u32;
+    let mut wav = Vec::with_capacity(44 + data_len as usize);
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + data_len).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&48_000u32.to_le_bytes());
+    wav.extend_from_slice(&96_000u32.to_le_bytes());
+    wav.extend_from_slice(&2u16.to_le_bytes());
+    wav.extend_from_slice(&16u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data_len.to_le_bytes());
+    wav.extend_from_slice(&pcm[..data_len as usize]);
+    wav
+}
+
 #[cfg(test)]
 mod tests {
-    use super::extract_wav_pcm_s16le;
+    use super::{extract_wav_pcm_s16le, pcm_s16le_to_wav};
 
     #[test]
     fn extracts_pcm_data_from_riff_without_audio_transcoding() {
@@ -158,6 +244,13 @@ mod tests {
     #[test]
     fn rejects_non_wav_payloads() {
         assert_eq!(extract_wav_pcm_s16le(b"ID3 mp3"), None);
+    }
+
+    #[test]
+    fn streaming_pcm_cache_round_trips_as_wav() {
+        let pcm = vec![1, 2, 3, 4, 5, 6];
+        let wav = pcm_s16le_to_wav(&pcm);
+        assert_eq!(extract_wav_pcm_s16le(&wav), Some(pcm));
     }
 }
 

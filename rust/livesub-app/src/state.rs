@@ -93,4 +93,6 @@ pub struct AppState {
     pub _whisper_en_child: Arc<Mutex<Option<Child>>>,
     pub tts_sem: Arc<tokio::sync::Semaphore>,
     pub tts_generation: Arc<AtomicU64>,
+    pub tts_stream_requests: Arc<AtomicU64>,
+    pub tts_last_first_chunk_us: Arc<AtomicU64>,
 }

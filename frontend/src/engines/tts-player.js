@@ -5,8 +5,6 @@ import {
   playEdgeMp3Stream
 } from './tts-providers/edge-provider.js';
 import {
-  getVieNeuPcmMetadata,
-  isVieNeuPcmResponse,
   isVieNeuVoice
 } from './tts-providers/vieneu-provider.js';
 
@@ -383,45 +381,17 @@ export default {
   splitSentenceIntoClauses(text) {
     const raw = String(text || '').trim();
     if (!raw) return [];
-
-    // Keep normal subtitle sentences intact, but bound pathological long lines.
-    // VieNeu is autoregressive and the current API returns a complete WAV, so an
-    // unbounded line makes time-to-first-audio grow with the whole sentence.
-    const splitLongSentence = (sentence, preferredMax = 72, hardMax = 92) => {
-      const chunks = [];
-      let remaining = sentence.trim();
-      while (remaining.length > hardMax) {
-        const windowText = remaining.slice(0, hardMax + 1);
-        let cut = -1;
-        const boundary = /[,;:…–—]\s+/gu;
-        for (const match of windowText.matchAll(boundary)) {
-          const candidate = match.index + match[0].length;
-          if (candidate >= 36 && candidate <= hardMax) cut = candidate;
-        }
-        if (cut < 0) {
-          const preferredSpace = windowText.lastIndexOf(' ', preferredMax);
-          const hardSpace = windowText.lastIndexOf(' ', hardMax);
-          cut = preferredSpace >= 48 ? preferredSpace : hardSpace;
-        }
-        if (cut < 36) cut = hardMax;
-        chunks.push(remaining.slice(0, cut).trim());
-        remaining = remaining.slice(cut).trim();
-      }
-      if (remaining) chunks.push(remaining);
-      return chunks;
-    };
-
-    // Visual rows are layout, not sentence boundaries. Merge them before
-    // sentence analysis so a two-line caption remains one natural utterance.
-    const rawLines = [raw.split(/[\r\n]+/).map(s => s.trim()).filter(Boolean).join(' ')];
-    const result = [];
-    for (const line of rawLines) {
-      const sents = line.split(/(?<=[.!?…])\s+/).map(s => s.trim()).filter(Boolean);
-      for (const sent of sents) {
-        result.push(...splitLongSentence(sent));
-      }
-    }
-    return result.length > 0 ? result : [raw];
+    // Newlines inside one subtitle cue are visual layout only. VieNeu now
+    // streams one persistent autoregressive + codec session, so keep even very
+    // long cues intact: transport chunks must never become prosody boundaries.
+    const utterance = raw
+      .split(/[\r\n]+/)
+      .map(s => s.trim())
+      .filter(Boolean)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return utterance ? [utterance] : [];
   },
 
   enqueueLiveDubbing(text, historyId, sourceText = '', capturedAt = null, finalizedAt = null, serverTimings = null, originalDuration = 0, source = 'unknown', onStart = null) {
@@ -429,12 +399,10 @@ export default {
     if (!speakableText || !this.isDubbingEnabled) return Promise.resolve();
 
     const effectiveVoice = this.getEffectiveVoice();
-    // Edge streams long MP3 utterances before synthesis completes, so keeping
-    // the complete sentence preserves context and prosody. VieNeu currently
-    // emits audio after its codec pass, so bounded clauses reduce its TTFA.
-    const clauses = isEdgeVoice(effectiveVoice)
-      ? [speakableText]
-      : this.splitSentenceIntoClauses(speakableText);
+    // Both providers stream a complete utterance. Transport chunks are never
+    // sentence boundaries, so short hesitations and long dramatic lines retain
+    // their authored timing and prosody.
+    const clauses = this.splitSentenceIntoClauses(speakableText);
     if (clauses.length > 1) {
       const totalLen = speakableText.length;
       for (let i = 0; i < clauses.length; i++) {
@@ -504,9 +472,9 @@ export default {
     if (isEdgeVoice(effectiveVoice)) {
       this.prefetchLiveTts(text, effectiveVoice);
     } else if (isVieNeuVoice(effectiveVoice) && this.isProcessingLiveDubbing) {
-      // VieNeu returns a complete WAV, so hide generation for exactly one next
-      // OCR cue under current playback. More concurrent requests only pile up
-      // behind the engine's ONNX session mutexes and make freshness worse.
+      // Keep exactly one VieNeu cue warm. The active cue now streams from the
+      // same autoregressive session; extra speculative GPU jobs would increase
+      // p95 latency and risk starving that stream.
       const prefix = `${effectiveVoice}:::`;
       const alreadyPrefetchingVieNeu = this.liveTtsPrefetch
         && Array.from(this.liveTtsPrefetch.keys()).some(key => key.startsWith(prefix));
@@ -900,19 +868,6 @@ export default {
       }
       if (!prefetchedData && (!response || !response.ok)) {
         throw new Error(`TTS stream HTTP ${response ? response.status : 'network error'}`);
-      }
-      // VieNeu finishes its codec pass before HTTP headers are emitted. The
-      // payload is therefore already complete: use one lossless PCM buffer
-      // instead of replaying arbitrary transport chunks that may sound jerky.
-      if (response && isVieNeuPcmResponse(response)) {
-        const metadata = getVieNeuPcmMetadata(response);
-        const pcmBuffer = await response.arrayBuffer();
-        prefetchedData = {
-          pcmBytes: new Uint8Array(pcmBuffer),
-          sampleRate: metadata.sampleRate,
-          serverRateCap: metadata.serverRateCap
-        };
-        response = null;
       }
       const cType = response ? (response.headers.get('content-type') || '') : '';
       if (response && isStreamingEdgeResponse(response) && canUseEdgeMediaSource()) {

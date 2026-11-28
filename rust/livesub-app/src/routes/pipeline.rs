@@ -1,6 +1,7 @@
 use crate::state::AppState;
 use axum::{extract::State, Json};
 use serde::Deserialize;
+use std::sync::atomic::Ordering;
 
 #[derive(Deserialize)]
 pub struct ControlKeyPayload {
@@ -40,6 +41,9 @@ pub async fn api_health() -> Json<serde_json::Value> {
 pub async fn api_tts_status(State(state): State<AppState>) -> Json<serde_json::Value> {
     let voices = state.vieneu.list_voices();
     let default_voice = state.vieneu.default_voice();
+    let first_chunk_us = state.tts_last_first_chunk_us.load(Ordering::Relaxed);
+    let first_chunk_ms = (first_chunk_us > 0).then_some(first_chunk_us as f64 / 1000.0);
+    let stream_requests = state.tts_stream_requests.load(Ordering::Relaxed);
 
     Json(serde_json::json!({
         "status": "ready",
@@ -53,17 +57,20 @@ pub async fn api_tts_status(State(state): State<AppState>) -> Json<serde_json::V
             "selected": "vieneu-native",
             "google_ms": 0.0,
             "edge_ms": 0.0,
-            "vieneu_ttfa_ms": 75.0,
-            "vieneu_rtf": 0.15
+            "vieneu_ttfa_ms": first_chunk_ms,
+            "vieneu_rtf": null
         },
         "streaming": {
-            "requests": 0,
-            "last_first_chunk_ms": 65.0
+            "requests": stream_requests,
+            "last_first_chunk_ms": first_chunk_ms
         }
     }))
 }
 
 pub async fn api_pipeline_status(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let first_chunk_us = state.tts_last_first_chunk_us.load(Ordering::Relaxed);
+    let first_chunk_ms = (first_chunk_us > 0).then_some(first_chunk_us as f64 / 1000.0);
+    let stream_requests = state.tts_stream_requests.load(Ordering::Relaxed);
     let ocr_vi_ready = state.ocr_pool.vietnamese.is_some();
     let ocr_device = state
         .ocr_pool
@@ -125,12 +132,12 @@ pub async fn api_pipeline_status(State(state): State<AppState>) -> Json<serde_js
                 "selected": "vieneu-native",
                 "google_ms": 0.0,
                 "edge_ms": 0.0,
-                "vieneu_ttfa_ms": 75.0,
-                "vieneu_rtf": 0.15
+                "vieneu_ttfa_ms": first_chunk_ms,
+                "vieneu_rtf": null
             },
             "streaming": {
-                "requests": 0,
-                "last_first_chunk_ms": 65.0
+                "requests": stream_requests,
+                "last_first_chunk_ms": first_chunk_ms
             }
         },
         "ocr": {

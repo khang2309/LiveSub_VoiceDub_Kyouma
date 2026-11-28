@@ -20,15 +20,13 @@ test('two visual subtitle rows remain one spoken sentence', () => {
   assert.deepEqual(parts, ['first half of one sentence continues on the second visual row.']);
 });
 
-test('a very long two-row subtitle splits without losing any words', () => {
+test('a very long two-row subtitle remains one prosodic utterance', () => {
   const text = 'This deliberately long subtitle is visually wrapped across two rows but semantically remains one sentence with every word intact\nand it only splits when the VieNeu latency boundary truly requires another safe spoken clause.';
   const parts = ttsPlayer.splitSentenceIntoClauses(text);
-  assert.ok(parts.length > 1);
-  assert.ok(parts.every((part) => part.length <= 92));
-  assert.equal(parts.join(' '), text.replace(/\s+/g, ' ').trim());
+  assert.deepEqual(parts, [text.replace(/\s+/g, ' ').trim()]);
 });
 
-test('only pathological long subtitles are split and later clauses remain chained', async () => {
+test('VieNeu keeps a pathological long subtitle intact while native PCM streams', async () => {
   const queued = [];
   const studio = Object.assign({}, ttsPlayer, {
     isDubbingEnabled: true,
@@ -41,10 +39,26 @@ test('only pathological long subtitles are split and later clauses remain chaine
 
   await studio.enqueueLiveDubbing(text, 12, text, 10, 10, null, 0, 'ocr');
 
-  assert.ok(queued.length > 1);
+  assert.equal(queued.length, 1);
+  assert.equal(queued[0][0], text);
   assert.equal(queued[0][10], false);
-  assert.ok(queued.slice(1).every((args) => args[10] === true));
-  assert.ok(queued.every((args) => args[0].length <= 92));
+});
+
+test('a deliberate one-word hesitation is spoken immediately and never merged away', async () => {
+  const queued = [];
+  const studio = Object.assign({}, ttsPlayer, {
+    isDubbingEnabled: true,
+    sanitizeDubbingText: (text) => String(text || '').trim(),
+    getEffectiveVoice: () => 'vieneu:Trúc Ly',
+    enqueueSingleLiveDubbing: (...args) => queued.push(args),
+    drainLiveDubbingQueue: async () => {}
+  });
+
+  await studio.enqueueLiveDubbing('Nhưng...', 14, 'Nhưng...', 10, 10, null, 0, 'ocr');
+
+  assert.equal(queued.length, 1);
+  assert.equal(queued[0][0], 'Nhưng...');
+  assert.equal(queued[0][10], false);
 });
 
 test('Edge keeps a long subtitle intact to preserve context while streaming', async () => {
