@@ -148,15 +148,14 @@ export default {
     this._ytPrefetchTargetIdx = targetIdx;
     this._ytSequentialPrefetchCursor = targetIdx;
 
-    const target = this.ytSegments[targetIdx];
-    const targetIsNear = target && (target.start - curTime) <= 3.0;
-    const alreadyReady = this.audioPreCache.has(targetIdx);
-    const wasPlaying = this.ytPlayer.getPlayerState?.() === 1;
-    const shouldHold = wasPlaying && targetIsNear && !alreadyReady;
-    if (shouldHold) {
-      try { this.ytPlayer.pauseVideo(); } catch (_) {}
-      this.setSourceIntelligenceState('loading', 'Đang ưu tiên điểm vừa tua...', 'Tạo giọng câu tại vị trí mới trước rồi tự phát tiếp.');
-    }
+    // Seeking changes prefetch priority but never pauses an already-playing
+    // movie. Only the initial start gate may hold playback while the first
+    // voice buffer is prepared.
+    this.setSourceIntelligenceState(
+      'loading',
+      'Đang ưu tiên điểm vừa tua...',
+      'Video tiếp tục phát; giọng tại vị trí mới đang được tạo ưu tiên.'
+    );
 
     try {
       const translateTargets = this.ytSegments.slice(targetIdx, targetIdx + 2).filter(seg => seg && !seg.translated);
@@ -185,9 +184,6 @@ export default {
       this.lastYtTime = latestTime;
       this.lastYtTickWallClock = performance.now();
       this.prefetchUpcomingAudio(targetIdx + 2);
-      if (shouldHold && wasPlaying) {
-        try { this.ytPlayer.playVideo(); } catch (_) {}
-      }
       this.setSourceIntelligenceState('success', 'CC đã đồng bộ', 'Đã ưu tiên giọng tại vị trí vừa tua.');
     }
   },

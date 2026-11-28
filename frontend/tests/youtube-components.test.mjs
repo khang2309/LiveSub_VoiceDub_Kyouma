@@ -76,7 +76,7 @@ test('closing a YouTube session aborts and clears every prefetch queue', () => {
   assert.ok(studio.ttsRequestGeneration > 10);
 });
 
-test('seek cancels old work and prebuffers from the new CC position', async () => {
+test('seek cancels old work and prebuffers without pausing the movie', async () => {
   let paused = 0;
   let resumed = 0;
   let prebufferArgs = null;
@@ -112,8 +112,8 @@ test('seek cancels old work and prebuffers from the new CC position', async () =
   assert.equal(prebufferArgs[1], 2);
   assert.equal(studio._ytSequentialPrefetchCursor, 3);
   assert.equal(nextPrefetch, 5);
-  assert.equal(paused, 1);
-  assert.equal(resumed, 1);
+  assert.equal(paused, 0);
+  assert.equal(resumed, 0);
 });
 
 test('prefetch worker generates sequential batches through the end of CC', async () => {
