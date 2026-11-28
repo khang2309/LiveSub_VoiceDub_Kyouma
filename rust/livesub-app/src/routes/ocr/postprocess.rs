@@ -151,6 +151,18 @@ fn has_any_vietnamese_diacritic(text: &str) -> bool {
 /// The language model may restore completely unaccented sentences and repair invalid/confusable
 /// OCR syllables while preserving every valid Vietnamese syllable already recognized visually.
 pub fn preserve_recognized_tones(recognized: &str, restored: &str) -> String {
+    let vocalization_tokens = recognized
+        .to_lowercase()
+        .replace(|c: char| !c.is_alphabetic() && !c.is_whitespace(), " ")
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if !vocalization_tokens.is_empty()
+        && vocalization_tokens.len() <= 8
+        && vocalization_tokens.iter().all(|token| token == "ha" || token == "haha")
+    {
+        return recognized.to_owned();
+    }
     if !has_any_vietnamese_diacritic(recognized) {
         return restored.to_owned();
     }
@@ -212,6 +224,8 @@ mod tests {
         );
         assert_eq!(preserve_recognized_tones("mục ca", "mục cá"), "mục ca");
         assert_eq!(preserve_recognized_tones("có thể", "có thế"), "có thể");
+        assert_eq!(preserve_recognized_tones("Đúng", "Dừng"), "Đúng");
+        assert_eq!(preserve_recognized_tones("ha ha ha", "hả hả hả"), "ha ha ha");
     }
 
     #[test]

@@ -32,12 +32,24 @@ pub fn sanitize_dubbing_text(text: &str) -> String {
         .to_string()
 }
 
+fn is_written_laughter(text: &str) -> bool {
+    let normalized_text = text
+        .to_lowercase()
+        .replace(|c: char| !c.is_alphabetic() && !c.is_whitespace(), " ");
+    let normalized = normalized_text
+        .split_whitespace()
+        .collect::<Vec<_>>();
+    !normalized.is_empty()
+        && normalized.len() <= 8
+        && normalized.iter().all(|token| matches!(*token, "ha" | "haha"))
+}
+
 pub fn prepare_tts_text(state: &AppState, text: &str) -> Option<String> {
     let cleaned = sanitize_dubbing_text(text);
     if cleaned.is_empty() {
         return None;
     }
-    Some(if crate::state::get_re_vi().is_match(&cleaned) {
+    Some(if crate::state::get_re_vi().is_match(&cleaned) || is_written_laughter(&cleaned) {
         cleaned
     } else {
         state.ocr.restore_vietnamese(&cleaned)
@@ -46,7 +58,7 @@ pub fn prepare_tts_text(state: &AppState, text: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::sanitize_dubbing_text;
+    use super::{is_written_laughter, sanitize_dubbing_text};
 
     #[test]
     fn removes_non_speech_only_captions() {
@@ -61,6 +73,13 @@ mod tests {
             sanitize_dubbing_text("ra nhiều [âm nhạc] giả thuyết có thể xảy ra"),
             "ra nhiều giả thuyết có thể xảy ra"
         );
+    }
+
+    #[test]
+    fn never_adds_tones_to_written_laughter() {
+        assert!(is_written_laughter("ha ha ha"));
+        assert!(is_written_laughter("Ha! Ha! Ha!"));
+        assert!(!is_written_laughter("ha ha đi"));
     }
 }
 

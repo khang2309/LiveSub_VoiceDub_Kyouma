@@ -37,10 +37,9 @@ pub async fn api_translate(
 
     // Nếu nguồn chỉ định rõ là tiếng Việt:
     if norm == "vi" {
-        let restored = state.ocr.restore_vietnamese(raw);
         return Json(serde_json::json!({
             "original": raw,
-            "translated": restored,
+            "translated": raw,
             "source_lang": "vi",
             "target_lang": "vi"
         }));
@@ -50,7 +49,7 @@ pub async fn api_translate(
     let is_already_vi =
         norm == "auto" && get_re_vi().is_match(raw) && raw.split_whitespace().count() > 1;
     let translated = if is_already_vi {
-        state.ocr.restore_vietnamese(raw)
+        raw.to_owned()
     } else {
         // Nguồn là ngôn ngữ nước ngoài: Dịch trực tiếp sang tiếng Việt đầy đủ dấu
         fetch_online_translation_with_context(
