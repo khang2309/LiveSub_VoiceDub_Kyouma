@@ -1,10 +1,4 @@
 import {
-  canUseEdgeMediaSource,
-  isEdgeVoice,
-  isStreamingEdgeResponse,
-  playEdgeMp3Stream
-} from './tts-providers/edge-provider.js';
-import {
   isVieNeuVoice
 } from './tts-providers/vieneu-provider.js';
 
@@ -100,24 +94,6 @@ export default {
   getVoiceProfile(voiceName = null) {
     const rawVoice = voiceName || (this.voiceSelect ? this.voiceSelect.value : 'vieneu:Trúc Ly');
     const v = String(rawVoice).toLowerCase();
-
-    // Genuine Edge Neural AI Voices (Microsoft Studio - Native Human Vocals, No Pitch Shift Needed)
-    if (v.includes('namminh') || v === 'vi-vn-namminhneural') {
-      return {
-        id: 'namminh',
-        pitchFactor: 1.0,
-        eq: null,
-        highCut: null
-      };
-    }
-    if (v.includes('hoaimy') || v === 'vi-vn-hoaimyneural') {
-      return {
-        id: 'hoaimy',
-        pitchFactor: 1.0,
-        eq: null,
-        highCut: null
-      };
-    }
 
     // Thái Sơn: Deep masculine Southern baritone voice
     if (v.includes('thái sơn') || v.includes('thaison')) {
@@ -313,9 +289,6 @@ export default {
     const selectedVoice = this.voiceSelect.value;
     const voice = this.getEffectiveVoice();
     const sampleTexts = {
-      'edge:Hoài My': 'Xin chào, tôi là Hoài My, giọng đọc nữ nhẹ nhàng và truyền cảm của Microsoft Edge Neural.',
-      'edge:Nam Minh': 'Xin chào quý vị và các bạn, tôi là Nam Minh, giọng đọc nam trầm ấm của Microsoft Edge Neural.',
-      'auto-fast': 'Xin chào, đây là giọng đọc được hệ thống đo và chọn tự động theo tốc độ thực tế.',
       'vieneu:Trúc Ly': 'Xin chào, tôi là Trúc Ly từ mô hình VieNeu-TTS, phong cách nói tự nhiên và truyền cảm.',
       'vieneu:Thiện Minh': 'Chào bạn, tôi là Thiện Minh, giọng đọc kể chuyện truyền cảm của VieNeu-TTS.',
       'vieneu:Thùy Dung': 'Kính chào quý vị, đây là giọng đọc Thùy Dung miền Nam từ VieNeu-TTS.',
@@ -323,10 +296,6 @@ export default {
       'vieneu:Quang Sơn': 'Xin chào bà con, đây là giọng đọc Quang Sơn miền Trung của VieNeu-TTS.',
       'vieneu:Mai Anh': 'Bản tin hôm nay được truyền tải qua giọng đọc Mai Anh của VieNeu-TTS.',
       'vieneu:Adam bựa': 'Chào anh em nha, tôi là Adam, giọng đọc hài hước cực kỳ tự nhiên của VieNeu-TTS!',
-      'google-vi': 'Xin chào bạn, đây là giọng đọc tiếng Việt siêu tốc của Google, phản hồi không phẩy một giây.',
-      'vi-VN-HoaiMyNeural': 'Xin chào, tôi là Hoài My, giọng đọc nữ nhẹ nhàng và truyền cảm của Microsoft.',
-      'vi-VN-NamMinhNeural': 'Xin chào quý vị và các bạn, tôi là Nam Minh, giọng đọc nam trầm ấm và truyền cảm.',
-      'piper-vi': 'Xin chào, đây là giọng đọc ngoại tuyến cục bộ Piper chạy trên máy tính của bạn.'
     };
     const text = sampleTexts[selectedVoice] || sampleTexts[voice] || 'Xin chào, đây là giọng đọc tiếng Việt chất lượng cao.';
 
@@ -468,13 +437,7 @@ export default {
       onStart,
       isChained
     });
-    // Never prefetch the head item before the drain loop starts: awaiting that
-    // promise would buffer the whole Edge MP3 and defeat its true streaming
-    // fast path.  While another cue is already playing, however, Edge can
-    // synthesize the newly queued lookahead concurrently over the network.
-    if (isEdgeVoice(effectiveVoice) && this.isProcessingLiveDubbing) {
-      this.prefetchLiveTts(text, effectiveVoice);
-    } else if (isVieNeuVoice(effectiveVoice) && this.isProcessingLiveDubbing) {
+    if (isVieNeuVoice(effectiveVoice) && this.isProcessingLiveDubbing) {
       // Keep exactly one VieNeu cue warm. The active cue now streams from the
       // same autoregressive session; extra speculative GPU jobs would increase
       // p95 latency and risk starving that stream.
@@ -491,7 +454,7 @@ export default {
   },
 
   prefetchLiveTts(text, voice) {
-    if (!text || !voice || !(voice.startsWith('vieneu') || voice.startsWith('edge') || voice.startsWith('ms:'))) return;
+    if (!text || !voice || !voice.startsWith('vieneu')) return;
     if (!this.liveTtsPrefetch) this.liveTtsPrefetch = new Map();
     const key = `${voice}:::${text}`;
     if (this.liveTtsPrefetch.has(key)) return;
@@ -616,7 +579,7 @@ export default {
           const originalDuration = item.originalDuration || (item.finalizedAt && item.capturedAt ? Math.max(0, (item.finalizedAt - item.capturedAt) / 1000) : 0);
           const queueLagMs = item.enqueuedAt ? (performance.now() - item.enqueuedAt) : 0;
           const currentQueueDepth = this.liveDubbingQueue.length + 1;
-          if (item.voice.startsWith('vieneu') || item.voice.startsWith('edge') || item.voice.startsWith('ms:')) {
+          if (item.voice.startsWith('vieneu')) {
             await this.playStreamingTts(
               item.text,
               item.voice,
@@ -873,16 +836,6 @@ export default {
         throw new Error(`TTS stream HTTP ${response ? response.status : 'network error'}`);
       }
       const cType = response ? (response.headers.get('content-type') || '') : '';
-      if (response && isStreamingEdgeResponse(response) && canUseEdgeMediaSource()) {
-        const playbackRate = this.getSafeStreamingPlaybackRate(queueDepth, 2.0, originalDuration, text ? text.length : 0, queueLagMs);
-        await playEdgeMp3Stream(this, response, {
-          waitForEnd,
-          onStart,
-          playbackRate,
-          signal: controller.signal
-        });
-        return;
-      }
       if (cType.includes('audio/mpeg') || cType.includes('audio/mp3') || cType.includes('audio/wav')) {
         const audioBuf = await response.arrayBuffer();
         if (token && !this.isPlaybackCurrent(token)) return;
@@ -1121,18 +1074,6 @@ export default {
     if (this.streamingAbortController) {
       try { this.streamingAbortController.abort(); } catch (_) {}
       this.streamingAbortController = null;
-    }
-    if (this.currentEdgeStreamAudio) {
-      try {
-        this.currentEdgeStreamAudio.pause();
-        this.currentEdgeStreamAudio.removeAttribute('src');
-        this.currentEdgeStreamAudio.load();
-      } catch (_) {}
-      this.currentEdgeStreamAudio = null;
-    }
-    if (this.currentEdgeStreamUrl) {
-      try { URL.revokeObjectURL(this.currentEdgeStreamUrl); } catch (_) {}
-      this.currentEdgeStreamUrl = null;
     }
     const sourcesToStop = [];
     if (this.currentActiveAudioSource) {

@@ -1,5 +1,5 @@
 use crate::{
-    services::tts::{is_edge_voice, prepare_tts_text, synthesize_tts, synthesize_tts_bytes},
+    services::tts::{prepare_tts_text, synthesize_tts, synthesize_tts_bytes},
     state::AppState,
 };
 use axum::{
@@ -36,52 +36,6 @@ pub async fn api_tts_stream(
     let Some(target_text) = prepare_tts_text(&state, &req.text) else {
         return (StatusCode::BAD_REQUEST, "No speakable dialogue").into_response();
     };
-
-    if is_edge_voice(selected_voice) {
-        let voice_lower = selected_voice.to_lowercase();
-        let edge_voice = if voice_lower.contains("nam") {
-            "namminh"
-        } else {
-            "hoaimy"
-        };
-        let payload = serde_json::json!({ "text": target_text, "voice": edge_voice });
-        if let Ok(upstream) = state
-            .http_client
-            .post("http://127.0.0.1:3005/api/tts-stream")
-            .json(&payload)
-            .send()
-            .await
-        {
-            if upstream.status().is_success() {
-                let streaming = upstream
-                    .headers()
-                    .get("x-tts-streaming")
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or("1")
-                    .to_owned();
-                let cache = upstream
-                    .headers()
-                    .get("x-tts-cache")
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or("miss")
-                    .to_owned();
-                let mut response = Body::from_stream(upstream.bytes_stream()).into_response();
-                let headers = response.headers_mut();
-                headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("audio/mpeg"));
-                headers.insert("x-audio-format", HeaderValue::from_static("mp3"));
-                headers.insert("x-audio-sample-rate", HeaderValue::from_static("24000"));
-                headers.insert("x-audio-channels", HeaderValue::from_static("1"));
-                if let Ok(value) = HeaderValue::from_str(&streaming) {
-                    headers.insert("x-tts-streaming", value);
-                }
-                if let Ok(value) = HeaderValue::from_str(&cache) {
-                    headers.insert("x-tts-cache", value);
-                }
-                return response;
-            }
-        }
-        return synthesize_tts(&state, &target_text, Some(selected_voice)).await;
-    }
 
     let cache_key = format!("tts:{}:{}", selected_voice, target_text);
     if let Ok(cache) = state.audio_cache.read() {
@@ -278,11 +232,7 @@ pub async fn api_tts_batch(
         })
         .unwrap_or_default();
 
-    let edge_batch = voice.map(is_edge_voice).unwrap_or(false);
-
-    // Edge requests are remote/network-bound, so two-way batching improves
-    // lookahead throughput without delaying the local realtime engine. VieNeu
-    // background prefetch deliberately uses one GPU slot at a time: the other
+    // Background prefetch deliberately uses one GPU slot at a time: the other
     // slot stays available for OCR/Whisper dialogue immediately after a source
     // switch instead of being occupied by stale YouTube CC generation.
     let mut generated = Vec::with_capacity(texts.len());
@@ -290,20 +240,11 @@ pub async fn api_tts_batch(
         if state.tts_generation.load(Ordering::Acquire) != generation {
             break;
         }
-        if edge_batch && chunk.len() == 2 {
-            let (first, second) = tokio::join!(
-                synthesize_tts_bytes(&state, &chunk[0], voice),
-                synthesize_tts_bytes(&state, &chunk[1], voice)
-            );
-            generated.push(first);
-            generated.push(second);
-        } else {
-            for text in chunk {
-                if state.tts_generation.load(Ordering::Acquire) != generation {
-                    break;
-                }
-                generated.push(synthesize_tts_bytes(&state, text, voice).await);
+        for text in chunk {
+            if state.tts_generation.load(Ordering::Acquire) != generation {
+                break;
             }
+            generated.push(synthesize_tts_bytes(&state, text, voice).await);
         }
         if state.tts_generation.load(Ordering::Acquire) != generation {
             break;

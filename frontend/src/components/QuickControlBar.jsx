@@ -71,10 +71,6 @@ export default function QuickControlBar({
             value={voice}
             onChange={(e) => onVoiceChange(e.target.value)}
           >
-            <optgroup label="⚡ Microsoft Edge-TTS Neural (~200ms - Siêu Tốc Khuyên Dùng)">
-              <option value="edge:Hoài My">⚡ Hoài My (Nữ Truyền Cảm - Siêu Tốc)</option>
-              <option value="edge:Nam Minh">⚡ Nam Minh (Nam Trầm Ấm - Siêu Tốc)</option>
-            </optgroup>
             <optgroup label="🎙️ VieNeu-TTS Neural (100% Offline GPU CUDA)">
               <option value="vieneu:Trúc Ly">🎙️ Trúc Ly (Nữ Dịu Dàng - GPU)</option>
               <option value="vieneu:Hải Đăng">🎙️ Hải Đăng (Nam Trầm Ấm - GPU)</option>

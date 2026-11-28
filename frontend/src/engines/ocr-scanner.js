@@ -1,5 +1,41 @@
 // LiveSub Component: ocr-scanner
 export default {
+  getOcrCaptureBounds(width, height) {
+    let x = 0;
+    let y = 0;
+    let captureWidth = width;
+    let captureHeight = height;
+    if (this._cropOcrToEmbeddedVideo && this.webVideoContainer && typeof window !== 'undefined') {
+      const frame = this.webVideoContainer.querySelector('.video-element-container');
+      const rect = frame?.getBoundingClientRect?.();
+      if (rect && rect.width > 120 && rect.height > 80 && window.innerWidth > 0 && window.innerHeight > 0) {
+        const scaleX = width / window.innerWidth;
+        const scaleY = height / window.innerHeight;
+        x = Math.max(0, Math.floor(rect.left * scaleX));
+        y = Math.max(0, Math.floor(rect.top * scaleY));
+        captureWidth = Math.max(1, Math.min(width - x, Math.ceil(rect.width * scaleX)));
+        captureHeight = Math.max(1, Math.min(height - y, Math.ceil(rect.height * scaleY)));
+      }
+    }
+    return { x, y, width: captureWidth, height: captureHeight };
+  },
+
+  async captureOcrRegionPreview() {
+    const video = this.ocrVideo;
+    const width = video?.videoWidth || 0;
+    const height = video?.videoHeight || 0;
+    if (!video || !width || !height) return '';
+    const bounds = this.getOcrCaptureBounds(width, height);
+    const canvas = document.createElement('canvas');
+    const targetWidth = Math.min(1280, bounds.width);
+    const scale = targetWidth / bounds.width;
+    canvas.width = Math.max(1, Math.round(bounds.width * scale));
+    canvas.height = Math.max(1, Math.round(bounds.height * scale));
+    const context = canvas.getContext('2d', { alpha: false });
+    context.drawImage(video, bounds.x, bounds.y, bounds.width, bounds.height, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.82);
+  },
+
   updateOcrFeedbackGuard() {
     const overlay = this.webVideoContainer?.querySelector?.('.invideo-subtitle-overlay');
     if (!overlay?.classList) return;
@@ -8,7 +44,7 @@ export default {
       && this.isOCRModeActive
       && this._cropOcrToEmbeddedVideo;
     if (!guardActive) return;
-    if (this.ocrScanZone === 'full') {
+    if (this.ocrScanZone === 'full' || this.ocrScanZone === 'custom') {
       overlay.classList.add('ocr-feedback-hidden');
     } else if (this.ocrScanZone === 'top') {
       overlay.classList.add('ocr-safe-bottom');
@@ -204,24 +240,19 @@ export default {
       // Benchmarks on the target RTX 3050 machine found 960 px to be the best speed/accuracy
       // point for RapidOCR; larger frames only add CPU latency.
       const isTallPage = (height > width * 0.60);
-      let sourceX = 0;
-      let sourceWidth = width;
-      let embeddedVideoTop = 0;
-      let embeddedVideoHeight = height;
-      if (this._cropOcrToEmbeddedVideo && this.webVideoContainer && typeof window !== 'undefined') {
-        const videoFrame = this.webVideoContainer.querySelector('.video-element-container');
-        const rect = videoFrame && videoFrame.getBoundingClientRect ? videoFrame.getBoundingClientRect() : null;
-        if (rect && rect.width > 120 && rect.height > 80 && window.innerWidth > 0 && window.innerHeight > 0) {
-          const scaleX = width / window.innerWidth;
-          const scaleY = height / window.innerHeight;
-          sourceX = Math.max(0, Math.floor(rect.left * scaleX));
-          sourceWidth = Math.max(1, Math.min(width - sourceX, Math.ceil(rect.width * scaleX)));
-          embeddedVideoTop = Math.max(0, Math.floor(rect.top * scaleY));
-          embeddedVideoHeight = Math.max(1, Math.min(height - embeddedVideoTop, Math.ceil(rect.height * scaleY)));
-        }
-      }
+      const captureBounds = this.getOcrCaptureBounds(width, height);
+      let sourceX = captureBounds.x;
+      let sourceWidth = captureBounds.width;
+      let embeddedVideoTop = captureBounds.y;
+      let embeddedVideoHeight = captureBounds.height;
       let sourceY, sourceHeight;
-      if (this.ocrScanZone === 'top') {
+      if (this.ocrScanZone === 'custom' && this.customOcrRegion) {
+        const region = this.customOcrRegion;
+        sourceX = captureBounds.x + Math.floor(captureBounds.width * region.x);
+        sourceWidth = Math.max(1, Math.floor(captureBounds.width * region.width));
+        sourceY = captureBounds.y + Math.floor(captureBounds.height * region.y);
+        sourceHeight = Math.max(1, Math.floor(captureBounds.height * region.height));
+      } else if (this.ocrScanZone === 'top') {
         sourceY = embeddedVideoTop;
         sourceHeight = Math.max(1, Math.floor(embeddedVideoHeight * 0.38));
       } else if (this.ocrScanZone === 'full') {
@@ -370,6 +401,7 @@ export default {
             // reset active line tracker so legitimate repeated lines like "Miu meo, miu meo" speak again.
             this.lastOCRText = '';
             this.lastCleanText = '';
+            this._lastOcrFrameLines = [];
           }
           if (this.ocrConsecutiveEmpty >= 10) {
             // After ~350ms without hard subtitles, release active lock so Whisper can process speech
@@ -608,6 +640,42 @@ export default {
 
   async handleOCRSubtitle(data) {
     if (this.isScanningPaused) return;
+    if (!data._groupedLine) {
+      const frameLines = (Array.isArray(data.lines) ? data.lines : String(data.original || '').split(/[\r\n]+/))
+        .map(line => String(line || '').trim())
+        .filter(Boolean);
+      if (frameLines.length > 1) {
+        const previous = this._lastOcrFrameLines || [];
+        const hasSpeakerMarkers = frameLines.filter(line => /^[\-–—]\s*/u.test(line)).length >= 2;
+        const boxes = Array.isArray(data.line_boxes) ? data.line_boxes : [];
+        const geometricallyAligned = boxes.length < 2
+          || Math.abs(Number(boxes[0]?.center_x || 0) - Number(boxes[1]?.center_x || 0)) < 0.18;
+        const appendedWhileVisible = previous.length > 0
+          && previous.some(old => this.ocrSimilarity(old, frameLines[0]) >= 0.9)
+          && !previous.some(old => this.ocrSimilarity(old, frameLines[frameLines.length - 1]) >= 0.9);
+        const firstContinues = !/[.!?…:]["'”’)]?$/u.test(frameLines[0]);
+        const groups = (!hasSpeakerMarkers && !appendedWhileVisible && firstContinues && geometricallyAligned)
+          ? [frameLines.join(' ')]
+          : frameLines.map(line => line.replace(/^[\-–—]\s*/u, '').trim()).filter(Boolean);
+        this._lastOcrFrameLines = frameLines;
+        const translatedLines = Array.isArray(data.translated_lines) ? data.translated_lines : [];
+        for (let index = 0; index < groups.length; index++) {
+          const translated = groups.length === 1
+            ? String(data.translated || groups[0]).replace(/[\r\n]+/g, ' ').trim()
+            : String(translatedLines[index] || groups[index]).trim();
+          await this.handleOCRSubtitle({ ...data, _groupedLine: true, lines: null, original: groups[index], translated });
+        }
+        if (groups.length > 1 && typeof this.displaySubtitle === 'function') {
+          const shownOriginal = groups.join('\n');
+          const shownTranslated = groups.map((line, index) => translatedLines[index] || line).join('\n');
+          this.displaySubtitle(shownOriginal, shownTranslated);
+          if (this.invideoWebSubVi) this.invideoWebSubVi.textContent = shownTranslated;
+          if (this.invideoWebSubSource) this.invideoWebSubSource.textContent = shownOriginal;
+        }
+        return;
+      }
+      this._lastOcrFrameLines = frameLines;
+    }
     let raw = String(data.original || '').replace(/\s+/g, ' ').trim();
     if (!raw) return;
 
@@ -828,6 +896,7 @@ export default {
     overlay?.classList?.remove('ocr-safe-top', 'ocr-safe-bottom', 'ocr-feedback-hidden');
     this.lastOCRText = '';
     this.lastCleanText = '';
+    this._lastOcrFrameLines = [];
     if (this.motionCtx) {
       this.motionCtx = null;
       this.motionCanvas = null;

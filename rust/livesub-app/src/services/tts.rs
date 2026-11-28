@@ -32,16 +32,6 @@ pub fn sanitize_dubbing_text(text: &str) -> String {
         .to_string()
 }
 
-pub fn is_edge_voice(voice: &str) -> bool {
-    let voice_lower = voice.to_lowercase();
-    voice_lower.starts_with("edge:")
-        || voice_lower.starts_with("ms:")
-        || voice_lower.contains("hoaimy")
-        || voice_lower.contains("namminh")
-        || voice_lower == "edge"
-        || voice_lower == "auto-fast"
-}
-
 pub fn prepare_tts_text(state: &AppState, text: &str) -> Option<String> {
     let cleaned = sanitize_dubbing_text(text);
     if cleaned.is_empty() {
@@ -81,7 +71,7 @@ pub async fn synthesize_tts_bytes(
 ) -> Option<Vec<u8>> {
     let target_text = prepare_tts_text(state, text)?;
 
-    let selected_voice = voice.unwrap_or("edge:Hoài My");
+    let selected_voice = voice.unwrap_or("vieneu:Trúc Ly");
     let cache_key = format!("tts:{}:{}", selected_voice, target_text);
 
     // 1. Check in-memory audio cache
@@ -91,55 +81,12 @@ pub async fn synthesize_tts_bytes(
         }
     }
 
-    // Bound all providers to the best measured realtime concurrency. This
+    // Bound VieNeu to the best measured realtime concurrency. This
     // pipelines VieNeu's separately locked ONNX stages without allowing a
     // request stampede to destroy p95/p99 freshness.
     let _tts_permit = state.tts_sem.acquire().await.ok()?;
 
-    // 2. High-speed Realtime Edge-TTS (~200ms) integration
-    let voice_lower = selected_voice.to_lowercase();
-    let is_edge = voice_lower.starts_with("edge:")
-        || voice_lower.starts_with("ms:")
-        || voice_lower.contains("hoài my")
-        || voice_lower.contains("hoaimy")
-        || voice_lower.contains("nam minh")
-        || voice_lower.contains("namminh")
-        || voice_lower == "edge"
-        || voice_lower == "auto-fast";
-
-    if is_edge {
-        let edge_voice_param = if voice_lower.contains("nam") {
-            "namminh"
-        } else {
-            "hoaimy"
-        };
-        let edge_url = "http://127.0.0.1:3005/api/tts";
-        let payload = serde_json::json!({
-            "text": target_text,
-            "voice": edge_voice_param
-        });
-
-        if let Ok(resp) = state.http_client.post(edge_url).json(&payload).send().await {
-            if resp.status().is_success() {
-                if let Ok(bytes) = resp.bytes().await {
-                    let vec = bytes.to_vec();
-                    if !vec.is_empty() {
-                        if let Ok(mut c) = state.audio_cache.write() {
-                            if c.len() >= 512 {
-                                if let Some(oldest_key) = c.keys().next().cloned() {
-                                    c.remove(&oldest_key);
-                                }
-                            }
-                            c.insert(cache_key, vec.clone());
-                        }
-                        return Some(vec);
-                    }
-                }
-            }
-        }
-    }
-
-    // 3. Pure Rust native offline VieNeu-TTS synthesis (torch-free, python-free)
+    // Pure Rust native offline VieNeu-TTS synthesis (torch-free, python-free)
     // Parallel GPU generation: semaphore lock removed to enable concurrent sentence generation
     let vieneu = state.vieneu.clone();
     let text_clone = target_text.clone();

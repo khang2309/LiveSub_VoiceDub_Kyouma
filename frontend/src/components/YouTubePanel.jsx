@@ -7,6 +7,7 @@ export default function YouTubePanel({
   onLoadWebVideo,
   onSetYtMode,
   onYtOcrZoneChange,
+  onEditOcrRegion,
   onStartYtLiveCapture,
   onToggleFullscreen,
   onCloseVideo
@@ -113,7 +114,9 @@ export default function YouTubePanel({
             <option value="bottom">📐 1/3 Đáy</option>
             <option value="split">📺 Nửa Dưới</option>
             <option value="full">🖥️ Toàn Hình</option>
+            <option value="custom">✂ Vùng tùy chỉnh</option>
           </select>
+          <button type="button" className="btn btn-secondary btn-compact" style={{ display: ytMode === 'hard_sub' ? 'inline-flex' : 'none' }} onClick={onEditOcrRegion}>✏ Chỉnh vùng</button>
           <button
             id="btnYtLiveCapture"
             className="btn-hero-action"

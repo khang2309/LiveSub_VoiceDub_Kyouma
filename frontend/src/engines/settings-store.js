@@ -14,11 +14,8 @@ export default {
   },
 
   getEffectiveVoice() {
-    const selected = this.voiceSelect ? this.voiceSelect.value : 'edge:Hoài My';
-    if (selected === 'auto-fast') {
-      return this.autoVoiceProvider || 'edge:Hoài My';
-    }
-    return selected || 'edge:Hoài My';
+    const selected = this.voiceSelect ? this.voiceSelect.value : 'vieneu:Trúc Ly';
+    return selected && selected.startsWith('vieneu:') ? selected : 'vieneu:Trúc Ly';
   },
 
   updateAppliedSettings() {
@@ -107,9 +104,9 @@ export default {
     const savedVoice = localStorage.getItem('livesub_voice');
     if (savedVoice && this.voiceSelect) {
       const exists = Array.from(this.voiceSelect.options || []).some(o => o.value === savedVoice);
-      this.voiceSelect.value = exists ? savedVoice : 'edge:Hoài My';
+      this.voiceSelect.value = exists ? savedVoice : 'vieneu:Trúc Ly';
     } else if (this.voiceSelect) {
-      this.voiceSelect.value = 'edge:Hoài My';
+      this.voiceSelect.value = 'vieneu:Trúc Ly';
     }
 
     const savedLang = localStorage.getItem('livesub_sourcelang');
@@ -144,6 +141,10 @@ export default {
       this.ocrZoneSelect.value = savedZone;
       this.ocrScanZone = savedZone;
     }
+    try {
+      const savedRegion = JSON.parse(localStorage.getItem('livesub_ocr_custom_region') || 'null');
+      if (savedRegion && typeof savedRegion === 'object') this.customOcrRegion = savedRegion;
+    } catch (_) {}
     const savedCaptionMode = localStorage.getItem('livesub_caption_mode');
     if (savedCaptionMode) {
       const normalizedYt = savedCaptionMode === 'auto' ? 'has_captions' : savedCaptionMode;

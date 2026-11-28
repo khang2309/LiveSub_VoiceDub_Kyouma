@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import ttsPlayer from '../src/engines/tts-player.js';
-import { isEdgeVoice, isStreamingEdgeResponse } from '../src/engines/tts-providers/edge-provider.js';
 import { isVieNeuPcmResponse, isVieNeuVoice } from '../src/engines/tts-providers/vieneu-provider.js';
 
 function responseWithHeaders(headers) {
@@ -61,36 +60,13 @@ test('a deliberate one-word hesitation is spoken immediately and never merged aw
   assert.equal(queued[0][10], false);
 });
 
-test('Edge keeps a long subtitle intact to preserve context while streaming', async () => {
-  const queued = [];
-  const studio = Object.assign({}, ttsPlayer, {
-    isDubbingEnabled: true,
-    sanitizeDubbingText: (text) => String(text || '').trim(),
-    getEffectiveVoice: () => 'edge:Hoài My',
-    enqueueSingleLiveDubbing: (...args) => queued.push(args),
-    drainLiveDubbingQueue: async () => {}
-  });
-  const text = 'Đây là một câu phụ đề dài được Edge giữ nguyên để bảo toàn đầy đủ ngữ cảnh, nhịp điệu và dấu câu trong khi dữ liệu MP3 được phát dần theo từng khối.';
-
-  await studio.enqueueLiveDubbing(text, 13, text, 10, 10, null, 0, 'ocr');
-
-  assert.equal(queued.length, 1);
-  assert.equal(queued[0][0], text);
-  assert.equal(queued[0][10], false);
-});
-
-test('Edge and VieNeu providers own different realtime formats', () => {
-  const edgeResponse = responseWithHeaders({ 'x-audio-format': 'mp3', 'x-tts-streaming': '1' });
+test('VieNeu owns the realtime PCM format', () => {
   const vieneuResponse = responseWithHeaders({ 'x-audio-format': 'pcm_s16le' });
-
-  assert.equal(isEdgeVoice('edge:Hoài My'), true);
-  assert.equal(isStreamingEdgeResponse(edgeResponse), true);
   assert.equal(isVieNeuVoice('vieneu:Trúc Ly'), true);
   assert.equal(isVieNeuPcmResponse(vieneuResponse), true);
-  assert.equal(isStreamingEdgeResponse(vieneuResponse), false);
 });
 
-test('Edge streams the head cue directly and only prefetches lookahead cues', () => {
+test('VieNeu streams the head cue directly and prefetches one lookahead cue', () => {
   const prefetched = [];
   const studio = Object.assign({}, ttsPlayer, {
     isDubbingEnabled: true,
@@ -99,14 +75,15 @@ test('Edge streams the head cue directly and only prefetches lookahead cues', ()
     lastEnqueueTime: 0,
     dubbingGeneration: 1,
     sanitizeDubbingText: text => String(text || '').trim(),
-    getEffectiveVoice: () => 'edge:Hoài My',
+    liveTtsPrefetch: new Map(),
+    getEffectiveVoice: () => 'vieneu:Trúc Ly',
     prefetchLiveTts: (text, voice) => prefetched.push({ text, voice })
   });
 
   studio.enqueueSingleLiveDubbing('Câu đang cần phát ngay.', 1, 'source one');
-  assert.deepEqual(prefetched, [], 'head cue must keep the Edge streaming fast path');
+  assert.deepEqual(prefetched, [], 'head cue must keep the VieNeu streaming fast path');
 
   studio.isProcessingLiveDubbing = true;
   studio.enqueueSingleLiveDubbing('Câu kế tiếp.', 2, 'source two');
-  assert.deepEqual(prefetched, [{ text: 'Câu kế tiếp.', voice: 'edge:Hoài My' }]);
+  assert.deepEqual(prefetched, [{ text: 'Câu kế tiếp.', voice: 'vieneu:Trúc Ly' }]);
 });

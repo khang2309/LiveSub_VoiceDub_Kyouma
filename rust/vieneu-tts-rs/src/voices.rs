@@ -47,9 +47,7 @@ impl VoiceRegistry {
             }
         }
 
-        // Add standard compatibility mappings for older options / edge-tts names
-        alias_map.insert("vi-vn-hoaimyneural".to_string(), "Trúc Ly".to_string());
-        alias_map.insert("vi-vn-namminhneural".to_string(), "Hải Đăng".to_string());
+        // Compatibility mappings for the remaining local voice labels.
         alias_map.insert("google-vi".to_string(), "Trúc Ly".to_string());
         alias_map.insert("nam minh".to_string(), "Hải Đăng".to_string());
         alias_map.insert("hoài my".to_string(), "Trúc Ly".to_string());

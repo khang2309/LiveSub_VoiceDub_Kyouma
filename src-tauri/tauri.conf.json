@@ -36,7 +36,6 @@
       "../public/vendor/vad/*": "public/vendor/vad/",
       "../models/ocr/*": "models/ocr/",
       "../rust/setup-models.ps1": "rust/setup-models.ps1",
-      "../scripts/edge_tts_server.js": "scripts/edge_tts_server.js",
       "../DirectML.dll": "DirectML.dll",
       "../onnxruntime_providers_shared.dll": "onnxruntime_providers_shared.dll",
       "../onnxruntime_providers_cuda.dll": "onnxruntime_providers_cuda.dll",

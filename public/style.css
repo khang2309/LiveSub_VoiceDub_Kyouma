@@ -2566,3 +2566,54 @@ html, body {
   color: var(--color-accent);
   background: rgba(255, 255, 255, 0.08);
 }
+.ocr-region-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(0, 0, 0, 0.78);
+}
+.ocr-region-card {
+  width: min(1100px, 96vw);
+  max-height: 94vh;
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: var(--bg-card);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+}
+.ocr-region-heading, .ocr-region-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ocr-region-heading div { display: flex; flex-direction: column; gap: 3px; }
+.ocr-region-heading span, .ocr-region-actions span { color: var(--text-dim); font-size: 0.82rem; }
+.ocr-region-surface {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: 72vh;
+  margin: 12px 0;
+  overflow: hidden;
+  touch-action: none;
+  cursor: crosshair;
+  background-color: #050505;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  border-radius: 10px;
+  user-select: none;
+}
+.ocr-region-selection {
+  position: absolute;
+  pointer-events: none;
+  border: 3px solid #ff9f8f;
+  background: rgba(255, 120, 105, 0.12);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.38), 0 0 20px rgba(255, 120, 105, 0.7);
+}
+.ocr-region-actions { justify-content: flex-end; flex-wrap: wrap; }
+.ocr-region-actions span { margin-right: auto; }

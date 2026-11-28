@@ -172,9 +172,7 @@ pub fn preserve_recognized_tones(recognized: &str, restored: &str) -> String {
                 return replacement;
             }
             let is_valid_orig = lex.syllables.contains(&core_orig);
-            let is_rare_ocr_confusion =
-                ocr_engine_rs::lexicon::is_rare_override_syllable(&core_orig);
-            if !is_valid_orig || is_rare_ocr_confusion {
+            if !is_valid_orig {
                 replacement
             } else {
                 *original
@@ -208,6 +206,8 @@ mod tests {
             preserve_recognized_tones("Hai vị và Cao Thuận", "Hải vị và Cào Thuận"),
             "Hai vị và Cao Thuận"
         );
+        assert_eq!(preserve_recognized_tones("mục ca", "mục cá"), "mục ca");
+        assert_eq!(preserve_recognized_tones("có thể", "có thế"), "có thể");
     }
 
     #[test]
@@ -219,10 +219,10 @@ mod tests {
     }
 
     #[test]
-    fn permits_fixing_invalid_and_confusable_tones() {
+    fn only_fixes_truly_invalid_tones_and_never_overrides_valid_visual_tokens() {
         assert_eq!(
             preserve_recognized_tones("Hắn biểt và thừ cúa tôi", "Hắn biết và thử của tôi"),
-            "Hắn biết và thử của tôi"
+            "Hắn biết và thừ cúa tôi"
         );
     }
 
@@ -279,6 +279,8 @@ mod tests {
             "Phải rồi, đó là lý do gia đình nàng tới tìm"
         );
         assert_eq!(clean_and_validate_vietnamese_ocr("Sao?"), "Sao?");
+        assert_eq!(clean_and_validate_vietnamese_ocr("cha"), "cha");
+        assert_eq!(clean_and_validate_vietnamese_ocr("ha ha ha"), "ha ha ha");
         assert_eq!(clean_and_validate_vietnamese_ocr("Đã chơi!"), "Đã chơi!");
         assert_eq!(clean_and_validate_vietnamese_ocr("Xa quá!"), "Xa quá!");
         assert_eq!(

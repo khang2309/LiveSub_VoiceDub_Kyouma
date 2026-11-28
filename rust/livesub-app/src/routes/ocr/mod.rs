@@ -95,17 +95,17 @@ pub async fn api_ocr_subtitle(
 
     let start_ocr = Instant::now();
     let (selected_engine, engine_name) = state.ocr_pool.select_engine(&source_lang);
-    let (is_blank, recognized, ocr_confidence) = tokio::task::spawn_blocking(
-        move || -> Result<(bool, String, f32), (StatusCode, String)> {
+    let (is_blank, recognized, ocr_confidence, line_boxes) = tokio::task::spawn_blocking(
+        move || -> Result<(bool, String, f32, Vec<serde_json::Value>), (StatusCode, String)> {
             let decoded = image::load_from_memory(&img_data)
                 .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid image: {e}")))?;
 
             if is_blank_subtitle(&decoded) {
-                return Ok((true, String::new(), 0.0));
+                return Ok((true, String::new(), 0.0, Vec::new()));
             }
 
             let Some(engine) = selected_engine else {
-                return Ok((false, String::new(), 0.0));
+                return Ok((false, String::new(), 0.0, Vec::new()));
             };
 
             let mut dyn_img = decoded;
@@ -123,19 +123,32 @@ pub async fn api_ocr_subtitle(
                     format!("OCR inference failed: {e}"),
                 )
             })?;
-            let accepted: Vec<(String, f32)> = res
+            let accepted: Vec<(String, f32, f64, f64)> = res
                 .into_iter()
-                .filter(|r| r.confidence >= 0.62)
                 .filter_map(|r| {
                     let text = r.text.trim().to_owned();
-                    (!text.is_empty()).then_some((text, r.confidence))
+                    let compact_len = text.chars().filter(|c| c.is_alphanumeric()).count();
+                    let threshold = if compact_len <= 8 { 0.48 } else { 0.62 };
+                    let points: Vec<_> = r.bounding_box.exterior().points().collect();
+                    let center_x = points.iter().map(|p| p.x()).sum::<f64>()
+                        / points.len().max(1) as f64
+                        / w.max(1) as f64;
+                    let center_y = points.iter().map(|p| p.y()).sum::<f64>()
+                        / points.len().max(1) as f64
+                        / h.max(1) as f64;
+                    (!text.is_empty() && r.confidence >= threshold).then_some((
+                        text,
+                        r.confidence,
+                        center_x,
+                        center_y,
+                    ))
                 })
                 .collect();
             let mut joined = String::new();
             let mut confidence_sum = 0.0_f32;
-            for (idx, (line, confidence)) in accepted.iter().enumerate() {
+            for (idx, (line, confidence, _, _)) in accepted.iter().enumerate() {
                 if idx > 0 && !joined.is_empty() {
-                    joined.push(' ');
+                    joined.push('\n');
                 }
                 joined.push_str(line);
                 confidence_sum += confidence;
@@ -145,7 +158,15 @@ pub async fn api_ocr_subtitle(
             } else {
                 confidence_sum / accepted.len() as f32
             };
-            Ok((false, joined, confidence))
+            let boxes = accepted
+                .iter()
+                .map(|(text, confidence, x, y)| {
+                    serde_json::json!({
+                        "text": text, "confidence": confidence, "center_x": x, "center_y": y
+                    })
+                })
+                .collect();
+            Ok((false, joined, confidence, boxes))
         },
     )
     .await
@@ -186,7 +207,12 @@ pub async fn api_ocr_subtitle(
     let is_foreign_source = matches!(norm_lang.as_str(), "en" | "ja" | "zh" | "ko" | "th");
     let is_vietnamese_source = norm_lang == "vi";
 
-    let rec_trimmed = clean_foreign_ocr_noise(&recognized);
+    let rec_lines: Vec<String> = recognized
+        .lines()
+        .map(clean_foreign_ocr_noise)
+        .filter(|line| !line.is_empty() && !is_pure_ocr_junk(line))
+        .collect();
+    let rec_trimmed = rec_lines.join("\n");
     if rec_trimmed.is_empty() || is_pure_ocr_junk(&rec_trimmed) {
         return Ok(Json(serde_json::json!({
             "empty": true,
@@ -207,9 +233,16 @@ pub async fn api_ocr_subtitle(
             fetch_online_translation_with_context(&state, &rec_trimmed, &norm_lang, ctx_opt).await;
         (rec_trimmed, trans)
     } else if is_vietnamese_source {
-        let restored = state.ocr.restore_vietnamese(&rec_trimmed);
-        let restored = preserve_recognized_tones(&rec_trimmed, &restored);
-        let validated = clean_and_validate_vietnamese_ocr(&restored);
+        let validated = rec_lines
+            .iter()
+            .filter_map(|line| {
+                let restored = state.ocr.restore_vietnamese(line);
+                let restored = preserve_recognized_tones(line, &restored);
+                let clean = clean_and_validate_vietnamese_ocr(&restored);
+                (!clean.is_empty()).then_some(clean)
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
         if validated.is_empty() {
             return Ok(Json(serde_json::json!({
                 "empty": true,
@@ -229,9 +262,16 @@ pub async fn api_ocr_subtitle(
         let is_genuine_vi = vi_markers_count >= 1 || has_common_vi_word;
 
         if is_genuine_vi {
-            let restored = state.ocr.restore_vietnamese(&rec_trimmed);
-            let restored = preserve_recognized_tones(&rec_trimmed, &restored);
-            let validated = clean_and_validate_vietnamese_ocr(&restored);
+            let validated = rec_lines
+                .iter()
+                .filter_map(|line| {
+                    let restored = state.ocr.restore_vietnamese(line);
+                    let restored = preserve_recognized_tones(line, &restored);
+                    let clean = clean_and_validate_vietnamese_ocr(&restored);
+                    (!clean.is_empty()).then_some(clean)
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
             if validated.is_empty() {
                 return Ok(Json(serde_json::json!({
                     "empty": true,
@@ -259,6 +299,9 @@ pub async fn api_ocr_subtitle(
         "empty": false,
         "original": cleaned_original,
         "translated": translated,
+        "lines": cleaned_original.lines().collect::<Vec<_>>(),
+        "translated_lines": translated.lines().collect::<Vec<_>>(),
+        "line_boxes": line_boxes,
         "translation_provider": "rust_native_pipeline",
         "timings": {
             "ocr_ms": ocr_ms,

@@ -27,14 +27,13 @@ export class LiveDubStudio {
     this.ocrTimer = null;
     this.ocrRequestActive = false;
     this.ocrScanZone = 'bottom';
+    this.customOcrRegion = { x: 0.05, y: 0.62, width: 0.9, height: 0.34 };
     this.lastOCRText = '';
     this.lastCleanText = '';
     this.currentActiveAudioSource = null;
     this.streamingAudioSources = new Set();
     this.streamingAbortController = null;
     this.ttsRequestGeneration = Date.now();
-    this.currentEdgeStreamAudio = null;
-    this.currentEdgeStreamUrl = null;
     this.realtimeMetrics = {
       samples: [],
       streamUnderruns: 0,
@@ -338,7 +337,7 @@ export class LiveDubStudio {
       activeSource: this.activeSource || 'system',
       sourceLang: this.sourceLangSelect?.value || 'auto',
       sourceLangLabel: this.lblSourceLang?.textContent || 'Ngôn Ngữ Gốc:',
-      voice: this.voiceSelect?.value || 'edge:Hoài My',
+      voice: this.voiceSelect?.value || 'vieneu:Trúc Ly',
       subMode: this.currentSubMode || 'vi_only',
       transparency: this.currentTransparency || 'transparent',
       rate: parseFloat(this.rateRange?.value) || 1,
@@ -421,6 +420,33 @@ export class LiveDubStudio {
       this.showToast(`📐 Đã đổi vùng quét sub: ${zoneName}`);
     }
     this.notifyUIState();
+  }
+
+  setCustomOcrRegion(region) {
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, Number(value) || 0));
+    const x = clamp(region?.x, 0, 0.98);
+    const y = clamp(region?.y, 0, 0.98);
+    this.customOcrRegion = {
+      x,
+      y,
+      width: clamp(region?.width, 0.02, 1 - x),
+      height: clamp(region?.height, 0.02, 1 - y)
+    };
+    this.ocrScanZone = 'custom';
+    try {
+      localStorage.setItem('livesub_ocr_custom_region', JSON.stringify(this.customOcrRegion));
+      localStorage.setItem('livesub_ocr_zone', 'custom');
+    } catch (_) {}
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ocr_zone: 'custom' })
+    }).catch(() => {});
+    if (this.ocrZoneSelect) this.ocrZoneSelect.value = 'custom';
+    if (this.ytOcrZoneSelect) this.ytOcrZoneSelect.value = 'custom';
+    this.updateOcrFeedbackGuard?.();
+    this.notifyUIState();
+    this.showToast('✓ Đã áp dụng vùng OCR tùy chỉnh. Khung chọn đã được ẩn.');
   }
 
   handleRateChange(val) {

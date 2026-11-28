@@ -6,7 +6,8 @@ export default function SystemCapturePanel({
   ocrZone,
   onToggleSystemAudio,
   onSetSystemMode,
-  onOcrZoneChange
+  onOcrZoneChange,
+  onEditOcrRegion
 }) {
   return (
     <div
@@ -86,7 +87,9 @@ export default function SystemCapturePanel({
             <option value="bottom">📐 1/3 Đáy (Phim)</option>
             <option value="split">📺 Nửa Dưới (50%)</option>
             <option value="full">🖥️ Toàn Màn Hình</option>
+            <option value="custom">✂ Vùng tùy chỉnh</option>
           </select>
+          <button type="button" className="btn btn-secondary btn-compact" onClick={onEditOcrRegion}>✏ Chỉnh vùng</button>
         </div>
 
         <div id="oneTouchDetectionPill" className="one-touch-status-pill">

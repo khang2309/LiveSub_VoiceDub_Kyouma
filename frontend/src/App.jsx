@@ -7,6 +7,7 @@ import YouTubePanel from './components/YouTubePanel.jsx';
 import CinemaPanel from './components/CinemaPanel.jsx';
 import HistoryPanel from './components/HistoryPanel.jsx';
 import LegacyHiddenBridge from './components/LegacyHiddenBridge.jsx';
+import OcrRegionSelector from './components/OcrRegionSelector.jsx';
 import LiveDubStudio from './engines/LiveDubStudio.js';
 
 export default function App() {
@@ -15,7 +16,7 @@ export default function App() {
     activeSource: 'system',
     sourceLang: 'auto',
     sourceLangLabel: 'Ngôn Ngữ Gốc:',
-    voice: 'edge:Hoài My',
+    voice: 'vieneu:Trúc Ly',
     subMode: 'vi_only',
     transparency: 'transparent',
     rate: 1.0,
@@ -25,6 +26,7 @@ export default function App() {
     ocrZone: 'bottom',
     ytMode: 'has_captions'
   });
+  const [ocrEditor, setOcrEditor] = useState({ open: false, preview: '', region: null });
 
   useEffect(() => {
     const studio = new LiveDubStudio({
@@ -46,6 +48,16 @@ export default function App() {
   }, []);
 
   const studio = () => studioRef.current;
+  const openOcrEditor = async () => {
+    const app = studio();
+    if (!app) return;
+    const preview = await app.captureOcrRegionPreview();
+    if (!preview) {
+      app.showToast('Hãy bắt đầu chia sẻ màn hình/video trước khi chỉnh vùng OCR.');
+      return;
+    }
+    setOcrEditor({ open: true, preview, region: app.customOcrRegion });
+  };
 
   return (
     <div className="app-container">
@@ -112,6 +124,7 @@ export default function App() {
                 setUi((prev) => ({ ...prev, ocrZone: val }));
                 studio()?.handleOcrZoneChange(val, false);
               }}
+              onEditOcrRegion={openOcrEditor}
             />
 
             <YouTubePanel
@@ -124,6 +137,7 @@ export default function App() {
                 setUi((prev) => ({ ...prev, ocrZone: val }));
                 studio()?.handleOcrZoneChange(val, true);
               }}
+              onEditOcrRegion={openOcrEditor}
               onStartYtLiveCapture={() => studio()?.startYouTubeLiveCapture()}
               onToggleFullscreen={() => studio()?.toggleWebVideoFullscreen()}
               onCloseVideo={() => studio()?.closeWebVideo()}
@@ -149,6 +163,17 @@ export default function App() {
       </main>
 
       <LegacyHiddenBridge />
+      <OcrRegionSelector
+        open={ocrEditor.open}
+        preview={ocrEditor.preview}
+        initialRegion={ocrEditor.region}
+        onClose={() => setOcrEditor((prev) => ({ ...prev, open: false }))}
+        onApply={(region) => {
+          studio()?.setCustomOcrRegion(region);
+          setUi((prev) => ({ ...prev, ocrZone: 'custom' }));
+          setOcrEditor((prev) => ({ ...prev, open: false, region }));
+        }}
+      />
     </div>
   );
 }

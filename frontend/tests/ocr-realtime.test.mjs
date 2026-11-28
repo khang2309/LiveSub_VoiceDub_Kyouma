@@ -101,3 +101,47 @@ test('a genuine repeated subtitle after an empty gap is not suppressed as feedba
   assert.equal(result.text, 'Đừng đi');
   assert.equal(result.changed, false);
 });
+
+test('very short real dialogue is never filtered before TTS', async () => {
+  const { studio, events } = createScanner();
+  await studio.handleOCRSubtitle({ original: 'cha', translated: 'cha', hadEmptyGap: true });
+  await studio.handleOCRSubtitle({ original: 'ha ha ha', translated: 'ha ha ha', hadEmptyGap: true });
+  assert.deepEqual(events.filter(([name]) => name === 'enqueue').map(event => event[1]), ['cha', 'ha ha ha']);
+});
+
+test('two visual rows from one unfinished sentence become one prosodic cue', async () => {
+  const { studio, events } = createScanner();
+  await studio.handleOCRSubtitle({
+    original: 'Đây là nửa đầu của một câu\nvà đây là phần tiếp theo.',
+    translated: 'Đây là nửa đầu của một câu\nvà đây là phần tiếp theo.',
+    lines: ['Đây là nửa đầu của một câu', 'và đây là phần tiếp theo.'],
+    translated_lines: ['Đây là nửa đầu của một câu', 'và đây là phần tiếp theo.'],
+    hadEmptyGap: true
+  });
+  assert.deepEqual(events.filter(([name]) => name === 'enqueue').map(event => event[1]), ['Đây là nửa đầu của một câu và đây là phần tiếp theo.']);
+});
+
+test('two dash-prefixed speakers stay separate and are prefetched in order', async () => {
+  const { studio, events } = createScanner();
+  await studio.handleOCRSubtitle({
+    original: '- Cha!\n- Con đây!',
+    translated: '- Cha!\n- Con đây!',
+    lines: ['- Cha!', '- Con đây!'],
+    translated_lines: ['Cha!', 'Con đây!'],
+    hadEmptyGap: true
+  });
+  assert.deepEqual(events.filter(([name]) => name === 'enqueue').map(event => event[1]), ['Cha!', 'Con đây!']);
+});
+
+test('two subtitle rows at different horizontal positions are treated as separate speakers', async () => {
+  const { studio, events } = createScanner();
+  await studio.handleOCRSubtitle({
+    original: 'Anh nghe tôi nói\nTôi đang nghe',
+    translated: 'Anh nghe tôi nói\nTôi đang nghe',
+    lines: ['Anh nghe tôi nói', 'Tôi đang nghe'],
+    translated_lines: ['Anh nghe tôi nói', 'Tôi đang nghe'],
+    line_boxes: [{ center_x: 0.24 }, { center_x: 0.76 }],
+    hadEmptyGap: true
+  });
+  assert.deepEqual(events.filter(([name]) => name === 'enqueue').map(event => event[1]), ['Anh nghe tôi nói', 'Tôi đang nghe']);
+});

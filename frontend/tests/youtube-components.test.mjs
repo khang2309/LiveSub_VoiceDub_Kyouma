@@ -152,7 +152,7 @@ test('prefetch worker generates sequential batches through the end of CC', async
     isFetchingPreCache: new Set(),
     audioPreCache: new Map(),
     voiceGeneration: 0,
-    getEffectiveVoice: () => 'edge:Hoài My',
+    getEffectiveVoice: () => 'vieneu:Trúc Ly',
     sanitizeDubbingText: text => text,
     getVoiceProfile: () => ({ id: 'test' }),
     applyVoiceCharacteristics: buffer => buffer
