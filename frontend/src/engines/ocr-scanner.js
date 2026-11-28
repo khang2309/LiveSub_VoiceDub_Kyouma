@@ -584,8 +584,13 @@ export default {
     }
 
     // Common short action/dialogue words in anime & movies
-    const SHORT_VALID = /^(ai|gì|đâu|nào|sao|có|không|đi|được|chạy|bắn|tránh|cút|dừng|đứng|chết|khoan|thôi|mau|biết|hiểu|nhớ|quên|xem|nghe|nói|thấy|cha|ba|mẹ|bố|con|anh|em|ông|bà|chị|cô|chú|bác|cháu|hắn|nó|họ|ta|mình|ừ|dạ|hả|vâng|đúng|phải|sai|thật|kìa|đây|đó|rồi|lại|ngay|xin|chào|này|vậy|hở|ôi|ơ|chứ|xong|nguy|cứu|buông|đợi|im|rõ|chắc)[.!?…,]*$/iu;
+    const SHORT_VALID = /^(ai|gì|đâu|nào|sao|có|không|đi|được|chạy|bắn|tránh|cút|dừng|đứng|chết|khoan|thôi|mau|biết|hiểu|nhớ|quên|xem|nghe|nói|thấy|cha|ba|mẹ|bố|con|anh|em|ông|bà|chị|cô|chú|bác|cháu|hắn|nó|họ|ta|mình|ừ|ừm|ừhm|hừm|hm|dạ|hả|vâng|đúng|phải|sai|thật|kìa|đây|đó|rồi|lại|ngay|xin|chào|này|vậy|hở|ôi|ơ|chứ|xong|nguy|cứu|buông|đợi|im|rõ|chắc)[.!?…,]*$/iu;
     if (SHORT_VALID.test(trimmed)) return false;
+    // A clearly accented Vietnamese one-word cue (for example a name such as
+    // "Tịnh") is meaningful dialogue. OCR confidence is already checked by
+    // the backend, so do not require it to appear in a fragile frontend list.
+    const shortAccentedWord = trimmed.match(/^([\p{L}]{2,8})[.!?…,]*$/u)?.[1] || '';
+    if (shortAccentedWord && /[à-ỹđ]/iu.test(shortAccentedWord)) return false;
     // Strip noise prefix like leading %, _, quotes
     const textClean = trimmed.replace(/^[^\w\sÀ-ỹà-ỹ]+/i, '').trim();
     if (!textClean) return true;

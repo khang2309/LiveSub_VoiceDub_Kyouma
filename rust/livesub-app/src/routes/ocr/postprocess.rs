@@ -74,6 +74,10 @@ fn is_valid_vi_token(tok: &str) -> bool {
     if core.chars().any(|c| c.is_ascii_digit()) {
         return false;
     }
+    // Hesitations are intentional performance in dialogue, not OCR noise.
+    if matches!(core.as_str(), "ừ" | "ừm" | "ừhm" | "hừm" | "hm") {
+        return true;
+    }
     let has_vowel = core.chars().any(|c| {
         "aeiouyàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ".contains(c)
     });
@@ -281,6 +285,8 @@ mod tests {
         assert_eq!(clean_and_validate_vietnamese_ocr("Sao?"), "Sao?");
         assert_eq!(clean_and_validate_vietnamese_ocr("cha"), "cha");
         assert_eq!(clean_and_validate_vietnamese_ocr("ha ha ha"), "ha ha ha");
+        assert_eq!(clean_and_validate_vietnamese_ocr("Tịnh"), "Tịnh");
+        assert_eq!(clean_and_validate_vietnamese_ocr("ừm"), "ừm");
         assert_eq!(clean_and_validate_vietnamese_ocr("Đã chơi!"), "Đã chơi!");
         assert_eq!(clean_and_validate_vietnamese_ocr("Xa quá!"), "Xa quá!");
         assert_eq!(

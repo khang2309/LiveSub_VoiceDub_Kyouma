@@ -106,7 +106,9 @@ test('very short real dialogue is never filtered before TTS', async () => {
   const { studio, events } = createScanner();
   await studio.handleOCRSubtitle({ original: 'cha', translated: 'cha', hadEmptyGap: true });
   await studio.handleOCRSubtitle({ original: 'ha ha ha', translated: 'ha ha ha', hadEmptyGap: true });
-  assert.deepEqual(events.filter(([name]) => name === 'enqueue').map(event => event[1]), ['cha', 'ha ha ha']);
+  await studio.handleOCRSubtitle({ original: 'Tịnh', translated: 'Tịnh', hadEmptyGap: true });
+  await studio.handleOCRSubtitle({ original: 'ừm', translated: 'ừm', hadEmptyGap: true });
+  assert.deepEqual(events.filter(([name]) => name === 'enqueue').map(event => event[1]), ['cha', 'ha ha ha', 'Tịnh', 'ừm']);
 });
 
 test('two visual rows from one unfinished sentence become one prosodic cue', async () => {
