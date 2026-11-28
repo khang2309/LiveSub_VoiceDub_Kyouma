@@ -468,8 +468,11 @@ export default {
       onStart,
       isChained
     });
-    // Edge synthesis is network-bound and does not contend with the local GPU.
-    if (isEdgeVoice(effectiveVoice)) {
+    // Never prefetch the head item before the drain loop starts: awaiting that
+    // promise would buffer the whole Edge MP3 and defeat its true streaming
+    // fast path.  While another cue is already playing, however, Edge can
+    // synthesize the newly queued lookahead concurrently over the network.
+    if (isEdgeVoice(effectiveVoice) && this.isProcessingLiveDubbing) {
       this.prefetchLiveTts(text, effectiveVoice);
     } else if (isVieNeuVoice(effectiveVoice) && this.isProcessingLiveDubbing) {
       // Keep exactly one VieNeu cue warm. The active cue now streams from the
@@ -968,7 +971,10 @@ export default {
         if (!started) {
           started = true;
           this.lastDubbingStartedAt = performance.now();
-          startAt = now + 0.05;
+          // One audio quantum of scheduling headroom is enough.  The previous
+          // 50 ms cushion was audible between rapid dialogue cues even when the
+          // next cue was already prefetched.
+          startAt = now + 0.003;
           if (this.liveDubbingQueue && this.liveDubbingQueue.length > 0) {
             const nextItem = this.liveDubbingQueue[0];
             this.prefetchLiveTts(nextItem.text, nextItem.voice);

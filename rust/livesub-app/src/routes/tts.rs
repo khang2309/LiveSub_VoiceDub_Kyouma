@@ -278,14 +278,19 @@ pub async fn api_tts_batch(
         })
         .unwrap_or_default();
 
-    // Generate two cues at a time. On the target RTX 3050 this is the best
-    // measured throughput/tail-latency balance; larger fan-out is slower.
+    let edge_batch = voice.map(is_edge_voice).unwrap_or(false);
+
+    // Edge requests are remote/network-bound, so two-way batching improves
+    // lookahead throughput without delaying the local realtime engine. VieNeu
+    // background prefetch deliberately uses one GPU slot at a time: the other
+    // slot stays available for OCR/Whisper dialogue immediately after a source
+    // switch instead of being occupied by stale YouTube CC generation.
     let mut generated = Vec::with_capacity(texts.len());
     for chunk in texts.chunks(2) {
         if state.tts_generation.load(Ordering::Acquire) != generation {
             break;
         }
-        if chunk.len() == 2 {
+        if edge_batch && chunk.len() == 2 {
             let (first, second) = tokio::join!(
                 synthesize_tts_bytes(&state, &chunk[0], voice),
                 synthesize_tts_bytes(&state, &chunk[1], voice)
@@ -293,7 +298,12 @@ pub async fn api_tts_batch(
             generated.push(first);
             generated.push(second);
         } else {
-            generated.push(synthesize_tts_bytes(&state, &chunk[0], voice).await);
+            for text in chunk {
+                if state.tts_generation.load(Ordering::Acquire) != generation {
+                    break;
+                }
+                generated.push(synthesize_tts_bytes(&state, text, voice).await);
+            }
         }
         if state.tts_generation.load(Ordering::Acquire) != generation {
             break;

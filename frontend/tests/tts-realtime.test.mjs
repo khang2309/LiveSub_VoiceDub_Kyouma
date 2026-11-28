@@ -89,3 +89,24 @@ test('Edge and VieNeu providers own different realtime formats', () => {
   assert.equal(isVieNeuPcmResponse(vieneuResponse), true);
   assert.equal(isStreamingEdgeResponse(vieneuResponse), false);
 });
+
+test('Edge streams the head cue directly and only prefetches lookahead cues', () => {
+  const prefetched = [];
+  const studio = Object.assign({}, ttsPlayer, {
+    isDubbingEnabled: true,
+    isProcessingLiveDubbing: false,
+    liveDubbingQueue: [],
+    lastEnqueueTime: 0,
+    dubbingGeneration: 1,
+    sanitizeDubbingText: text => String(text || '').trim(),
+    getEffectiveVoice: () => 'edge:Hoài My',
+    prefetchLiveTts: (text, voice) => prefetched.push({ text, voice })
+  });
+
+  studio.enqueueSingleLiveDubbing('Câu đang cần phát ngay.', 1, 'source one');
+  assert.deepEqual(prefetched, [], 'head cue must keep the Edge streaming fast path');
+
+  studio.isProcessingLiveDubbing = true;
+  studio.enqueueSingleLiveDubbing('Câu kế tiếp.', 2, 'source two');
+  assert.deepEqual(prefetched, [{ text: 'Câu kế tiếp.', voice: 'edge:Hoài My' }]);
+});
